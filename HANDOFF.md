@@ -45,10 +45,22 @@ The admin includes:
 The API includes:
 
 - structured tracing and request IDs;
+- validated environment, host, port, and production database configuration;
 - `GET /api/health`;
 - database-aware `GET /api/ready`;
+- `GET /api/openapi.json` and a checked-in OpenAPI contract;
 - consistent JSON 404 and readiness errors;
 - graceful shutdown and bounded PostgreSQL pooling.
+
+The Phase 0 infrastructure now also includes:
+
+- an idempotent forward SQL migration and separate migrate/seed commands;
+- a shared generated TypeScript schema and reusable fetch client;
+- deterministic API contract generation without third-party generator
+  dependencies;
+- seven backend tests covering configuration and HTTP contracts;
+- CI for TypeScript, production builds, Rust formatting, Clippy, tests,
+  PostgreSQL migrations/seeding, contract drift, and production npm audits.
 
 ## Verified
 
@@ -57,7 +69,9 @@ The following passed on 2026-07-29:
 ```bash
 npm run typecheck
 npm run build
+npm run api:check
 cargo fmt --check
+cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
@@ -81,14 +95,11 @@ Setup and start commands are documented in `README.md`.
 
 Continue Phase 0 with:
 
-1. forward SQL migration and seed command foundations;
-2. OpenAPI generation and TypeScript API client generation;
-3. automated API handler tests and frontend browser/accessibility tests;
-4. environment validation shared by startup commands;
-5. CI checks;
-6. locally optimized logo derivatives instead of the current source-image
+1. frontend browser/accessibility tests;
+2. locally optimized logo derivatives instead of the current source-image
    copies;
-7. running PostgreSQL/MinIO integration verification when Docker is available.
+3. running PostgreSQL/MinIO integration verification locally when Docker is
+   available.
 
 After Phase 0 acceptance is complete, start Phase 1 staff authentication and
 authorization.

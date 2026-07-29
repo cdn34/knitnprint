@@ -9,3 +9,4 @@ target/
 *.tsbuildinfo
 *:Zone.Identifier
 .DS_Store
+.env.test
