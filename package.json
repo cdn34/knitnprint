@@ -6,14 +6,19 @@
     "node": ">=24 <25"
   },
   "workspaces": [
-    "apps/*"
+    "apps/*",
+    "packages/*"
   ],
   "scripts": {
     "dev:storefront": "npm run dev --workspace=@knitprint/storefront",
     "dev:admin": "npm run dev --workspace=@knitprint/admin",
     "build": "npm run build --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "test": "npm run test --workspaces --if-present"
+    "test": "npm run test --workspaces --if-present",
+    "api:openapi": "cargo run -q -p knitprint-api --bin export_openapi -- openapi/knitprint.json",
+    "api:generate": "npm run api:openapi && node scripts/generate-api-schema.mjs",
+    "api:check": "node scripts/check-api-schema.mjs",
+    "db:migrate": "cargo run -p knitprint-api --bin migrate",
+    "db:seed": "cargo run -p knitprint-api --bin seed"
   }
 }
-
