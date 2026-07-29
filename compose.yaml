@@ -1,0 +1,33 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: knitprint
+      POSTGRES_USER: knitprint
+      POSTGRES_PASSWORD: knitprint
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U knitprint -d knitprint"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: knitprint
+      MINIO_ROOT_PASSWORD: knitprint-local
+    ports:
+      - "9100:9000"
+      - "9101:9001"
+    volumes:
+      - minio_data:/data
+
+volumes:
+  postgres_data:
+  minio_data:
+

@@ -1,0 +1,19 @@
+{
+  "name": "knitprint",
+  "private": true,
+  "version": "0.1.0",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev:storefront": "npm run dev --workspace=@knitprint/storefront",
+    "dev:admin": "npm run dev --workspace=@knitprint/admin",
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present"
+  }
+}
+

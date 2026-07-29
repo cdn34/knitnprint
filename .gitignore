@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.output/
+.tanstack/
+target/
+.env
+.env.local
+*.log
+*.tsbuildinfo
+*:Zone.Identifier
+.DS_Store
