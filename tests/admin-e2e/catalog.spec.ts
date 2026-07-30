@@ -16,6 +16,7 @@ test('lets an owner create, preview, search, and publish a product', async ({
   await page.getByLabel('Email address').fill(ownerEmail)
   await page.getByLabel('Password').fill(ownerPassword)
   await page.getByRole('button', { name: 'Sign in' }).click()
+  await page.getByRole('link', { name: 'Products' }).click()
 
   const catalog = page.getByRole('region', { name: 'Products' })
   await expect(catalog).toBeVisible()

@@ -15,6 +15,7 @@ test('lets an owner create and disable a least-privilege staff account', async (
   await page.getByLabel('Email address').fill(ownerEmail)
   await page.getByLabel('Password').fill(ownerPassword)
   await page.getByRole('button', { name: 'Sign in' }).click()
+  await page.getByRole('link', { name: 'Staff' }).click()
 
   const staffSection = page.getByRole('region', { name: 'Staff accounts' })
   await expect(staffSection).toBeVisible()
