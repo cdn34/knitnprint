@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod catalog;
 pub mod config;
 pub mod error;
 pub mod health;
@@ -32,6 +33,18 @@ pub fn app(state: AppState) -> Router {
         .route("/api/admin/auth/login", axum::routing::post(auth::login))
         .route("/api/admin/auth/logout", axum::routing::post(auth::logout))
         .route("/api/admin/auth/me", get(auth::me))
+        .route(
+            "/api/admin/products",
+            get(catalog::admin_list).post(catalog::create),
+        )
+        .route(
+            "/api/admin/products/{product_id}",
+            get(catalog::admin_detail),
+        )
+        .route(
+            "/api/admin/products/{product_id}/status",
+            axum::routing::post(catalog::change_status),
+        )
         .route("/api/admin/staff", get(staff::list).post(staff::create))
         .route(
             "/api/admin/staff/{staff_id}/disable",
@@ -41,6 +54,8 @@ pub fn app(state: AppState) -> Router {
             "/api/openapi.json",
             get(|| async { Json(openapi::document()) }),
         )
+        .route("/api/products", get(catalog::public_list))
+        .route("/api/products/{slug}", get(catalog::public_detail))
         .fallback(error::not_found)
         .with_state(state)
         .layer(PropagateRequestIdLayer::new(request_id.clone()))
