@@ -1,4 +1,4 @@
-import { StrictMode, type FormEvent } from 'react'
+import { StrictMode, type FormEvent, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import {
   QueryClient,
@@ -9,12 +9,16 @@ import {
 } from '@tanstack/react-query'
 import {
   Boxes,
+  Eye,
+  Archive,
   LayoutDashboard,
   LoaderCircle,
   LockKeyhole,
   LogOut,
   Package,
   Plus,
+  Search,
+  Send,
   Settings,
   ShoppingBag,
   UserRoundX,
@@ -23,6 +27,7 @@ import {
 import {
   ApiError,
   createApiClient,
+  type Product,
   type StaffProfile,
   type StaffRecord,
 } from '@knitprint/api-client'
@@ -258,19 +263,289 @@ function AdminShell({ profile }: Readonly<{ profile: StaffProfile }>) {
           </article>
           <article>
             <span>Products</span><strong>—</strong>
-            <small>Catalog comes in Phase 2</small>
+            <small>Manage the catalog below</small>
           </article>
           <article>
             <span>Low stock</span><strong>—</strong>
             <small>Inventory comes in Phase 3</small>
           </article>
         </section>
+        {profile.capabilities.includes('catalog.read') && (
+          <CatalogManagement
+            canWrite={profile.capabilities.includes('catalog.write')}
+          />
+        )}
         {profile.capabilities.includes('staff.manage') && (
           <StaffManagement currentStaffId={profile.id} />
         )}
       </main>
     </div>
   )
+}
+
+const productsKey = ['admin-products'] as const
+
+function CatalogManagement({ canWrite }: Readonly<{ canWrite: boolean }>) {
+  const client = useQueryClient()
+  const [search, setSearch] = useState('')
+  const [preview, setPreview] = useState<Product | null>(null)
+  const products = useQuery({
+    queryKey: [...productsKey, search],
+    queryFn: () => api.listAdminProducts({ q: search }),
+  })
+  const createProduct = useMutation({
+    mutationFn: api.createProduct,
+    onSuccess: (product) => {
+      client.invalidateQueries({ queryKey: productsKey })
+      setPreview(product)
+    },
+  })
+  const changeStatus = useMutation({
+    mutationFn: ({
+      id,
+      status,
+    }: {
+      id: string
+      status: 'active' | 'archived'
+    }) => api.changeProductStatus(id, { status }),
+    onSuccess: (product) => {
+      client.invalidateQueries({ queryKey: productsKey })
+      setPreview(product)
+    },
+  })
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const formElement = event.currentTarget
+    const form = new FormData(formElement)
+    const price = Number(form.get('product-price'))
+    createProduct.mutate(
+      {
+        title: String(form.get('product-title') ?? ''),
+        slug: String(form.get('product-slug') ?? ''),
+        description: String(form.get('product-description') ?? ''),
+        search_keywords: String(form.get('product-keywords') ?? ''),
+        variants: [
+          {
+            title: String(form.get('variant-title') ?? ''),
+            sku: String(form.get('variant-sku') ?? ''),
+            price_minor: Math.round(price * 100),
+            currency: String(form.get('variant-currency') ?? ''),
+            option_values: {},
+          },
+        ],
+      },
+      { onSuccess: () => formElement.reset() },
+    )
+  }
+
+  return (
+    <section
+      className="catalog-section"
+      id="products"
+      aria-labelledby="catalog-heading"
+    >
+      <div className="section-heading">
+        <div>
+          <p>Phase 2 · Catalog</p>
+          <h2 id="catalog-heading">Products</h2>
+        </div>
+        <span>{products.data?.length ?? '—'} products</span>
+      </div>
+      <div className="catalog-toolbar">
+        <Search size={16} aria-hidden="true" />
+        <label className="sr-only" htmlFor="product-search">
+          Search products
+        </label>
+        <input
+          id="product-search"
+          type="search"
+          placeholder="Search title, description, keywords, or slug"
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+        />
+      </div>
+      <div className="catalog-layout">
+        <div className="product-list">
+          {products.isPending && <p className="panel-message">Loading products…</p>}
+          {products.isError && (
+            <p className="panel-message error" role="alert">
+              Products could not be loaded.
+            </p>
+          )}
+          {products.data?.length === 0 && (
+            <div className="catalog-empty">
+              <Package aria-hidden="true" />
+              <strong>No products yet</strong>
+              <span>Create the first draft using the editor.</span>
+            </div>
+          )}
+          {products.data?.map((product) => (
+            <article className="product-row" key={product.id}>
+              <div className="product-thumbnail" aria-hidden="true">
+                KP
+              </div>
+              <div className="product-identity">
+                <div>
+                  <strong>{product.title}</strong>
+                  <span className={`product-state ${product.status}`}>
+                    {product.status}
+                  </span>
+                </div>
+                <span>/{product.slug}</span>
+                <small>
+                  {formatMoney(
+                    product.variants[0]?.price_minor,
+                    product.variants[0]?.currency,
+                  )}
+                  {' · '}
+                  {product.variants.length} variant
+                  {product.variants.length === 1 ? '' : 's'}
+                </small>
+              </div>
+              <div className="product-actions">
+                <button type="button" onClick={() => setPreview(product)}>
+                  <Eye size={15} /> Preview
+                </button>
+                {canWrite && product.status === 'draft' && (
+                  <button
+                    type="button"
+                    disabled={changeStatus.isPending}
+                    onClick={() =>
+                      changeStatus.mutate({ id: product.id, status: 'active' })
+                    }
+                  >
+                    <Send size={15} /> Publish
+                  </button>
+                )}
+                {canWrite && product.status === 'active' && (
+                  <button
+                    type="button"
+                    disabled={changeStatus.isPending}
+                    onClick={() =>
+                      changeStatus.mutate({
+                        id: product.id,
+                        status: 'archived',
+                      })
+                    }
+                  >
+                    <Archive size={15} /> Archive
+                  </button>
+                )}
+              </div>
+            </article>
+          ))}
+        </div>
+        {canWrite && (
+          <form className="product-form" onSubmit={submit}>
+            <div className="panel-title">
+              <Plus size={17} />
+              <div>
+                <strong>New product draft</strong>
+                <span>Start with the product and its first variant.</span>
+              </div>
+            </div>
+            <label htmlFor="product-title">Product title</label>
+            <input id="product-title" name="product-title" required />
+            <label htmlFor="product-slug">URL slug</label>
+            <input
+              id="product-slug"
+              name="product-slug"
+              pattern="[a-z0-9]+(?:-[a-z0-9]+)*"
+              placeholder="woven-planter"
+              required
+            />
+            <label htmlFor="product-description">Description</label>
+            <textarea
+              id="product-description"
+              name="product-description"
+              rows={3}
+            />
+            <label htmlFor="product-keywords">Search keywords</label>
+            <input id="product-keywords" name="product-keywords" />
+            <div className="variant-heading">First variant</div>
+            <label htmlFor="variant-title">Variant title</label>
+            <input
+              id="variant-title"
+              name="variant-title"
+              defaultValue="Default"
+              required
+            />
+            <label htmlFor="variant-sku">SKU</label>
+            <input id="variant-sku" name="variant-sku" required />
+            <div className="price-fields">
+              <div>
+                <label htmlFor="product-price">Price</label>
+                <input
+                  id="product-price"
+                  name="product-price"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  required
+                />
+              </div>
+              <div>
+                <label htmlFor="variant-currency">Currency</label>
+                <select
+                  id="variant-currency"
+                  name="variant-currency"
+                  defaultValue="EUR"
+                >
+                  <option value="EUR">EUR</option>
+                  <option value="GBP">GBP</option>
+                  <option value="USD">USD</option>
+                </select>
+              </div>
+            </div>
+            {createProduct.isError && (
+              <p className="panel-error" role="alert">
+                {createProduct.error instanceof ApiError
+                  ? createProduct.error.message
+                  : 'The draft could not be created.'}
+              </p>
+            )}
+            <button className="primary-button" disabled={createProduct.isPending}>
+              {createProduct.isPending ? 'Creating…' : 'Create draft'}
+            </button>
+          </form>
+        )}
+      </div>
+      {preview && (
+        <article className="product-preview" aria-label="Product preview">
+          <button
+            type="button"
+            aria-label="Close product preview"
+            onClick={() => setPreview(null)}
+          >
+            ×
+          </button>
+          <div className="preview-art" aria-hidden="true">
+            KP
+          </div>
+          <div>
+            <p>{preview.status} preview</p>
+            <h3>{preview.title}</h3>
+            <span>{preview.description || 'No description yet.'}</span>
+            <strong>
+              {formatMoney(
+                preview.variants[0]?.price_minor,
+                preview.variants[0]?.currency,
+              )}
+            </strong>
+          </div>
+        </article>
+      )}
+    </section>
+  )
+}
+
+function formatMoney(amount?: number, currency?: string) {
+  if (amount === undefined || !currency) return 'No price'
+  return new Intl.NumberFormat('en', {
+    style: 'currency',
+    currency,
+  }).format(amount / 100)
 }
 
 const staffKey = ['staff'] as const
