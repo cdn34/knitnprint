@@ -14,14 +14,17 @@ import {
   LockKeyhole,
   LogOut,
   Package,
+  Plus,
   Settings,
   ShoppingBag,
+  UserRoundX,
   Users,
 } from 'lucide-react'
 import {
   ApiError,
   createApiClient,
   type StaffProfile,
+  type StaffRecord,
 } from '@knitprint/api-client'
 import './styles.css'
 
@@ -262,8 +265,162 @@ function AdminShell({ profile }: Readonly<{ profile: StaffProfile }>) {
             <small>Inventory comes in Phase 3</small>
           </article>
         </section>
+        {profile.capabilities.includes('staff.manage') && (
+          <StaffManagement currentStaffId={profile.id} />
+        )}
       </main>
     </div>
+  )
+}
+
+const staffKey = ['staff'] as const
+const assignableCapabilities = [
+  ['catalog.read', 'View catalog'],
+  ['catalog.write', 'Manage catalog'],
+  ['orders.read', 'View orders'],
+  ['orders.fulfill', 'Fulfill orders'],
+  ['orders.refund', 'Refund orders'],
+  ['customers.read', 'View customers'],
+  ['inventory.adjust', 'Adjust inventory'],
+  ['media.upload', 'Upload media'],
+  ['media.review', 'Review media'],
+  ['settings.manage', 'Manage settings'],
+  ['staff.manage', 'Manage staff'],
+] as const
+
+function StaffManagement({
+  currentStaffId,
+}: Readonly<{ currentStaffId: string }>) {
+  const client = useQueryClient()
+  const staff = useQuery({ queryKey: staffKey, queryFn: api.listStaff })
+  const createStaff = useMutation({
+    mutationFn: api.createStaff,
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: staffKey })
+    },
+  })
+  const disableStaff = useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string }) =>
+      api.disableStaff(id, { reason }),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: staffKey })
+    },
+  })
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const formElement = event.currentTarget
+    const form = new FormData(formElement)
+    createStaff.mutate(
+      {
+        email: String(form.get('staff-email') ?? ''),
+        display_name: String(form.get('staff-name') ?? ''),
+        password: String(form.get('staff-password') ?? ''),
+        capabilities: form.getAll('capabilities').map(String),
+      },
+      { onSuccess: () => formElement.reset() },
+    )
+  }
+
+  function disable(member: StaffRecord) {
+    const reason = window.prompt(
+      `Why are you disabling ${member.display_name}? This is recorded in the audit log.`,
+    )
+    if (reason?.trim()) {
+      disableStaff.mutate({ id: member.id, reason: reason.trim() })
+    }
+  }
+
+  return (
+    <section className="staff-section" id="staff" aria-labelledby="staff-heading">
+      <div className="section-heading">
+        <div>
+          <p>Access control</p>
+          <h2 id="staff-heading">Staff accounts</h2>
+        </div>
+        <span>{staff.data?.filter((member) => !member.disabled).length ?? '—'} active</span>
+      </div>
+      <div className="staff-layout">
+        <div className="staff-list">
+          {staff.isPending && <p className="staff-message">Loading staff…</p>}
+          {staff.isError && (
+            <p className="staff-message error" role="alert">
+              Staff accounts could not be loaded.
+            </p>
+          )}
+          {staff.data?.map((member) => (
+            <article className={member.disabled ? 'disabled' : ''} key={member.id}>
+              <div className="staff-avatar">
+                {member.display_name.slice(0, 1).toUpperCase()}
+              </div>
+              <div className="staff-identity">
+                <strong>{member.display_name}</strong>
+                <span>{member.email}</span>
+                <small>
+                  {member.role === 'owner'
+                    ? 'Owner · all capabilities'
+                    : `${member.capabilities.length} capabilities`}
+                </small>
+              </div>
+              {member.disabled ? (
+                <span className="status disabled">Disabled</span>
+              ) : member.id === currentStaffId ? (
+                <span className="status">You</span>
+              ) : (
+                <button
+                  className="disable-button"
+                  type="button"
+                  disabled={disableStaff.isPending}
+                  onClick={() => disable(member)}
+                >
+                  <UserRoundX size={15} /> Disable
+                </button>
+              )}
+            </article>
+          ))}
+        </div>
+        <form className="staff-form" onSubmit={submit}>
+          <div className="staff-form-title">
+            <Plus size={17} />
+            <div>
+              <strong>Add staff member</strong>
+              <span>Create access with only the permissions they need.</span>
+            </div>
+          </div>
+          <label htmlFor="staff-name">Display name</label>
+          <input id="staff-name" name="staff-name" required />
+          <label htmlFor="staff-email">Email address</label>
+          <input id="staff-email" name="staff-email" type="email" required />
+          <label htmlFor="staff-password">Temporary password</label>
+          <input
+            id="staff-password"
+            name="staff-password"
+            type="password"
+            minLength={12}
+            required
+          />
+          <fieldset>
+            <legend>Capabilities</legend>
+            {assignableCapabilities.map(([value, label]) => (
+              <label className="capability" key={value}>
+                <input name="capabilities" type="checkbox" value={value} />
+                <span>{label}</span>
+              </label>
+            ))}
+          </fieldset>
+          {createStaff.isError && (
+            <p className="staff-form-error" role="alert">
+              {createStaff.error instanceof ApiError
+                ? createStaff.error.message
+                : 'The account could not be created.'}
+            </p>
+          )}
+          <button className="create-staff-button" disabled={createStaff.isPending}>
+            {createStaff.isPending ? 'Creating…' : 'Create staff account'}
+          </button>
+        </form>
+      </div>
+    </section>
   )
 }
 
@@ -274,4 +431,3 @@ createRoot(document.getElementById('root')!).render(
     </QueryClientProvider>
   </StrictMode>,
 )
-
