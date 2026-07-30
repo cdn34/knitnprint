@@ -159,11 +159,115 @@ async fn staff_authorization_and_audit_lifecycle() {
         ]
     );
 
+    let forbidden_product = request(
+        &router,
+        "POST",
+        "/api/admin/products",
+        Some(&limited_cookie),
+        Some(product_fixture("forbidden-product", "FORBIDDEN-001")),
+    )
+    .await;
+    assert_eq!(forbidden_product.status(), StatusCode::FORBIDDEN);
+
+    let created_product = request(
+        &router,
+        "POST",
+        "/api/admin/products",
+        Some(&owner_cookie),
+        Some(product_fixture("woven-planter", "PLANTER-001")),
+    )
+    .await;
+    assert_eq!(created_product.status(), StatusCode::CREATED);
+    let product_body = response_json(created_product).await;
+    let product_id = product_body["id"]
+        .as_str()
+        .expect("product should contain an ID");
+    assert_eq!(product_body["status"], "draft");
+    assert_eq!(product_body["variants"][0]["price_minor"], 4200);
+    assert_eq!(product_body["variants"][0]["currency"], "EUR");
+
+    let drafts_are_private = request(&router, "GET", "/api/products", None, None).await;
+    assert_eq!(response_json(drafts_are_private).await, json!([]));
+
+    let published = request(
+        &router,
+        "POST",
+        &format!("/api/admin/products/{product_id}/status"),
+        Some(&owner_cookie),
+        Some(json!({ "status": "active" })),
+    )
+    .await;
+    assert_eq!(published.status(), StatusCode::OK);
+
+    let search = request(&router, "GET", "/api/products?q=stitch", None, None).await;
+    let search_body = response_json(search).await;
+    assert_eq!(search_body[0]["slug"], "woven-planter");
+
+    let public_detail = request(&router, "GET", "/api/products/woven-planter", None, None).await;
+    assert_eq!(public_detail.status(), StatusCode::OK);
+
+    let archived = request(
+        &router,
+        "POST",
+        &format!("/api/admin/products/{product_id}/status"),
+        Some(&owner_cookie),
+        Some(json!({ "status": "archived" })),
+    )
+    .await;
+    assert_eq!(archived.status(), StatusCode::OK);
+    let archived_detail = request(&router, "GET", "/api/products/woven-planter", None, None).await;
+    assert_eq!(archived_detail.status(), StatusCode::NOT_FOUND);
+
+    let catalog_audit: Vec<(String, Uuid, Option<String>)> = sqlx::query_as(
+        r#"
+        SELECT action, actor_staff_user_id, reason
+        FROM audit_log
+        WHERE entity_id = $1
+        ORDER BY id
+        "#,
+    )
+    .bind(product_id)
+    .fetch_all(&pool)
+    .await
+    .expect("catalog audit records should be readable");
+    assert_eq!(
+        catalog_audit,
+        vec![
+            ("product.create".into(), owner_id, None),
+            (
+                "product.status_change".into(),
+                owner_id,
+                Some("active".into())
+            ),
+            (
+                "product.status_change".into(),
+                owner_id,
+                Some("archived".into())
+            ),
+        ]
+    );
+
     pool.close().await;
     sqlx::query(&format!(r#"DROP SCHEMA "{schema}" CASCADE"#))
         .execute(&admin)
         .await
         .expect("test schema should be removed");
+}
+
+fn product_fixture(slug: &str, sku: &str) -> Value {
+    json!({
+        "title": "Woven Planter",
+        "slug": slug,
+        "description": "A tactile home for knitted and printed forms.",
+        "search_keywords": "stitch yarn home",
+        "variants": [{
+            "title": "Natural",
+            "sku": sku,
+            "price_minor": 4200,
+            "currency": "EUR",
+            "option_values": { "colour": "Natural" }
+        }]
+    })
 }
 
 async fn isolated_pool(database_url: &str, schema: &str) -> PgPool {
