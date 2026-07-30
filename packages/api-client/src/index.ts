@@ -1,20 +1,28 @@
 export type {
+  ChangeProductStatusRequest,
+  CreateProductRequest,
+  CreateVariantRequest,
   CreateStaffRequest,
   DisableStaffRequest,
   ErrorBody,
   ErrorDetail,
   Health,
   LoginRequest,
+  Product,
   StaffProfile,
   StaffRecord,
+  Variant,
 } from './schema'
 
 import type {
+  ChangeProductStatusRequest,
+  CreateProductRequest,
   CreateStaffRequest,
   DisableStaffRequest,
   ErrorBody,
   Health,
   LoginRequest,
+  Product,
   StaffProfile,
   StaffRecord,
 } from './schema'
@@ -56,6 +64,18 @@ export function createApiClient(options: ApiClientOptions = {}) {
     return body as T
   }
 
+  function withQuery(
+    path: string,
+    query: Record<string, string | undefined>,
+  ) {
+    const search = new URLSearchParams()
+    for (const [key, value] of Object.entries(query)) {
+      if (value) search.set(key, value)
+    }
+    const suffix = search.toString()
+    return suffix ? `${path}?${suffix}` : path
+  }
+
   return {
     health: () => send<Health>('/api/health'),
     readiness: () => send<Health>('/api/ready'),
@@ -83,5 +103,28 @@ export function createApiClient(options: ApiClientOptions = {}) {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(input),
       }),
+    listAdminProducts: (query: { q?: string; status?: string } = {}) =>
+      send<Array<Product>>(withQuery('/api/admin/products', query)),
+    adminProduct: (productId: string) =>
+      send<Product>(`/api/admin/products/${productId}`),
+    createProduct: (input: CreateProductRequest) =>
+      send<Product>('/api/admin/products', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(input),
+      }),
+    changeProductStatus: (
+      productId: string,
+      input: ChangeProductStatusRequest,
+    ) =>
+      send<Product>(`/api/admin/products/${productId}/status`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(input),
+      }),
+    listProducts: (query: { q?: string } = {}) =>
+      send<Array<Product>>(withQuery('/api/products', query)),
+    product: (slug: string) =>
+      send<Product>(`/api/products/${encodeURIComponent(slug)}`),
   }
 }
