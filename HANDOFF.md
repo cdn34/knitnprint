@@ -135,6 +135,8 @@ The admin authentication experience is also implemented:
 - logout and session revocation;
 - Playwright coverage for login, persistence across reload, logout, and WCAG
   A/AA checks on both login and dashboard;
+- Playwright coverage for owner staff creation, granular capability assignment,
+  audit-reason capture, and disabling;
 - isolated PostgreSQL-backed admin authentication coverage in CI.
 
 Local PostgreSQL verification covers owner creation, login, profile retrieval,
@@ -144,8 +146,12 @@ one isolated PostgreSQL integration test pass.
 
 ## Next implementation slice
 
-Finish Phase 1 with end-to-end browser coverage for the owner staff-management
-workflow, then begin Phase 2 catalog modeling and admin media uploads.
+Phase 1 is complete. Begin Phase 2 with the catalog database model and API:
+
+1. products, variants, options, categories, and media records;
+2. capability-protected catalog CRUD endpoints;
+3. admin media upload flow backed by MinIO;
+4. public product listing, detail, and search.
 
 ## Environment notes
 
