@@ -117,6 +117,18 @@ The first staff-authentication backend slice is implemented:
 - immutable audit log with transactional login and logout events;
 - OpenAPI and shared TypeScript client methods for the auth flow.
 
+The admin authentication experience is also implemented:
+
+- session check before rendering private operations UI;
+- accessible branded login and service-unavailable states;
+- TanStack Query session lifecycle;
+- same-origin Vite proxy for secure cookie behavior in development;
+- protected dashboard populated from the authenticated staff profile;
+- logout and session revocation;
+- Playwright coverage for login, persistence across reload, logout, and WCAG
+  A/AA checks on both login and dashboard;
+- isolated PostgreSQL-backed admin authentication coverage in CI.
+
 Local PostgreSQL verification covered owner creation, login, profile retrieval,
 all owner capabilities, logout, session revocation, and login/logout audit
 records. Nine Rust tests pass.
@@ -126,10 +138,9 @@ records. Nine Rust tests pass.
 Continue Phase 1 staff authentication and authorization:
 
 1. reusable server-side session and capability extractors;
-2. admin login and protected application shell;
-3. owner workflows for creating and disabling staff;
-4. database-backed authentication, authorization, and audit integration tests;
-5. login rate limiting and stale-session cleanup.
+2. owner workflows for creating and disabling staff;
+3. database-backed authorization and audit integration tests;
+4. login rate limiting and stale-session cleanup.
 
 ## Environment notes
 

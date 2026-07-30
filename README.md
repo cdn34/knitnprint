@@ -51,6 +51,11 @@ The API can start without PostgreSQL for development. `/api/health` will remain
 healthy while `/api/ready` reports `503` until a database connection is ready.
 Production startup requires `DATABASE_URL`.
 
+The admin starts on a session-aware login screen and proxies `/api` requests to
+the local Rust API. Both processes must be running. After signing in, refreshing
+the browser preserves the server-side session; use the sign-out button beside
+the staff profile to revoke it.
+
 ## API contract
 
 The Rust routes and response types are the source of truth for OpenAPI. Regenerate
@@ -71,6 +76,8 @@ npm run typecheck
 npm run build
 npm run api:check
 npm run test:e2e
+DATABASE_URL=postgres://knitprint:knitprint@localhost:5432/knitprint \
+npm run test:e2e:admin
 cargo fmt --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
