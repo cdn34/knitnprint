@@ -16,6 +16,7 @@
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "test:e2e": "playwright test",
+    "test:e2e:admin": "playwright test --config=playwright.admin.config.ts",
     "assets:brand": "node scripts/generate-brand-assets.mjs",
     "api:openapi": "cargo run -q -p knitprint-api --bin export_openapi -- openapi/knitprint.json",
     "api:generate": "npm run api:openapi && node scripts/generate-api-schema.mjs",
