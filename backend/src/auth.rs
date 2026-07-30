@@ -4,8 +4,8 @@ use argon2::{
 };
 use axum::{
     Json,
-    extract::State,
-    http::StatusCode,
+    extract::{FromRequestParts, State},
+    http::{StatusCode, request::Parts},
     response::{IntoResponse, Response},
 };
 use axum_extra::extract::cookie::{Cookie, CookieJar, SameSite};
@@ -29,6 +29,15 @@ pub struct LoginRequest {
 
 #[derive(Serialize, ToSchema)]
 pub struct StaffProfile {
+    pub id: Uuid,
+    pub email: String,
+    pub display_name: String,
+    pub role: String,
+    pub capabilities: Vec<String>,
+}
+
+#[derive(Clone, Debug)]
+pub struct AuthenticatedStaff {
     pub id: Uuid,
     pub email: String,
     pub display_name: String,
@@ -206,16 +215,49 @@ pub async fn logout(State(state): State<AppState>, jar: CookieJar) -> Response {
         (status = 401, description = "No active session", body = ErrorBody)
     )
 )]
-pub async fn me(State(state): State<AppState>, jar: CookieJar) -> Response {
-    let Some(pool) = state.database else {
-        return unavailable();
-    };
-    let Some(cookie) = jar.get(SESSION_COOKIE) else {
-        return authentication_required();
-    };
-    let token_hash = hash_token(cookie.value());
-    let profile = match sqlx::query_as::<_, SessionProfile>(
-        r#"
+pub async fn me(staff: AuthenticatedStaff) -> Json<StaffProfile> {
+    Json(staff.into_profile())
+}
+
+impl AuthenticatedStaff {
+    pub fn has_capability(&self, capability: &str) -> bool {
+        self.role == "owner"
+            || self
+                .capabilities
+                .iter()
+                .any(|granted| granted == capability)
+    }
+
+    pub fn into_profile(self) -> StaffProfile {
+        StaffProfile {
+            id: self.id,
+            email: self.email,
+            display_name: self.display_name,
+            role: self.role,
+            capabilities: self.capabilities,
+        }
+    }
+}
+
+impl FromRequestParts<AppState> for AuthenticatedStaff {
+    type Rejection = Response;
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &AppState,
+    ) -> Result<Self, Self::Rejection> {
+        let Some(pool) = state.database.as_ref() else {
+            return Err(unavailable());
+        };
+        let jar = CookieJar::from_request_parts(parts, state)
+            .await
+            .map_err(|_| authentication_required())?;
+        let Some(cookie) = jar.get(SESSION_COOKIE) else {
+            return Err(authentication_required());
+        };
+        let token_hash = hash_token(cookie.value());
+        let profile = sqlx::query_as::<_, SessionProfile>(
+            r#"
         SELECT u.id, u.email::text AS email, u.display_name, u.role
         FROM staff_sessions s
         JOIN staff_users u ON u.id = s.staff_user_id
@@ -224,28 +266,24 @@ pub async fn me(State(state): State<AppState>, jar: CookieJar) -> Response {
           AND s.expires_at > now()
           AND u.disabled_at IS NULL
         "#,
-    )
-    .bind(token_hash.as_slice())
-    .fetch_optional(&pool)
-    .await
-    {
-        Ok(Some(profile)) => profile,
-        Ok(None) => return authentication_required(),
-        Err(_) => return unavailable(),
-    };
-    let capabilities = match capabilities_for(&pool, profile.id, &profile.role).await {
-        Ok(capabilities) => capabilities,
-        Err(_) => return unavailable(),
-    };
+        )
+        .bind(token_hash.as_slice())
+        .fetch_optional(pool)
+        .await
+        .map_err(|_| unavailable())?
+        .ok_or_else(authentication_required)?;
+        let capabilities = capabilities_for(pool, profile.id, &profile.role)
+            .await
+            .map_err(|_| unavailable())?;
 
-    Json(StaffProfile {
-        id: profile.id,
-        email: profile.email,
-        display_name: profile.display_name,
-        role: profile.role,
-        capabilities,
-    })
-    .into_response()
+        Ok(Self {
+            id: profile.id,
+            email: profile.email,
+            display_name: profile.display_name,
+            role: profile.role,
+            capabilities,
+        })
+    }
 }
 
 pub fn hash_password(password: &str) -> Result<String, argon2::password_hash::Error> {
@@ -334,6 +372,23 @@ async fn insert_audit(
     Ok(())
 }
 
+pub fn require_capability(
+    staff: &AuthenticatedStaff,
+    capability: &'static str,
+) -> Result<(), (StatusCode, Json<ErrorBody>)> {
+    if staff.has_capability(capability) {
+        Ok(())
+    } else {
+        Err((
+            StatusCode::FORBIDDEN,
+            Json(ErrorBody::new(
+                "capability_required",
+                "Your staff account cannot perform this operation.",
+            )),
+        ))
+    }
+}
+
 fn invalid_credentials() -> Response {
     (
         StatusCode::UNAUTHORIZED,
@@ -369,7 +424,8 @@ fn unavailable() -> Response {
 
 #[cfg(test)]
 mod tests {
-    use super::{hash_password, hash_token, verify_password};
+    use super::{AuthenticatedStaff, hash_password, hash_token, verify_password};
+    use uuid::Uuid;
 
     #[test]
     fn passwords_are_hashed_and_verified() {
@@ -384,5 +440,31 @@ mod tests {
         let digest = hash_token("opaque-session-token");
         assert_eq!(digest.len(), 32);
         assert_ne!(digest.as_slice(), b"opaque-session-token");
+    }
+
+    #[test]
+    fn owners_have_every_capability() {
+        let owner = AuthenticatedStaff {
+            id: Uuid::nil(),
+            email: "owner@example.com".into(),
+            display_name: "Owner".into(),
+            role: "owner".into(),
+            capabilities: vec![],
+        };
+        assert!(owner.has_capability("staff.manage"));
+        assert!(owner.has_capability("future.capability"));
+    }
+
+    #[test]
+    fn staff_only_have_explicit_capabilities() {
+        let staff = AuthenticatedStaff {
+            id: Uuid::nil(),
+            email: "staff@example.com".into(),
+            display_name: "Staff".into(),
+            role: "staff".into(),
+            capabilities: vec!["catalog.read".into()],
+        };
+        assert!(staff.has_capability("catalog.read"));
+        assert!(!staff.has_capability("staff.manage"));
     }
 }

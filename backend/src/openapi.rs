@@ -1,6 +1,6 @@
 use utoipa::{OpenApi, openapi::OpenApi as OpenApiDocument};
 
-use crate::{auth, error, health};
+use crate::{auth, error, health, staff};
 
 #[derive(OpenApi)]
 #[openapi(
@@ -14,18 +14,25 @@ use crate::{auth, error, health};
         health::ready,
         auth::login,
         auth::logout,
-        auth::me
+        auth::me,
+        staff::list,
+        staff::create,
+        staff::disable
     ),
     components(schemas(
         health::Health,
         error::ErrorBody,
         error::ErrorDetail,
         auth::LoginRequest,
-        auth::StaffProfile
+        auth::StaffProfile,
+        staff::StaffRecord,
+        staff::CreateStaffRequest,
+        staff::DisableStaffRequest
     )),
     tags(
         (name = "system", description = "Application health and readiness"),
-        (name = "staff auth", description = "Private staff authentication")
+        (name = "staff auth", description = "Private staff authentication"),
+        (name = "staff", description = "Owner-authorized staff management")
     )
 )]
 struct ApiDoc;

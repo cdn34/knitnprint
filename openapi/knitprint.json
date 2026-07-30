@@ -102,6 +102,202 @@
         }
       }
     },
+    "/api/admin/staff": {
+      "get": {
+        "tags": [
+          "staff"
+        ],
+        "operationId": "list",
+        "responses": {
+          "200": {
+            "description": "Staff records",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/StaffRecord"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Capability required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "staff"
+        ],
+        "operationId": "create",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateStaffRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Staff member created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffRecord"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Capability required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Email already exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid staff details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/staff/{staff_id}/disable": {
+      "post": {
+        "tags": [
+          "staff"
+        ],
+        "operationId": "disable",
+        "parameters": [
+          {
+            "name": "staff_id",
+            "in": "path",
+            "description": "Staff user ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DisableStaffRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Staff member disabled and sessions revoked"
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Capability required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Staff member not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Safety rule prevents disabling",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "A reason is required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/health": {
       "get": {
         "tags": [
@@ -155,6 +351,42 @@
   },
   "components": {
     "schemas": {
+      "CreateStaffRequest": {
+        "type": "object",
+        "required": [
+          "email",
+          "display_name",
+          "password"
+        ],
+        "properties": {
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string"
+          }
+        }
+      },
+      "DisableStaffRequest": {
+        "type": "object",
+        "required": [
+          "reason"
+        ],
+        "properties": {
+          "reason": {
+            "type": "string"
+          }
+        }
+      },
       "ErrorBody": {
         "type": "object",
         "required": [
@@ -241,6 +473,41 @@
             "type": "string"
           }
         }
+      },
+      "StaffRecord": {
+        "type": "object",
+        "required": [
+          "id",
+          "email",
+          "display_name",
+          "role",
+          "capabilities",
+          "disabled"
+        ],
+        "properties": {
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "disabled": {
+            "type": "boolean"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "role": {
+            "type": "string"
+          }
+        }
       }
     }
   },
@@ -252,6 +519,10 @@
     {
       "name": "staff auth",
       "description": "Private staff authentication"
+    },
+    {
+      "name": "staff",
+      "description": "Owner-authorized staff management"
     }
   ]
 }

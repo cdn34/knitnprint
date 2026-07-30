@@ -1,12 +1,23 @@
 export type {
+  CreateStaffRequest,
+  DisableStaffRequest,
   ErrorBody,
   ErrorDetail,
   Health,
   LoginRequest,
   StaffProfile,
+  StaffRecord,
 } from './schema'
 
-import type { ErrorBody, Health, LoginRequest, StaffProfile } from './schema'
+import type {
+  CreateStaffRequest,
+  DisableStaffRequest,
+  ErrorBody,
+  Health,
+  LoginRequest,
+  StaffProfile,
+  StaffRecord,
+} from './schema'
 
 export class ApiError extends Error {
   constructor(
@@ -59,5 +70,18 @@ export function createApiClient(options: ApiClientOptions = {}) {
         method: 'POST',
       }),
     profile: () => send<StaffProfile>('/api/admin/auth/me'),
+    listStaff: () => send<Array<StaffRecord>>('/api/admin/staff'),
+    createStaff: (input: CreateStaffRequest) =>
+      send<StaffRecord>('/api/admin/staff', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(input),
+      }),
+    disableStaff: (staffId: string, input: DisableStaffRequest) =>
+      send<void>(`/api/admin/staff/${staffId}/disable`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(input),
+      }),
   }
 }

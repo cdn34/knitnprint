@@ -3,6 +3,7 @@ pub mod config;
 pub mod error;
 pub mod health;
 pub mod openapi;
+pub mod staff;
 
 use axum::{
     Json, Router,
@@ -31,6 +32,11 @@ pub fn app(state: AppState) -> Router {
         .route("/api/admin/auth/login", axum::routing::post(auth::login))
         .route("/api/admin/auth/logout", axum::routing::post(auth::logout))
         .route("/api/admin/auth/me", get(auth::me))
+        .route("/api/admin/staff", get(staff::list).post(staff::create))
+        .route(
+            "/api/admin/staff/{staff_id}/disable",
+            axum::routing::post(staff::disable),
+        )
         .route(
             "/api/openapi.json",
             get(|| async { Json(openapi::document()) }),
