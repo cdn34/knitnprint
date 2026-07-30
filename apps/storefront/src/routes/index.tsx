@@ -44,7 +44,12 @@ function HomePage() {
 
       <header className="site-header">
         <a className="brand" href="/" aria-label="KnitPrint home">
-          <img src="/logo.png" alt="KnitPrint" width="320" height="104" />
+          <img
+            src="/knitprint-wordmark.webp"
+            alt="KnitPrint"
+            width="750"
+            height="195"
+          />
         </a>
 
         <nav className="desktop-nav" aria-label="Main navigation">
@@ -73,7 +78,7 @@ function HomePage() {
         </div>
       </header>
 
-      <main id="main-content">
+      <main id="main-content" tabIndex={-1}>
         <section className="hero">
           <div className="hero-copy">
             <p className="eyebrow">Made between yarn and form</p>
@@ -119,13 +124,19 @@ function HomePage() {
           <div className="product-grid">
             {products.map((product) => (
               <article className="product-card" key={product.name}>
-                <a href={`/products/${product.form}`} className={`product-image tone--${product.tone}`}>
+                <div className={`product-image tone--${product.tone}`}>
                   {product.tag && <span className="product-tag">{product.tag}</span>}
-                  <span className={`product-form product-form--${product.form}`} />
+                  <a
+                    className="product-visual"
+                    href={`/products/${product.form}`}
+                    aria-label={`View ${product.name}`}
+                  >
+                    <span className={`product-form product-form--${product.form}`} />
+                  </a>
                   <button className="heart" aria-label={`Save ${product.name}`} type="button">
                     <Heart size={19} />
                   </button>
-                </a>
+                </div>
                 <div className="product-info">
                   <h3><a href={`/products/${product.form}`}>{product.name}</a></h3>
                   <p>{product.price}</p>
@@ -185,7 +196,12 @@ function HomePage() {
 
       <footer className="site-footer">
         <div className="footer-lead">
-          <img src="/logo.png" alt="KnitPrint" width="280" height="91" />
+          <img
+            src="/knitprint-wordmark.webp"
+            alt="KnitPrint"
+            width="750"
+            height="195"
+          />
           <p>Objects with the soul of craft and the precision of print.</p>
         </div>
         <div className="footer-links">
@@ -203,4 +219,3 @@ function HomePage() {
     </>
   )
 }
-

@@ -24,6 +24,7 @@ button, a { font: inherit; }
 a { color: inherit; text-decoration: none; }
 button { color: inherit; }
 img { max-width: 100%; display: block; }
+main:focus { outline: none; }
 
 :focus-visible {
   outline: 3px solid var(--knit);
@@ -73,10 +74,7 @@ img { max-width: 100%; display: block; }
 .brand { width: 165px; overflow: hidden; display: block; }
 .brand img, .footer-lead img {
   width: 100%;
-  aspect-ratio: 3.1;
-  object-fit: cover;
-  object-position: center 50%;
-  transform: scale(1.48);
+  height: auto;
 }
 .desktop-nav { display: flex; gap: 2.3rem; font-size: .88rem; }
 .desktop-nav a, .footer-links a { transition: color .2s ease; }
@@ -255,6 +253,12 @@ img { max-width: 100%; display: block; }
   overflow: hidden;
   border-radius: .5rem;
 }
+.product-visual {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+}
 .tone--mauve { background: #e3d7db; }
 .tone--sand { background: #e9dfd1; }
 .tone--ink { background: #d9d6d2; }
@@ -293,7 +297,7 @@ img { max-width: 100%; display: block; }
   filter: drop-shadow(0 18px 14px rgb(40 28 24 / 18%));
   transition: transform .35s ease;
 }
-.product-image:hover .product-form { transform: translateY(-6px) rotate(2deg); }
+.product-visual:hover .product-form { transform: translateY(-6px) rotate(2deg); }
 .product-form::after {
   content: '';
   position: absolute;
@@ -397,7 +401,7 @@ img { max-width: 100%; display: block; }
 .footer-links div { display: flex; flex-direction: column; gap: .8rem; }
 .footer-links h2 { margin: 0 0 .5rem; font-size: .72rem; letter-spacing: .12em; text-transform: uppercase; }
 .footer-links a { color: #bdb5af; font-size: .78rem; }
-.footer-bottom { grid-column: 1 / -1; margin-top: 4rem; padding-top: 1.4rem; border-top: 1px solid #44413f; display: flex; gap: 1.5rem; color: #918b87; font-size: .68rem; }
+.footer-bottom { grid-column: 1 / -1; margin-top: 4rem; padding-top: 1.4rem; border-top: 1px solid #44413f; display: flex; gap: 1.5rem; color: #a49e99; font-size: .68rem; }
 .footer-bottom span:nth-child(2) { margin-right: auto; }
 .empty-page { min-height: 100vh; display: grid; place-content: center; justify-items: center; padding: 2rem; text-align: center; }
 .empty-page h1 { font: 500 3rem var(--display); }

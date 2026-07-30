@@ -19,7 +19,7 @@ export const Route = createRootRoute({
       },
       { title: 'KnitPrint — Made between yarn and form' },
     ],
-    links: [{ rel: 'icon', href: '/logo.png' }],
+    links: [{ rel: 'icon', type: 'image/webp', href: '/knitprint-mark.webp' }],
   }),
   component: Root,
   notFoundComponent: () => (
@@ -57,4 +57,3 @@ function Document({ children }: Readonly<{ children: ReactNode }>) {
     </html>
   )
 }
-

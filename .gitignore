@@ -10,3 +10,5 @@ target/
 *:Zone.Identifier
 .DS_Store
 .env.test
+playwright-report/
+test-results/

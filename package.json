@@ -15,10 +15,16 @@
     "build": "npm run build --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
+    "test:e2e": "playwright test",
+    "assets:brand": "node scripts/generate-brand-assets.mjs",
     "api:openapi": "cargo run -q -p knitprint-api --bin export_openapi -- openapi/knitprint.json",
     "api:generate": "npm run api:openapi && node scripts/generate-api-schema.mjs",
     "api:check": "node scripts/check-api-schema.mjs",
     "db:migrate": "cargo run -p knitprint-api --bin migrate",
     "db:seed": "cargo run -p knitprint-api --bin seed"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.12.1",
+    "@playwright/test": "^1.62.0"
   }
 }

@@ -17,7 +17,7 @@ function AdminShell() {
     <div className="admin-shell">
       <aside>
         <div className="admin-brand">
-          <img src="/logo.png" alt="KnitPrint" />
+          <img src="/knitprint-wordmark.webp" alt="KnitPrint" />
           <span>Admin</span>
         </div>
         <nav aria-label="Admin navigation">
@@ -46,4 +46,3 @@ function AdminShell() {
 }
 
 createRoot(document.getElementById('root')!).render(<StrictMode><AdminShell /></StrictMode>)
-
