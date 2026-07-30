@@ -13,3 +13,16 @@ export interface Health {
   "service": string
   "status": string
 }
+
+export interface LoginRequest {
+  "email": string
+  "password": string
+}
+
+export interface StaffProfile {
+  "capabilities": Array<string>
+  "display_name": string
+  "email": string
+  "id": string
+  "role": string
+}

@@ -21,7 +21,8 @@
     "api:generate": "npm run api:openapi && node scripts/generate-api-schema.mjs",
     "api:check": "node scripts/check-api-schema.mjs",
     "db:migrate": "cargo run -p knitprint-api --bin migrate",
-    "db:seed": "cargo run -p knitprint-api --bin seed"
+    "db:seed": "cargo run -p knitprint-api --bin seed",
+    "admin:create-owner": "cargo run -p knitprint-api --bin create_owner"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.12.1",

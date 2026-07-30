@@ -1,6 +1,6 @@
 use utoipa::{OpenApi, openapi::OpenApi as OpenApiDocument};
 
-use crate::{error, health};
+use crate::{auth, error, health};
 
 #[derive(OpenApi)]
 #[openapi(
@@ -9,9 +9,24 @@ use crate::{error, health};
         version = "0.1.0",
         description = "Authoritative API for the KnitPrint storefront and admin."
     ),
-    paths(health::health, health::ready),
-    components(schemas(health::Health, error::ErrorBody, error::ErrorDetail)),
-    tags((name = "system", description = "Application health and readiness"))
+    paths(
+        health::health,
+        health::ready,
+        auth::login,
+        auth::logout,
+        auth::me
+    ),
+    components(schemas(
+        health::Health,
+        error::ErrorBody,
+        error::ErrorDetail,
+        auth::LoginRequest,
+        auth::StaffProfile
+    )),
+    tags(
+        (name = "system", description = "Application health and readiness"),
+        (name = "staff auth", description = "Private staff authentication")
+    )
 )]
 struct ApiDoc;
 

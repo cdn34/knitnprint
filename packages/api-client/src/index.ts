@@ -1,6 +1,12 @@
-export type { ErrorBody, ErrorDetail, Health } from './schema'
+export type {
+  ErrorBody,
+  ErrorDetail,
+  Health,
+  LoginRequest,
+  StaffProfile,
+} from './schema'
 
-import type { ErrorBody, Health } from './schema'
+import type { ErrorBody, Health, LoginRequest, StaffProfile } from './schema'
 
 export class ApiError extends Error {
   constructor(
@@ -21,21 +27,37 @@ export function createApiClient(options: ApiClientOptions = {}) {
   const baseUrl = options.baseUrl?.replace(/\/$/, '') ?? ''
   const request = options.fetch ?? globalThis.fetch
 
-  async function getHealth(path: '/api/health' | '/api/ready'): Promise<Health> {
+  async function send<T>(path: string, init: RequestInit = {}): Promise<T> {
     const response = await request(`${baseUrl}${path}`, {
-      headers: { accept: 'application/json' },
+      credentials: 'include',
+      ...init,
+      headers: {
+        accept: 'application/json',
+        ...init.headers,
+      },
     })
-    const body: unknown = await response.json()
+    const body: unknown =
+      response.status === 204 ? undefined : await response.json()
 
     if (!response.ok) {
       throw new ApiError(response.status, body as ErrorBody)
     }
-    return body as Health
+    return body as T
   }
 
   return {
-    health: () => getHealth('/api/health'),
-    readiness: () => getHealth('/api/ready'),
+    health: () => send<Health>('/api/health'),
+    readiness: () => send<Health>('/api/ready'),
+    login: (input: LoginRequest) =>
+      send<StaffProfile>('/api/admin/auth/login', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(input),
+      }),
+    logout: () =>
+      send<void>('/api/admin/auth/logout', {
+        method: 'POST',
+      }),
+    profile: () => send<StaffProfile>('/api/admin/auth/me'),
   }
 }
-

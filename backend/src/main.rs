@@ -29,10 +29,16 @@ async fn main() {
         .expect("API address should be available");
 
     info!(%address, environment = ?config.environment, "KnitPrint API listening");
-    axum::serve(listener, app(AppState { database }))
-        .with_graceful_shutdown(shutdown_signal())
-        .await
-        .expect("API server should run");
+    axum::serve(
+        listener,
+        app(AppState {
+            database,
+            secure_cookies: config.environment == Environment::Production,
+        }),
+    )
+    .with_graceful_shutdown(shutdown_signal())
+    .await
+    .expect("API server should run");
 }
 
 async fn connect_database(url: Option<&str>) -> Option<PgPool> {

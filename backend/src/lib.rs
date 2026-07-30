@@ -1,3 +1,4 @@
+pub mod auth;
 pub mod config;
 pub mod error;
 pub mod health;
@@ -18,6 +19,7 @@ use tower_http::{
 #[derive(Clone, Default)]
 pub struct AppState {
     pub database: Option<PgPool>,
+    pub secure_cookies: bool,
 }
 
 pub fn app(state: AppState) -> Router {
@@ -26,6 +28,9 @@ pub fn app(state: AppState) -> Router {
     Router::new()
         .route("/api/health", get(health::health))
         .route("/api/ready", get(health::ready))
+        .route("/api/admin/auth/login", axum::routing::post(auth::login))
+        .route("/api/admin/auth/logout", axum::routing::post(auth::logout))
+        .route("/api/admin/auth/me", get(auth::me))
         .route(
             "/api/openapi.json",
             get(|| async { Json(openapi::document()) }),
@@ -38,7 +43,7 @@ pub fn app(state: AppState) -> Router {
         .layer(
             CorsLayer::new()
                 .allow_origin(Any)
-                .allow_methods([Method::GET])
+                .allow_methods([Method::GET, Method::POST])
                 .allow_headers(Any),
         )
 }
