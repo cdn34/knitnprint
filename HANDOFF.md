@@ -103,7 +103,7 @@ Setup and start commands are documented in `README.md`.
 
 ## Phase 1 progress
 
-The first staff-authentication backend slice is implemented:
+The staff-authentication backend is implemented:
 
 - staff users with `owner` and `staff` roles;
 - explicit capability definitions and per-staff grants;
@@ -115,7 +115,11 @@ The first staff-authentication backend slice is implemented:
 - disabled-user and expired/revoked-session enforcement;
 - owner capability expansion;
 - immutable audit log with transactional login and logout events;
-- OpenAPI and shared TypeScript client methods for the auth flow.
+- reusable authenticated-staff extraction and per-operation capability checks;
+- owner-only staff listing, creation, and disabling;
+- immediate session revocation when a staff account is disabled;
+- self-disable and last-owner safeguards;
+- OpenAPI and shared TypeScript client methods for auth and staff management.
 
 The admin authentication experience is also implemented:
 
@@ -124,30 +128,32 @@ The admin authentication experience is also implemented:
 - TanStack Query session lifecycle;
 - same-origin Vite proxy for secure cookie behavior in development;
 - protected dashboard populated from the authenticated staff profile;
+- owner staff-management UI with granular capability assignment;
 - logout and session revocation;
 - Playwright coverage for login, persistence across reload, logout, and WCAG
   A/AA checks on both login and dashboard;
 - isolated PostgreSQL-backed admin authentication coverage in CI.
 
-Local PostgreSQL verification covered owner creation, login, profile retrieval,
-all owner capabilities, logout, session revocation, and login/logout audit
-records. Nine Rust tests pass.
+Local PostgreSQL verification covers owner creation, login, profile retrieval,
+all owner capabilities, staff creation, capability denial, disabling, immediate
+session revocation, and audit actor/reason records. Eleven Rust unit tests and
+one isolated PostgreSQL integration test pass.
 
 ## Next implementation slice
 
-Continue Phase 1 staff authentication and authorization:
+Finish Phase 1 operational hardening:
 
-1. reusable server-side session and capability extractors;
-2. owner workflows for creating and disabling staff;
-3. database-backed authorization and audit integration tests;
-4. login rate limiting and stale-session cleanup.
+1. login rate limiting;
+2. stale and expired session cleanup;
+3. end-to-end browser coverage for the owner staff-management workflow;
+4. then begin Phase 2 catalog modeling and admin media uploads.
 
 ## Environment notes
 
 - No deployment has been performed.
 - PostgreSQL and MinIO were verified with Docker Compose and left running for
   the next feature slice.
-- The root `.git` path in this supplied workspace is not a functional Git
-  repository, so no Git status or commit verification is available.
+- Work is committed in focused changes; preserve the user's untracked
+  `commands.md`.
 - Generated public logo assets are reproducible with `npm run assets:brand`;
   the source at `images/logo.png` remains authoritative and untouched.
