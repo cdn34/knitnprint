@@ -56,7 +56,20 @@ API also serves the contract from `/api/openapi.json`.
 npm run typecheck
 npm run build
 npm run api:check
+npm run test:e2e
 cargo fmt --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
+```
+
+Install the local Chromium runtime once before running browser tests:
+
+```bash
+npx playwright install chromium
+```
+
+Brand derivatives are generated deterministically from `images/logo.png`:
+
+```bash
+npm run assets:brand
 ```

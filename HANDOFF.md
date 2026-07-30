@@ -61,6 +61,10 @@ The Phase 0 infrastructure now also includes:
 - seven backend tests covering configuration and HTTP contracts;
 - CI for TypeScript, production builds, Rust formatting, Clippy, tests,
   PostgreSQL migrations/seeding, contract drift, and production npm audits.
+- Playwright coverage at desktop and mobile widths for the storefront shell,
+  viewport overflow, keyboard skip navigation, and automated WCAG A/AA checks;
+- deterministic optimized WebP wordmark and compact-mark generation from the
+  authoritative source logo.
 
 ## Verified
 
@@ -80,6 +84,12 @@ Runtime smoke checks also verified:
 - `/` returns meaningful server-rendered HTML and KnitPrint metadata;
 - `/api/health` returns `200` and a JSON health payload;
 - `/api/ready` returns a structured `503` when `DATABASE_URL` is absent.
+- PostgreSQL 17 accepts the migration and idempotent seed;
+- the SQLx migration record and development seed metadata are present;
+- `/api/ready` returns `200` against the containerized database;
+- MinIO responds successfully to its live health check;
+- all eight storefront browser/accessibility checks pass on desktop and mobile
+  Chromium.
 
 ## Local development
 
@@ -93,22 +103,22 @@ Setup and start commands are documented in `README.md`.
 
 ## Next implementation slice
 
-Continue Phase 0 with:
+Phase 0 is complete. Start Phase 1 staff authentication and authorization:
 
-1. frontend browser/accessibility tests;
-2. locally optimized logo derivatives instead of the current source-image
-   copies;
-3. running PostgreSQL/MinIO integration verification locally when Docker is
-   available.
-
-After Phase 0 acceptance is complete, start Phase 1 staff authentication and
-authorization.
+1. staff user, session, capability, and audit migrations;
+2. password hashing and initial-owner creation;
+3. secure cookie login, logout, and current-profile endpoints;
+4. server-side capability enforcement;
+5. admin login and protected application shell;
+6. owner workflows for creating and disabling staff;
+7. authentication, authorization, and audit tests.
 
 ## Environment notes
 
 - No deployment has been performed.
-- PostgreSQL and MinIO were not started during the current implementation pass.
+- PostgreSQL and MinIO were verified with Docker Compose and left running for
+  the next feature slice.
 - The root `.git` path in this supplied workspace is not a functional Git
   repository, so no Git status or commit verification is available.
-- The copied public logo files intentionally preserve the source for now; the
-  source at `images/logo.png` remains authoritative.
+- Generated public logo assets are reproducible with `npm run assets:brand`;
+  the source at `images/logo.png` remains authoritative and untouched.
