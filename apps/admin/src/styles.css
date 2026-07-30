@@ -45,14 +45,14 @@ h1 { margin: .25rem 0 0; font: 500 2rem Georgia, serif; }
 .staff-list, .staff-form { border: 1px solid #ded4cc; border-radius: .8rem; background: #fffdfc; }
 .staff-list article { padding: 1rem 1.15rem; display: flex; align-items: center; gap: .8rem; border-bottom: 1px solid #ede6e1; }
 .staff-list article:last-child { border-bottom: 0; }
-.staff-list article.disabled { opacity: .58; }
+.staff-list article.disabled { background: #f7f3ef; }
 .staff-avatar { width: 38px; height: 38px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 50%; color: #5f4652; background: #eee5e9; font: 600 .85rem Georgia, serif; }
 .staff-identity { min-width: 0; display: flex; flex-direction: column; gap: .16rem; }
 .staff-identity strong { font-size: .78rem; }
 .staff-identity span, .staff-identity small { overflow: hidden; color: #6e6864; font-size: .67rem; text-overflow: ellipsis; }
-.staff-identity small { color: #8a6877; }
+.staff-identity small { color: #765c47; }
 .status { margin-left: auto; padding: .3rem .55rem; border-radius: 2rem; color: #5f4652; background: #eee5e9; font-size: .65rem; }
-.status.disabled { color: #6e6864; background: #ebe8e5; }
+.status.disabled { color: #5f4652; background: #e7dfe2; font-weight: 600; }
 .disable-button { margin-left: auto; padding: .45rem .6rem; display: flex; align-items: center; gap: .35rem; border: 1px solid #ded4cc; border-radius: .45rem; color: #7a2f3c; background: transparent; font-size: .66rem; cursor: pointer; }
 .staff-message { margin: 0; padding: 1.2rem; color: #6e6864; font-size: .75rem; }
 .staff-message.error, .staff-form-error { color: #7a2f3c; }
