@@ -5,7 +5,7 @@ use argon2::{
 use axum::{
     Json,
     extract::{FromRequestParts, State},
-    http::{StatusCode, request::Parts},
+    http::{StatusCode, header, request::Parts},
     response::{IntoResponse, Response},
 };
 use axum_extra::extract::cookie::{Cookie, CookieJar, SameSite};
@@ -20,6 +20,7 @@ use crate::{AppState, error::ErrorBody};
 
 pub const SESSION_COOKIE: &str = "knitprint_admin";
 const SESSION_HOURS: i64 = 12;
+const LOGIN_ATTEMPT_LIMIT: i32 = 5;
 
 #[derive(Deserialize, ToSchema)]
 pub struct LoginRequest {
@@ -70,6 +71,7 @@ struct SessionProfile {
     responses(
         (status = 200, description = "Authenticated staff profile", body = StaffProfile),
         (status = 401, description = "Invalid credentials", body = ErrorBody),
+        (status = 429, description = "Too many login attempts", body = ErrorBody),
         (status = 503, description = "Database unavailable", body = ErrorBody)
     )
 )]
@@ -89,6 +91,11 @@ pub async fn login(
     {
         return invalid_credentials();
     }
+    match login_is_limited(&pool, &email).await {
+        Ok(true) => return login_limited(),
+        Ok(false) => {}
+        Err(_) => return unavailable(),
+    }
     let credentials = match sqlx::query_as::<_, StaffCredentials>(
         r#"
         SELECT id, email::text AS email, display_name, role, password_hash
@@ -103,12 +110,18 @@ pub async fn login(
         Ok(Some(credentials)) => credentials,
         Ok(None) => {
             let _ = hash_password(&input.password);
+            if record_login_failure(&pool, &email).await.is_err() {
+                return unavailable();
+            }
             return invalid_credentials();
         }
         Err(_) => return unavailable(),
     };
 
     if !verify_password(&input.password, &credentials.password_hash) {
+        if record_login_failure(&pool, &email).await.is_err() {
+            return unavailable();
+        }
         return invalid_credentials();
     }
 
@@ -145,6 +158,11 @@ pub async fn login(
     )
     .await
     .is_err()
+        || sqlx::query("DELETE FROM staff_login_attempts WHERE email = $1")
+            .bind(&email)
+            .execute(&mut *transaction)
+            .await
+            .is_err()
         || transaction.commit().await.is_err()
     {
         return unavailable();
@@ -166,6 +184,53 @@ pub async fn login(
         }),
     )
         .into_response()
+}
+
+async fn login_is_limited(pool: &PgPool, email: &str) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar(
+        "SELECT COALESCE(locked_until > now(), false) FROM staff_login_attempts WHERE email = $1",
+    )
+    .bind(email)
+    .fetch_optional(pool)
+    .await
+    .map(|limited| limited.unwrap_or(false))
+}
+
+async fn record_login_failure(pool: &PgPool, email: &str) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r#"
+        INSERT INTO staff_login_attempts (email, failed_count)
+        VALUES ($1, 1)
+        ON CONFLICT (email) DO UPDATE SET
+            failed_count = CASE
+                WHEN staff_login_attempts.window_started_at < now() - interval '15 minutes'
+                    THEN 1
+                ELSE staff_login_attempts.failed_count + 1
+            END,
+            window_started_at = CASE
+                WHEN staff_login_attempts.window_started_at < now() - interval '15 minutes'
+                    THEN now()
+                ELSE staff_login_attempts.window_started_at
+            END,
+            locked_until = CASE
+                WHEN (
+                    CASE
+                        WHEN staff_login_attempts.window_started_at < now() - interval '15 minutes'
+                            THEN 1
+                        ELSE staff_login_attempts.failed_count + 1
+                    END
+                ) >= $2
+                    THEN now() + interval '15 minutes'
+                ELSE NULL
+            END,
+            updated_at = now()
+        "#,
+    )
+    .bind(email)
+    .bind(LOGIN_ATTEMPT_LIMIT)
+    .execute(pool)
+    .await?;
+    Ok(())
 }
 
 #[utoipa::path(
@@ -398,6 +463,21 @@ fn invalid_credentials() -> Response {
         )),
     )
         .into_response()
+}
+
+fn login_limited() -> Response {
+    let mut response = (
+        StatusCode::TOO_MANY_REQUESTS,
+        Json(ErrorBody::new(
+            "login_rate_limited",
+            "Too many sign-in attempts. Try again in 15 minutes.",
+        )),
+    )
+        .into_response();
+    response
+        .headers_mut()
+        .insert(header::RETRY_AFTER, header::HeaderValue::from_static("900"));
+    response
 }
 
 fn authentication_required() -> Response {

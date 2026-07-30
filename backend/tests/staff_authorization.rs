@@ -49,6 +49,37 @@ async fn staff_authorization_and_audit_lifecycle() {
     let anonymous = request(&router, "GET", "/api/admin/staff", None, None).await;
     assert_eq!(anonymous.status(), StatusCode::UNAUTHORIZED);
 
+    for _ in 0..5 {
+        let rejected = request(
+            &router,
+            "POST",
+            "/api/admin/auth/login",
+            None,
+            Some(json!({
+                "email": "rate-limited@test.invalid",
+                "password": "incorrect-integration-passphrase"
+            })),
+        )
+        .await;
+        assert_eq!(rejected.status(), StatusCode::UNAUTHORIZED);
+    }
+    let limited_login = request(
+        &router,
+        "POST",
+        "/api/admin/auth/login",
+        None,
+        Some(json!({
+            "email": "rate-limited@test.invalid",
+            "password": "incorrect-integration-passphrase"
+        })),
+    )
+    .await;
+    assert_eq!(limited_login.status(), StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(
+        limited_login.headers().get(header::RETRY_AFTER).unwrap(),
+        "900"
+    );
+
     let limited_cookie = login(&router, "limited@test.invalid").await;
     let forbidden = request(
         &router,
