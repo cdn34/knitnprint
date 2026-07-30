@@ -28,6 +28,20 @@ npm run dev:admin
 cargo run -p knitprint-api
 ```
 
+Create the first staff owner after migrating:
+
+```bash
+OWNER_EMAIL=owner@example.com \
+OWNER_NAME="Store owner" \
+OWNER_PASSWORD="use-a-long-development-password" \
+DATABASE_URL=postgres://knitprint:knitprint@localhost:5432/knitprint \
+npm run admin:create-owner
+```
+
+Owner creation is intentionally idempotent by email and requires a password of
+at least 12 characters. Use environment or secret-manager injection rather than
+placing real credentials in committed files.
+
 - Storefront: http://localhost:3000
 - Admin: http://localhost:3001
 - API health: http://localhost:8080/api/health

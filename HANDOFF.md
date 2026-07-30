@@ -101,17 +101,35 @@ Requirements:
 
 Setup and start commands are documented in `README.md`.
 
+## Phase 1 progress
+
+The first staff-authentication backend slice is implemented:
+
+- staff users with `owner` and `staff` roles;
+- explicit capability definitions and per-staff grants;
+- Argon2 password hashing;
+- initial-owner creation command with password-length validation;
+- opaque 256-bit session tokens stored only as SHA-256 hashes;
+- HTTP-only, strict same-site cookies with secure cookies in production;
+- login, logout, and current-profile endpoints;
+- disabled-user and expired/revoked-session enforcement;
+- owner capability expansion;
+- immutable audit log with transactional login and logout events;
+- OpenAPI and shared TypeScript client methods for the auth flow.
+
+Local PostgreSQL verification covered owner creation, login, profile retrieval,
+all owner capabilities, logout, session revocation, and login/logout audit
+records. Nine Rust tests pass.
+
 ## Next implementation slice
 
-Phase 0 is complete. Start Phase 1 staff authentication and authorization:
+Continue Phase 1 staff authentication and authorization:
 
-1. staff user, session, capability, and audit migrations;
-2. password hashing and initial-owner creation;
-3. secure cookie login, logout, and current-profile endpoints;
-4. server-side capability enforcement;
-5. admin login and protected application shell;
-6. owner workflows for creating and disabling staff;
-7. authentication, authorization, and audit tests.
+1. reusable server-side session and capability extractors;
+2. admin login and protected application shell;
+3. owner workflows for creating and disabling staff;
+4. database-backed authentication, authorization, and audit integration tests;
+5. login rate limiting and stale-session cleanup.
 
 ## Environment notes
 
