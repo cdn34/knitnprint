@@ -56,6 +56,19 @@ the local Rust API. Both processes must be running. After signing in, refreshing
 the browser preserves the server-side session; use the sign-out button beside
 the staff profile to revoke it.
 
+Failed admin sign-ins are limited to five attempts per email in a rolling
+15-minute window. Run authentication cleanup from a scheduler (daily is
+appropriate for most installations):
+
+```bash
+DATABASE_URL=postgres://knitprint:knitprint@localhost:5432/knitprint \
+npm run admin:cleanup-sessions
+```
+
+The command removes expired sessions, revoked sessions older than seven days,
+and stale login-attempt records. Set `SESSION_RETENTION_DAYS` to a value from 1
+to 365 to change the revoked-session retention period.
+
 ## API contract
 
 The Rust routes and response types are the source of truth for OpenAPI. Regenerate

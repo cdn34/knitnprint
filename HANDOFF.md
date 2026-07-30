@@ -119,6 +119,9 @@ The staff-authentication backend is implemented:
 - owner-only staff listing, creation, and disabling;
 - immediate session revocation when a staff account is disabled;
 - self-disable and last-owner safeguards;
+- database-backed five-attempt login throttling with a 15-minute window;
+- repeatable cleanup for expired sessions, retained revoked sessions, and stale
+  login-attempt records;
 - OpenAPI and shared TypeScript client methods for auth and staff management.
 
 The admin authentication experience is also implemented:
@@ -141,12 +144,8 @@ one isolated PostgreSQL integration test pass.
 
 ## Next implementation slice
 
-Finish Phase 1 operational hardening:
-
-1. login rate limiting;
-2. stale and expired session cleanup;
-3. end-to-end browser coverage for the owner staff-management workflow;
-4. then begin Phase 2 catalog modeling and admin media uploads.
+Finish Phase 1 with end-to-end browser coverage for the owner staff-management
+workflow, then begin Phase 2 catalog modeling and admin media uploads.
 
 ## Environment notes
 
