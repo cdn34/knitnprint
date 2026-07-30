@@ -23,6 +23,7 @@
     "api:check": "node scripts/check-api-schema.mjs",
     "db:migrate": "cargo run -p knitprint-api --bin migrate",
     "db:seed": "cargo run -p knitprint-api --bin seed",
+    "admin:cleanup-sessions": "cargo run -p knitprint-api --bin cleanup_sessions",
     "admin:create-owner": "cargo run -p knitprint-api --bin create_owner"
   },
   "devDependencies": {
