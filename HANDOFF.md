@@ -146,12 +146,31 @@ one isolated PostgreSQL integration test pass.
 
 ## Next implementation slice
 
-Phase 1 is complete. Begin Phase 2 with the catalog database model and API:
+Phase 1 is complete.
 
-1. products, variants, options, categories, and media records;
-2. capability-protected catalog CRUD endpoints;
-3. admin media upload flow backed by MinIO;
-4. public product listing, detail, and search.
+## Phase 2 progress
+
+The catalog foundation is implemented:
+
+- normalized products, variants, categories, category relationships, media
+  assets, and product/variant media relationships;
+- database-enforced draft, active, and archived states;
+- integer minor-unit prices and explicit uppercase currencies;
+- unique product slugs and variant SKUs;
+- generated PostgreSQL full-text search document with a GIN index;
+- capability-protected admin list, detail, create, and status operations;
+- public listing, detail, and search restricted to active products;
+- transactional audit records for product creation and status changes;
+- OpenAPI definitions and typed TypeScript client methods;
+- isolated PostgreSQL coverage for permissions, draft privacy, publication,
+  search, archival, and catalog audit history.
+
+Continue Phase 2 with:
+
+1. admin product list/editor and preview;
+2. presigned MinIO media upload and completion verification;
+3. product image assignment, ordering, and alt text;
+4. storefront product listing, detail, and search UI.
 
 ## Environment notes
 
