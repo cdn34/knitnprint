@@ -1,4 +1,4 @@
-import { StrictMode, type FormEvent, useState } from 'react'
+import { StrictMode, type FormEvent, useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import {
   QueryClient,
@@ -8,7 +8,6 @@ import {
   useQueryClient,
 } from '@tanstack/react-query'
 import {
-  Boxes,
   Eye,
   Archive,
   LayoutDashboard,
@@ -19,10 +18,8 @@ import {
   Plus,
   Search,
   Send,
-  Settings,
-  ShoppingBag,
+  ShieldCheck,
   UserRoundX,
-  Users,
 } from 'lucide-react'
 import {
   ApiError,
@@ -43,15 +40,6 @@ const queryClient = new QueryClient({
     },
   },
 })
-
-const navigation = [
-  [LayoutDashboard, 'Dashboard'],
-  [ShoppingBag, 'Orders'],
-  [Package, 'Products'],
-  [Users, 'Customers'],
-  [Boxes, 'Discounts'],
-  [Settings, 'Settings'],
-] as const
 
 function App() {
   const profile = useQuery({
@@ -181,6 +169,28 @@ function LoginScreen({
 }
 
 function AdminShell({ profile }: Readonly<{ profile: StaffProfile }>) {
+  const availablePages = [
+    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    ...(profile.capabilities.includes('catalog.read')
+      ? [{ id: 'products', label: 'Products', icon: Package }]
+      : []),
+    ...(profile.capabilities.includes('staff.manage')
+      ? [{ id: 'staff', label: 'Staff', icon: ShieldCheck }]
+      : []),
+  ] as const
+  type PageId = (typeof availablePages)[number]['id']
+  const pageFromHash = () => {
+    const requested = window.location.hash.slice(1)
+    return (
+      availablePages.find((page) => page.id === requested)?.id ?? 'dashboard'
+    )
+  }
+  const [page, setPage] = useState<PageId>(pageFromHash)
+  useEffect(() => {
+    const changePage = () => setPage(pageFromHash())
+    window.addEventListener('hashchange', changePage)
+    return () => window.removeEventListener('hashchange', changePage)
+  }, [])
   const client = useQueryClient()
   const logout = useMutation({
     mutationFn: api.logout,
@@ -203,11 +213,12 @@ function AdminShell({ profile }: Readonly<{ profile: StaffProfile }>) {
           <span>Admin</span>
         </div>
         <nav aria-label="Admin navigation">
-          {navigation.map(([Icon, label], index) => (
+          {availablePages.map(({ icon: Icon, id, label }) => (
             <a
-              className={index === 0 ? 'active' : ''}
-              href={`#${label.toLowerCase()}`}
-              key={label}
+              aria-current={page === id ? 'page' : undefined}
+              className={page === id ? 'active' : ''}
+              href={`#${id}`}
+              key={id}
             >
               <Icon size={18} /> {label}
             </a>
@@ -239,43 +250,54 @@ function AdminShell({ profile }: Readonly<{ profile: StaffProfile }>) {
                 month: 'long',
               }).format(new Date())}
             </small>
-            <h1>Good to see you, {profile.display_name.split(' ')[0]}.</h1>
+            <h1>
+              {page === 'dashboard'
+                ? `Good to see you, ${profile.display_name.split(' ')[0]}.`
+                : page === 'products'
+                  ? 'Product catalog.'
+                  : 'Staff access.'}
+            </h1>
           </div>
           <a className="storefront-link" href="http://localhost:3000">
             View storefront
           </a>
         </header>
-        <section className="welcome">
-          <div>
-            <p>Secure workspace</p>
-            <h2>Your KnitPrint operations, in one place.</h2>
-            <span>
-              Signed in as {profile.role}. Catalog, order, and customer tools
-              arrive as complete feature slices.
-            </span>
-          </div>
-          <div className="welcome-mark">KP</div>
-        </section>
-        <section className="metrics" aria-label="Store metrics">
-          <article>
-            <span>Orders to fulfill</span><strong>—</strong>
-            <small>Available after order setup</small>
-          </article>
-          <article>
-            <span>Products</span><strong>—</strong>
-            <small>Manage the catalog below</small>
-          </article>
-          <article>
-            <span>Low stock</span><strong>—</strong>
-            <small>Inventory comes in Phase 3</small>
-          </article>
-        </section>
-        {profile.capabilities.includes('catalog.read') && (
+        {page === 'dashboard' && (
+          <>
+            <section className="welcome">
+              <div>
+                <p>Secure workspace</p>
+                <h2>Your KnitPrint operations, in one place.</h2>
+                <span>
+                  Signed in as {profile.role}. Use the sidebar to move between
+                  focused operational areas.
+                </span>
+              </div>
+              <div className="welcome-mark">KP</div>
+            </section>
+            <section className="metrics" aria-label="Store metrics">
+              <article>
+                <span>Orders to fulfill</span><strong>—</strong>
+                <small>Available after order setup</small>
+              </article>
+              <article>
+                <span>Products</span><strong>—</strong>
+                <small>Open Products from the sidebar</small>
+              </article>
+              <article>
+                <span>Low stock</span><strong>—</strong>
+                <small>Inventory comes in Phase 3</small>
+              </article>
+            </section>
+          </>
+        )}
+        {page === 'products' &&
+          profile.capabilities.includes('catalog.read') && (
           <CatalogManagement
             canWrite={profile.capabilities.includes('catalog.write')}
           />
         )}
-        {profile.capabilities.includes('staff.manage') && (
+        {page === 'staff' && profile.capabilities.includes('staff.manage') && (
           <StaffManagement currentStaffId={profile.id} />
         )}
       </main>
