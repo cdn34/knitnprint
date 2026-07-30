@@ -164,12 +164,16 @@ The catalog foundation is implemented:
 - OpenAPI definitions and typed TypeScript client methods;
 - isolated PostgreSQL coverage for permissions, draft privacy, publication,
   search, archival, and catalog audit history.
+- admin product workspace with search, draft creation, first-variant pricing,
+  inline preview, publishing, and archival controls;
+- Playwright coverage proving draft creation, preview, search, publication, and
+  public API visibility.
 
 Continue Phase 2 with:
 
-1. admin product list/editor and preview;
-2. presigned MinIO media upload and completion verification;
-3. product image assignment, ordering, and alt text;
+1. presigned MinIO media upload and completion verification;
+2. product image assignment, ordering, and alt text;
+3. richer variant and category editing;
 4. storefront product listing, detail, and search UI.
 
 ## Environment notes
