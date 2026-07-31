@@ -41,6 +41,15 @@ pub struct Product {
     pub status: String,
     pub search_keywords: String,
     pub variants: Vec<Variant>,
+    pub media: Vec<ProductMedia>,
+}
+
+#[derive(Serialize, ToSchema, FromRow)]
+pub struct ProductMedia {
+    pub id: Uuid,
+    pub alt_text: String,
+    pub position: i32,
+    pub url: String,
 }
 
 #[derive(FromRow)]
@@ -427,6 +436,22 @@ async fn hydrate_product(pool: &PgPool, row: ProductRow) -> Result<Product, sqlx
     .bind(row.id)
     .fetch_all(pool)
     .await?;
+    let media = sqlx::query_as::<_, ProductMedia>(
+        r#"
+        SELECT
+            m.id,
+            pm.alt_text,
+            pm.position,
+            '/api/media/' || m.id::text AS url
+        FROM product_media pm
+        JOIN media_assets m ON m.id = pm.media_asset_id
+        WHERE pm.product_id = $1 AND m.status = 'ready'
+        ORDER BY pm.position, m.id
+        "#,
+    )
+    .bind(row.id)
+    .fetch_all(pool)
+    .await?;
     Ok(Product {
         id: row.id,
         title: row.title,
@@ -435,6 +460,7 @@ async fn hydrate_product(pool: &PgPool, row: ProductRow) -> Result<Product, sqlx
         status: row.status,
         search_keywords: row.search_keywords,
         variants,
+        media,
     })
 }
 

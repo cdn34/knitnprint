@@ -5,8 +5,9 @@ use aws_credential_types::Credentials;
 use aws_sdk_s3::{Client, config::Region, presigning::PresigningConfig};
 use axum::{
     Json,
+    body::Body,
     extract::{Path, State},
-    http::StatusCode,
+    http::{StatusCode, header},
     response::{IntoResponse, Response},
 };
 use serde::{Deserialize, Serialize};
@@ -288,6 +289,73 @@ pub async fn complete(
         position,
     })
     .into_response()
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/media/{media_id}",
+    params(("media_id" = Uuid, Path)),
+    tag = "media",
+    responses(
+        (status = 200, description = "Immutable published product image"),
+        (status = 404, body = ErrorBody),
+        (status = 503, body = ErrorBody)
+    )
+)]
+pub async fn public_asset(State(state): State<AppState>, Path(media_id): Path<Uuid>) -> Response {
+    let (Some(pool), Some(storage)) = (state.database, state.media_storage) else {
+        return unavailable();
+    };
+    let asset = sqlx::query_as::<_, (String, String)>(
+        r#"
+        SELECT m.object_key, m.content_type
+        FROM media_assets m
+        JOIN product_media pm ON pm.media_asset_id = m.id
+        JOIN products p ON p.id = pm.product_id
+        WHERE m.id = $1 AND m.status = 'ready' AND p.status = 'active'
+        LIMIT 1
+        "#,
+    )
+    .bind(media_id)
+    .fetch_optional(&pool)
+    .await;
+    let (object_key, content_type) = match asset {
+        Ok(Some(asset)) => asset,
+        Ok(None) => return not_found(),
+        Err(_) => return unavailable(),
+    };
+    let object = storage
+        .client
+        .get_object()
+        .bucket(&storage.bucket)
+        .key(object_key)
+        .send()
+        .await;
+    let Ok(object) = object else {
+        return not_found();
+    };
+    let etag = object.e_tag().map(ToOwned::to_owned);
+    let body = match object.body.collect().await {
+        Ok(body) => body.into_bytes(),
+        Err(_) => return unavailable(),
+    };
+    let mut response = Response::new(Body::from(body));
+    response.headers_mut().insert(
+        header::CONTENT_TYPE,
+        content_type
+            .parse()
+            .unwrap_or_else(|_| header::HeaderValue::from_static("application/octet-stream")),
+    );
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        header::HeaderValue::from_static("public, max-age=31536000, immutable"),
+    );
+    if let Some(etag) = etag
+        && let Ok(etag) = etag.parse()
+    {
+        response.headers_mut().insert(header::ETAG, etag);
+    }
+    response
 }
 
 fn valid_upload(input: &InitiateUploadRequest) -> bool {

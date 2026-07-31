@@ -23,6 +23,7 @@ use crate::{auth, catalog, error, health, media, staff};
         catalog::public_detail,
         media::initiate,
         media::complete,
+        media::public_asset,
         staff::list,
         staff::create,
         staff::disable
@@ -35,6 +36,7 @@ use crate::{auth, catalog, error, health, media, staff};
         auth::StaffProfile,
         catalog::Variant,
         catalog::Product,
+        catalog::ProductMedia,
         catalog::CreateProductRequest,
         catalog::CreateVariantRequest,
         catalog::ChangeProductStatusRequest,
@@ -52,7 +54,8 @@ use crate::{auth, catalog, error, health, media, staff};
         (name = "staff", description = "Owner-authorized staff management"),
         (name = "admin catalog", description = "Capability-protected catalog management"),
         (name = "catalog", description = "Public published product catalog")
-        ,(name = "admin media", description = "Capability-protected direct media uploads")
+        ,(name = "admin media", description = "Capability-protected direct media uploads"),
+        (name = "media", description = "Stable published product media")
     )
 )]
 struct ApiDoc;
