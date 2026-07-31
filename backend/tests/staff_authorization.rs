@@ -186,7 +186,76 @@ async fn staff_authorization_and_audit_lifecycle() {
     assert_eq!(product_body["status"], "draft");
     assert_eq!(product_body["variants"][0]["price_minor"], 4200);
     assert_eq!(product_body["variants"][0]["currency"], "EUR");
+    assert_eq!(product_body["variants"][0]["available_quantity"], 0);
+    assert_eq!(product_body["variants"][0]["low_stock"], true);
     assert_eq!(product_body["categories"], json!([]));
+    let variant_id = product_body["variants"][0]["id"]
+        .as_str()
+        .expect("variant should contain an ID");
+
+    let forbidden_adjustment = request(
+        &router,
+        "POST",
+        &format!("/api/admin/inventory/{variant_id}/adjust"),
+        Some(&limited_cookie),
+        Some(json!({ "quantity_delta": 8, "reason": "Initial stock" })),
+    )
+    .await;
+    assert_eq!(forbidden_adjustment.status(), StatusCode::FORBIDDEN);
+
+    let adjusted = request(
+        &router,
+        "POST",
+        &format!("/api/admin/inventory/{variant_id}/adjust"),
+        Some(&owner_cookie),
+        Some(json!({
+            "quantity_delta": 8,
+            "reason": "Initial studio stock",
+            "low_stock_threshold": 5
+        })),
+    )
+    .await;
+    assert_eq!(adjusted.status(), StatusCode::OK);
+    let adjusted_body = response_json(adjusted).await;
+    assert_eq!(adjusted_body["available_quantity"], 8);
+    assert_eq!(adjusted_body["low_stock"], false);
+
+    let rejected_adjustment = request(
+        &router,
+        "POST",
+        &format!("/api/admin/inventory/{variant_id}/adjust"),
+        Some(&owner_cookie),
+        Some(json!({ "quantity_delta": -9, "reason": "Impossible removal" })),
+    )
+    .await;
+    assert_eq!(
+        rejected_adjustment.status(),
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+
+    let movements = request(
+        &router,
+        "GET",
+        &format!("/api/admin/inventory/{variant_id}/movements"),
+        Some(&owner_cookie),
+        None,
+    )
+    .await;
+    let movements_body = response_json(movements).await;
+    assert_eq!(movements_body[0]["quantity_delta"], 8);
+    assert_eq!(movements_body[0]["reason"], "Initial studio stock");
+    let movement_id = movements_body[0]["id"]
+        .as_str()
+        .expect("movement should contain an ID");
+    let mutation_attempt =
+        sqlx::query("UPDATE inventory_movements SET reason = 'Changed' WHERE id = $1")
+            .bind(movement_id)
+            .execute(&pool)
+            .await;
+    assert!(
+        mutation_attempt.is_err(),
+        "inventory history must be immutable"
+    );
 
     let category = request(
         &router,
@@ -281,6 +350,10 @@ async fn staff_authorization_and_audit_lifecycle() {
 
     let public_detail = request(&router, "GET", "/api/products/woven-planter", None, None).await;
     assert_eq!(public_detail.status(), StatusCode::OK);
+    assert_eq!(
+        response_json(public_detail).await["variants"][0]["available_quantity"],
+        8
+    );
 
     let archived = request(
         &router,
@@ -333,6 +406,21 @@ async fn staff_authorization_and_audit_lifecycle() {
     .await
     .expect("category audit record should be readable");
     assert_eq!(category_audit, "category.create");
+
+    let inventory_audit: (String, String, Option<String>) =
+        sqlx::query_as("SELECT action, entity_type, reason FROM audit_log WHERE entity_id = $1")
+            .bind(variant_id)
+            .fetch_one(&pool)
+            .await
+            .expect("inventory audit record should be readable");
+    assert_eq!(
+        inventory_audit,
+        (
+            "inventory.adjust".into(),
+            "inventory_item".into(),
+            Some("Initial studio stock".into())
+        )
+    );
 
     pool.close().await;
     sqlx::query(&format!(r#"DROP SCHEMA "{schema}" CASCADE"#))

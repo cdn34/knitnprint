@@ -223,6 +223,184 @@
         }
       }
     },
+    "/api/admin/inventory": {
+      "get": {
+        "tags": [
+          "inventory"
+        ],
+        "operationId": "list",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/InventoryRecord"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/inventory/{variant_id}/adjust": {
+      "post": {
+        "tags": [
+          "inventory"
+        ],
+        "operationId": "adjust",
+        "parameters": [
+          {
+            "name": "variant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdjustInventoryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InventoryRecord"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/inventory/{variant_id}/movements": {
+      "get": {
+        "tags": [
+          "inventory"
+        ],
+        "operationId": "movements",
+        "parameters": [
+          {
+            "name": "variant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/InventoryMovement"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/admin/media/uploads": {
       "post": {
         "tags": [
@@ -1244,6 +1422,29 @@
   },
   "components": {
     "schemas": {
+      "AdjustInventoryRequest": {
+        "type": "object",
+        "required": [
+          "quantity_delta",
+          "reason"
+        ],
+        "properties": {
+          "low_stock_threshold": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "quantity_delta": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      },
       "AssignCategoriesRequest": {
         "type": "object",
         "required": [
@@ -1504,6 +1705,104 @@
           }
         }
       },
+      "InventoryMovement": {
+        "type": "object",
+        "required": [
+          "id",
+          "variant_id",
+          "movement_type",
+          "quantity_delta",
+          "resulting_available_quantity",
+          "reason",
+          "created_at"
+        ],
+        "properties": {
+          "actor_display_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "movement_type": {
+            "type": "string"
+          },
+          "quantity_delta": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "resulting_available_quantity": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "variant_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "InventoryRecord": {
+        "type": "object",
+        "required": [
+          "variant_id",
+          "variant_title",
+          "sku",
+          "product_id",
+          "product_title",
+          "available_quantity",
+          "reserved_quantity",
+          "committed_quantity",
+          "low_stock_threshold",
+          "low_stock"
+        ],
+        "properties": {
+          "available_quantity": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "committed_quantity": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "low_stock": {
+            "type": "boolean"
+          },
+          "low_stock_threshold": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "product_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "product_title": {
+            "type": "string"
+          },
+          "reserved_quantity": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "sku": {
+            "type": "string"
+          },
+          "variant_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "variant_title": {
+            "type": "string"
+          }
+        }
+      },
       "LoginRequest": {
         "type": "object",
         "required": [
@@ -1710,15 +2009,24 @@
           "price_minor",
           "currency",
           "option_values",
-          "position"
+          "position",
+          "available_quantity",
+          "low_stock"
         ],
         "properties": {
+          "available_quantity": {
+            "type": "integer",
+            "format": "int64"
+          },
           "currency": {
             "type": "string"
           },
           "id": {
             "type": "string",
             "format": "uuid"
+          },
+          "low_stock": {
+            "type": "boolean"
           },
           "option_values": {},
           "position": {
@@ -1767,6 +2075,10 @@
     {
       "name": "media",
       "description": "Stable published product media"
+    },
+    {
+      "name": "inventory",
+      "description": "Variant availability and immutable stock movements"
     }
   ]
 }

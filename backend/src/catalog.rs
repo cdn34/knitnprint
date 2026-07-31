@@ -30,6 +30,8 @@ pub struct Variant {
     pub currency: String,
     pub option_values: Value,
     pub position: i32,
+    pub available_quantity: i64,
+    pub low_stock: bool,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -774,10 +776,20 @@ async fn product_response(pool: &PgPool, row: ProductRow) -> Response {
 async fn hydrate_product(pool: &PgPool, row: ProductRow) -> Result<Product, sqlx::Error> {
     let variants = sqlx::query_as::<_, Variant>(
         r#"
-        SELECT id, title, sku, price_minor, currency::text AS currency, option_values, position
-        FROM product_variants
-        WHERE product_id = $1
-        ORDER BY position, id
+        SELECT
+            variant.id,
+            variant.title,
+            variant.sku,
+            variant.price_minor,
+            variant.currency::text AS currency,
+            variant.option_values,
+            variant.position,
+            inventory.available_quantity,
+            inventory.available_quantity <= inventory.low_stock_threshold AS low_stock
+        FROM product_variants variant
+        JOIN inventory_items inventory ON inventory.variant_id = variant.id
+        WHERE variant.product_id = $1
+        ORDER BY variant.position, variant.id
         "#,
     )
     .bind(row.id)

@@ -3,6 +3,7 @@ pub mod catalog;
 pub mod config;
 pub mod error;
 pub mod health;
+pub mod inventory;
 pub mod media;
 pub mod openapi;
 pub mod staff;
@@ -58,6 +59,15 @@ pub fn app(state: AppState) -> Router {
         .route(
             "/api/admin/categories",
             get(catalog::category_list).post(catalog::category_create),
+        )
+        .route("/api/admin/inventory", get(inventory::list))
+        .route(
+            "/api/admin/inventory/{variant_id}/movements",
+            get(inventory::movements),
+        )
+        .route(
+            "/api/admin/inventory/{variant_id}/adjust",
+            axum::routing::post(inventory::adjust),
         )
         .route(
             "/api/admin/media/uploads",
