@@ -192,12 +192,18 @@ The catalog foundation is implemented:
 - variant-specific immutable media URLs used by each admin/storefront context;
 - real MinIO verification of generated objects, dimensions, byte sizes, and
   WebP delivery headers.
+- concurrency-safe abandoned-upload claiming with `FOR UPDATE SKIP LOCKED`;
+- idempotent removal of quarantine originals and partially generated variants;
+- database deletion only after successful storage cleanup, with failed work
+  retained for retry;
+- immutable `media.abandoned_cleanup` system audit entries and configurable
+  1–168 hour retention;
+- live PostgreSQL/MinIO verification that stale records and objects are removed.
 
 Continue Phase 2 with:
 
-1. abandoned quarantine upload cleanup;
-2. richer variant and category editing;
-3. category-driven storefront collection navigation.
+1. richer variant and category editing;
+2. category-driven storefront collection navigation.
 
 ## Environment notes
 

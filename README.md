@@ -74,6 +74,19 @@ The command removes expired sessions, revoked sessions older than seven days,
 and stale login-attempt records. Set `SESSION_RETENTION_DAYS` to a value from 1
 to 365 to change the revoked-session retention period.
 
+Clean abandoned product-image uploads from PostgreSQL and MinIO on the same
+daily schedule:
+
+```bash
+DATABASE_URL=postgres://knitprint:knitprint@localhost:5432/knitprint \
+npm run admin:cleanup-media
+```
+
+Pending uploads older than 24 hours are removed by default. Set
+`MEDIA_PENDING_MAX_HOURS` from 1 to 168 to adjust that window. Cleanup claims
+at most 100 records per run with row locking, removes storage objects first,
+and retains an immutable system audit entry.
+
 ## API contract
 
 The Rust routes and response types are the source of truth for OpenAPI. Regenerate
