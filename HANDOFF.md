@@ -206,10 +206,21 @@ The catalog foundation is implemented:
 - typed category and variant-management client methods and an admin editor that
   shows existing variants, creates categories, and assigns them to products;
 - PostgreSQL and Playwright lifecycle coverage for the richer product editor.
+- public discovery of categories that contain active products and server-side
+  product filtering by category slug;
+- generated client support for public categories and filtered product lists;
+- live category cards on the storefront home and server-rendered collection
+  pages with product grids, metadata, empty states, and responsive styling;
+- PostgreSQL and desktop/mobile Playwright coverage for collection discovery,
+  filtering, and navigation.
 
-Continue Phase 2 with:
+Phase 2 is complete.
 
-1. category-driven storefront collection navigation.
+Continue with Phase 3 inventory, starting with:
+
+1. inventory records linked to variants and immutable movement history;
+2. reason-required manual stock adjustments in the API and admin;
+3. availability and low-stock indicators for catalog consumers.
 
 ## Environment notes
 
