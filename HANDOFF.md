@@ -199,11 +199,17 @@ The catalog foundation is implemented:
 - immutable `media.abandoned_cleanup` system audit entries and configurable
   1–168 hour retention;
 - live PostgreSQL/MinIO verification that stale records and objects are removed.
+- capability-protected category creation, ordered category assignment, and
+  additional-variant creation for existing products;
+- transactional audit records for category creation, variant addition, and
+  category assignment;
+- typed category and variant-management client methods and an admin editor that
+  shows existing variants, creates categories, and assigns them to products;
+- PostgreSQL and Playwright lifecycle coverage for the richer product editor.
 
 Continue Phase 2 with:
 
-1. richer variant and category editing;
-2. category-driven storefront collection navigation.
+1. category-driven storefront collection navigation.
 
 ## Environment notes
 
