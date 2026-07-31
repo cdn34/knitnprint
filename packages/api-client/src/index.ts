@@ -1,7 +1,10 @@
 export type {
   ChangeProductStatusRequest,
+  AssignCategoriesRequest,
+  Category,
   CompleteUploadRequest,
   CreateProductRequest,
+  CreateCategoryRequest,
   CreateVariantRequest,
   CreateStaffRequest,
   DisableStaffRequest,
@@ -21,8 +24,12 @@ export type {
 
 import type {
   ChangeProductStatusRequest,
+  AssignCategoriesRequest,
+  Category,
   CompleteUploadRequest,
   CreateProductRequest,
+  CreateCategoryRequest,
+  CreateVariantRequest,
   CreateStaffRequest,
   DisableStaffRequest,
   ErrorBody,
@@ -127,6 +134,28 @@ export function createApiClient(options: ApiClientOptions = {}) {
       input: ChangeProductStatusRequest,
     ) =>
       send<Product>(`/api/admin/products/${productId}/status`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(input),
+      }),
+    listCategories: () => send<Array<Category>>('/api/admin/categories'),
+    createCategory: (input: CreateCategoryRequest) =>
+      send<Category>('/api/admin/categories', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(input),
+      }),
+    addProductVariant: (productId: string, input: CreateVariantRequest) =>
+      send<Product>(`/api/admin/products/${productId}/variants`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(input),
+      }),
+    assignProductCategories: (
+      productId: string,
+      input: AssignCategoriesRequest,
+    ) =>
+      send<Product>(`/api/admin/products/${productId}/categories`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(input),
