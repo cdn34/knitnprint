@@ -160,7 +160,8 @@ export function createApiClient(options: ApiClientOptions = {}) {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(input),
       }),
-    listProducts: (query: { q?: string } = {}) =>
+    listPublicCategories: () => send<Array<Category>>('/api/categories'),
+    listProducts: (query: { q?: string; category?: string } = {}) =>
       send<Array<Product>>(withQuery('/api/products', query)),
     product: (slug: string) =>
       send<Product>(`/api/products/${encodeURIComponent(slug)}`),
