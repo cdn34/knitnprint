@@ -1,6 +1,7 @@
 export type {
   ChangeProductStatusRequest,
   AssignCategoriesRequest,
+  AdjustInventoryRequest,
   Category,
   CompleteUploadRequest,
   CreateProductRequest,
@@ -13,6 +14,8 @@ export type {
   Health,
   InitiateUploadRequest,
   InitiateUploadResponse,
+  InventoryMovement,
+  InventoryRecord,
   LoginRequest,
   MediaRecord,
   Product,
@@ -25,6 +28,7 @@ export type {
 import type {
   ChangeProductStatusRequest,
   AssignCategoriesRequest,
+  AdjustInventoryRequest,
   Category,
   CompleteUploadRequest,
   CreateProductRequest,
@@ -36,6 +40,8 @@ import type {
   Health,
   InitiateUploadRequest,
   InitiateUploadResponse,
+  InventoryMovement,
+  InventoryRecord,
   LoginRequest,
   MediaRecord,
   Product,
@@ -156,6 +162,17 @@ export function createApiClient(options: ApiClientOptions = {}) {
       input: AssignCategoriesRequest,
     ) =>
       send<Product>(`/api/admin/products/${productId}/categories`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(input),
+      }),
+    listInventory: () => send<Array<InventoryRecord>>('/api/admin/inventory'),
+    inventoryMovements: (variantId: string) =>
+      send<Array<InventoryMovement>>(
+        `/api/admin/inventory/${variantId}/movements`,
+      ),
+    adjustInventory: (variantId: string, input: AdjustInventoryRequest) =>
+      send<InventoryRecord>(`/api/admin/inventory/${variantId}/adjust`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(input),
