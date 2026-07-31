@@ -43,6 +43,7 @@ async fn staff_authorization_and_audit_lifecycle() {
     insert_staff(&pool, "limited@test.invalid", "staff", &["catalog.read"]).await;
     let router = app(AppState {
         database: Some(pool.clone()),
+        media_storage: None,
         secure_cookies: false,
     });
 

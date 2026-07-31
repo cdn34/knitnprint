@@ -3,6 +3,7 @@ pub mod catalog;
 pub mod config;
 pub mod error;
 pub mod health;
+pub mod media;
 pub mod openapi;
 pub mod staff;
 
@@ -21,6 +22,7 @@ use tower_http::{
 #[derive(Clone, Default)]
 pub struct AppState {
     pub database: Option<PgPool>,
+    pub media_storage: Option<media::MediaStorage>,
     pub secure_cookies: bool,
 }
 
@@ -44,6 +46,14 @@ pub fn app(state: AppState) -> Router {
         .route(
             "/api/admin/products/{product_id}/status",
             axum::routing::post(catalog::change_status),
+        )
+        .route(
+            "/api/admin/media/uploads",
+            axum::routing::post(media::initiate),
+        )
+        .route(
+            "/api/admin/media/uploads/{media_id}/complete",
+            axum::routing::post(media::complete),
         )
         .route("/api/admin/staff", get(staff::list).post(staff::create))
         .route(

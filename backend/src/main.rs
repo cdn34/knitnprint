@@ -17,6 +17,13 @@ async fn main() {
         std::process::exit(2);
     });
     let database = connect_database(config.database_url.as_deref()).await;
+    let media_storage =
+        knitprint_api::media::MediaStorage::from_env(config.environment == Environment::Production)
+            .await
+            .unwrap_or_else(|error| {
+                eprintln!("invalid media storage configuration: {error}");
+                std::process::exit(2);
+            });
 
     if config.environment == Environment::Production && database.is_none() {
         eprintln!("database connection is required in production");
@@ -33,6 +40,7 @@ async fn main() {
         listener,
         app(AppState {
             database,
+            media_storage,
             secure_cookies: config.environment == Environment::Production,
         }),
     )

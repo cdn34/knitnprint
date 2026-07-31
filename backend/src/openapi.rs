@@ -1,6 +1,6 @@
 use utoipa::{OpenApi, openapi::OpenApi as OpenApiDocument};
 
-use crate::{auth, catalog, error, health, staff};
+use crate::{auth, catalog, error, health, media, staff};
 
 #[derive(OpenApi)]
 #[openapi(
@@ -21,6 +21,8 @@ use crate::{auth, catalog, error, health, staff};
         catalog::change_status,
         catalog::public_list,
         catalog::public_detail,
+        media::initiate,
+        media::complete,
         staff::list,
         staff::create,
         staff::disable
@@ -36,6 +38,10 @@ use crate::{auth, catalog, error, health, staff};
         catalog::CreateProductRequest,
         catalog::CreateVariantRequest,
         catalog::ChangeProductStatusRequest,
+        media::InitiateUploadRequest,
+        media::InitiateUploadResponse,
+        media::CompleteUploadRequest,
+        media::MediaRecord,
         staff::StaffRecord,
         staff::CreateStaffRequest,
         staff::DisableStaffRequest
@@ -46,6 +52,7 @@ use crate::{auth, catalog, error, health, staff};
         (name = "staff", description = "Owner-authorized staff management"),
         (name = "admin catalog", description = "Capability-protected catalog management"),
         (name = "catalog", description = "Public published product catalog")
+        ,(name = "admin media", description = "Capability-protected direct media uploads")
     )
 )]
 struct ApiDoc;

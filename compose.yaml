@@ -21,13 +21,29 @@ services:
     environment:
       MINIO_ROOT_USER: knitprint
       MINIO_ROOT_PASSWORD: knitprint-local
+      MINIO_API_CORS_ALLOW_ORIGIN: http://127.0.0.1:3001,http://localhost:3001
     ports:
       - "9100:9000"
       - "9101:9001"
     volumes:
       - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  minio-init:
+    image: minio/minio:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >
+        mc alias set local http://minio:9000 knitprint knitprint-local &&
+        mc mb --ignore-existing local/knitprint-media
 
 volumes:
   postgres_data:
   minio_data:
-
