@@ -186,6 +186,60 @@ async fn staff_authorization_and_audit_lifecycle() {
     assert_eq!(product_body["status"], "draft");
     assert_eq!(product_body["variants"][0]["price_minor"], 4200);
     assert_eq!(product_body["variants"][0]["currency"], "EUR");
+    assert_eq!(product_body["categories"], json!([]));
+
+    let category = request(
+        &router,
+        "POST",
+        "/api/admin/categories",
+        Some(&owner_cookie),
+        Some(json!({
+            "name": "Homewares",
+            "slug": "homewares",
+            "description": "Textile objects for the home."
+        })),
+    )
+    .await;
+    assert_eq!(category.status(), StatusCode::CREATED);
+    let category_body = response_json(category).await;
+    let category_id = category_body["id"]
+        .as_str()
+        .expect("category should contain an ID");
+
+    let added_variant = request(
+        &router,
+        "POST",
+        &format!("/api/admin/products/{product_id}/variants"),
+        Some(&owner_cookie),
+        Some(json!({
+            "title": "Plum",
+            "sku": "PLANTER-002",
+            "price_minor": 4600,
+            "currency": "EUR",
+            "option_values": { "colour": "Plum" }
+        })),
+    )
+    .await;
+    assert_eq!(added_variant.status(), StatusCode::CREATED);
+    assert_eq!(
+        response_json(added_variant).await["variants"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+
+    let assigned = request(
+        &router,
+        "POST",
+        &format!("/api/admin/products/{product_id}/categories"),
+        Some(&owner_cookie),
+        Some(json!({ "category_ids": [category_id] })),
+    )
+    .await;
+    assert_eq!(assigned.status(), StatusCode::OK);
+    let assigned_body = response_json(assigned).await;
+    assert_eq!(assigned_body["categories"][0]["slug"], "homewares");
 
     let drafts_are_private = request(&router, "GET", "/api/products", None, None).await;
     assert_eq!(response_json(drafts_are_private).await, json!([]));
@@ -235,6 +289,8 @@ async fn staff_authorization_and_audit_lifecycle() {
         catalog_audit,
         vec![
             ("product.create".into(), owner_id, None),
+            ("product.variant_add".into(), owner_id, None),
+            ("product.categories_assign".into(), owner_id, None),
             (
                 "product.status_change".into(),
                 owner_id,
@@ -247,6 +303,15 @@ async fn staff_authorization_and_audit_lifecycle() {
             ),
         ]
     );
+
+    let category_audit: String = sqlx::query_scalar(
+        "SELECT action FROM audit_log WHERE entity_id = $1 AND entity_type = 'category'",
+    )
+    .bind(category_id)
+    .fetch_one(&pool)
+    .await
+    .expect("category audit record should be readable");
+    assert_eq!(category_audit, "category.create");
 
     pool.close().await;
     sqlx::query(&format!(r#"DROP SCHEMA "{schema}" CASCADE"#))

@@ -42,6 +42,15 @@ pub struct Product {
     pub search_keywords: String,
     pub variants: Vec<Variant>,
     pub media: Vec<ProductMedia>,
+    pub categories: Vec<Category>,
+}
+
+#[derive(Clone, Serialize, ToSchema, FromRow)]
+pub struct Category {
+    pub id: Uuid,
+    pub name: String,
+    pub slug: String,
+    pub description: String,
 }
 
 #[derive(Serialize, ToSchema, FromRow)]
@@ -89,6 +98,19 @@ pub struct CreateVariantRequest {
 #[derive(Deserialize, ToSchema)]
 pub struct ChangeProductStatusRequest {
     pub status: String,
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct CreateCategoryRequest {
+    pub name: String,
+    pub slug: String,
+    #[serde(default)]
+    pub description: String,
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct AssignCategoriesRequest {
+    pub category_ids: Vec<Uuid>,
 }
 
 #[derive(Deserialize, IntoParams)]
@@ -317,6 +339,269 @@ pub async fn change_status(
 
 #[utoipa::path(
     get,
+    path = "/api/admin/categories",
+    tag = "admin catalog",
+    responses((status = 200, body = [Category]), (status = 401, body = ErrorBody), (status = 403, body = ErrorBody))
+)]
+pub async fn category_list(State(state): State<AppState>, actor: AuthenticatedStaff) -> Response {
+    if let Err(response) = require_capability(&actor, CATALOG_READ) {
+        return response.into_response();
+    }
+    let Some(pool) = state.database else {
+        return unavailable();
+    };
+    match sqlx::query_as::<_, Category>(
+        "SELECT id, name, slug, description FROM categories ORDER BY name, id",
+    )
+    .fetch_all(&pool)
+    .await
+    {
+        Ok(categories) => Json(categories).into_response(),
+        Err(_) => unavailable(),
+    }
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/admin/categories",
+    tag = "admin catalog",
+    request_body = CreateCategoryRequest,
+    responses((status = 201, body = Category), (status = 401, body = ErrorBody), (status = 403, body = ErrorBody), (status = 409, body = ErrorBody), (status = 422, body = ErrorBody))
+)]
+pub async fn category_create(
+    State(state): State<AppState>,
+    actor: AuthenticatedStaff,
+    Json(input): Json<CreateCategoryRequest>,
+) -> Response {
+    if let Err(response) = require_capability(&actor, CATALOG_WRITE) {
+        return response.into_response();
+    }
+    if input.name.trim().is_empty()
+        || input.name.trim().len() > 120
+        || !valid_slug(input.slug.trim())
+        || input.description.len() > 2_000
+    {
+        return invalid_input();
+    }
+    let Some(pool) = state.database else {
+        return unavailable();
+    };
+    let category = Category {
+        id: Uuid::now_v7(),
+        name: input.name.trim().into(),
+        slug: input.slug.trim().into(),
+        description: input.description.trim().into(),
+    };
+    let mut transaction = match pool.begin().await {
+        Ok(transaction) => transaction,
+        Err(_) => return unavailable(),
+    };
+    let inserted =
+        sqlx::query("INSERT INTO categories (id, name, slug, description) VALUES ($1, $2, $3, $4)")
+            .bind(category.id)
+            .bind(&category.name)
+            .bind(&category.slug)
+            .bind(&category.description)
+            .execute(&mut *transaction)
+            .await;
+    match inserted {
+        Ok(_) => {}
+        Err(error) => return database_write_error(error),
+    }
+    if audit_entity(
+        &mut transaction,
+        actor.id,
+        "category.create",
+        "category",
+        category.id,
+        None,
+    )
+    .await
+    .is_err()
+        || transaction.commit().await.is_err()
+    {
+        return unavailable();
+    }
+    (StatusCode::CREATED, Json(category)).into_response()
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/admin/products/{product_id}/variants",
+    params(("product_id" = Uuid, Path)),
+    tag = "admin catalog",
+    request_body = CreateVariantRequest,
+    responses((status = 201, body = Product), (status = 401, body = ErrorBody), (status = 403, body = ErrorBody), (status = 404, body = ErrorBody), (status = 409, body = ErrorBody), (status = 422, body = ErrorBody))
+)]
+pub async fn add_variant(
+    State(state): State<AppState>,
+    actor: AuthenticatedStaff,
+    Path(product_id): Path<Uuid>,
+    Json(input): Json<CreateVariantRequest>,
+) -> Response {
+    if let Err(response) = require_capability(&actor, CATALOG_WRITE) {
+        return response.into_response();
+    }
+    if !valid_variant(&input) {
+        return invalid_input();
+    }
+    let Some(pool) = state.database else {
+        return unavailable();
+    };
+    let mut transaction = match pool.begin().await {
+        Ok(transaction) => transaction,
+        Err(_) => return unavailable(),
+    };
+    let position: Option<i32> = match sqlx::query_scalar(
+        r#"
+        SELECT COALESCE(max(variant.position) + 1, 0)
+        FROM products product
+        LEFT JOIN product_variants variant ON variant.product_id = product.id
+        WHERE product.id = $1
+        GROUP BY product.id
+        "#,
+    )
+    .bind(product_id)
+    .fetch_optional(&mut *transaction)
+    .await
+    {
+        Ok(position) => position,
+        Err(_) => return unavailable(),
+    };
+    let Some(position) = position else {
+        return not_found();
+    };
+    let inserted = sqlx::query(
+        r#"
+        INSERT INTO product_variants (id, product_id, title, sku, price_minor, currency, option_values, position)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        "#,
+    )
+    .bind(Uuid::now_v7())
+    .bind(product_id)
+    .bind(input.title.trim())
+    .bind(input.sku.trim())
+    .bind(input.price_minor)
+    .bind(input.currency.trim())
+    .bind(input.option_values)
+    .bind(position)
+    .execute(&mut *transaction)
+    .await;
+    if let Err(error) = inserted {
+        return database_write_error(error);
+    }
+    if audit(
+        &mut transaction,
+        actor.id,
+        "product.variant_add",
+        product_id,
+        None,
+    )
+    .await
+    .is_err()
+        || transaction.commit().await.is_err()
+    {
+        return unavailable();
+    }
+    let mut response = product_by_id(&pool, product_id).await;
+    *response.status_mut() = StatusCode::CREATED;
+    response
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/admin/products/{product_id}/categories",
+    params(("product_id" = Uuid, Path)),
+    tag = "admin catalog",
+    request_body = AssignCategoriesRequest,
+    responses((status = 200, body = Product), (status = 401, body = ErrorBody), (status = 403, body = ErrorBody), (status = 404, body = ErrorBody), (status = 422, body = ErrorBody))
+)]
+pub async fn assign_categories(
+    State(state): State<AppState>,
+    actor: AuthenticatedStaff,
+    Path(product_id): Path<Uuid>,
+    Json(input): Json<AssignCategoriesRequest>,
+) -> Response {
+    if let Err(response) = require_capability(&actor, CATALOG_WRITE) {
+        return response.into_response();
+    }
+    let category_ids: Vec<Uuid> = input
+        .category_ids
+        .into_iter()
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    if category_ids.len() > 50 {
+        return invalid_input();
+    }
+    let Some(pool) = state.database else {
+        return unavailable();
+    };
+    let product_exists: bool =
+        match sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM products WHERE id = $1)")
+            .bind(product_id)
+            .fetch_one(&pool)
+            .await
+        {
+            Ok(exists) => exists,
+            Err(_) => return unavailable(),
+        };
+    if !product_exists {
+        return not_found();
+    }
+    let known: i64 = match sqlx::query_scalar("SELECT count(*) FROM categories WHERE id = ANY($1)")
+        .bind(&category_ids)
+        .fetch_one(&pool)
+        .await
+    {
+        Ok(count) => count,
+        Err(_) => return unavailable(),
+    };
+    if known != category_ids.len() as i64 {
+        return invalid_input();
+    }
+    let mut transaction = match pool.begin().await {
+        Ok(transaction) => transaction,
+        Err(_) => return unavailable(),
+    };
+    if sqlx::query("DELETE FROM product_categories WHERE product_id = $1")
+        .bind(product_id)
+        .execute(&mut *transaction)
+        .await
+        .is_err()
+    {
+        return unavailable();
+    }
+    for (position, category_id) in category_ids.iter().enumerate() {
+        if sqlx::query("INSERT INTO product_categories (product_id, category_id, position) VALUES ($1, $2, $3)")
+            .bind(product_id)
+            .bind(category_id)
+            .bind(position as i32)
+            .execute(&mut *transaction)
+            .await
+            .is_err()
+        {
+            return unavailable();
+        }
+    }
+    if audit(
+        &mut transaction,
+        actor.id,
+        "product.categories_assign",
+        product_id,
+        None,
+    )
+    .await
+    .is_err()
+        || transaction.commit().await.is_err()
+    {
+        return unavailable();
+    }
+    product_by_id(&pool, product_id).await
+}
+
+#[utoipa::path(
+    get,
     path = "/api/products",
     params(PublicProductQuery),
     tag = "catalog",
@@ -460,6 +745,18 @@ async fn hydrate_product(pool: &PgPool, row: ProductRow) -> Result<Product, sqlx
     .bind(row.id)
     .fetch_all(pool)
     .await?;
+    let categories = sqlx::query_as::<_, Category>(
+        r#"
+        SELECT category.id, category.name, category.slug, category.description
+        FROM product_categories assignment
+        JOIN categories category ON category.id = assignment.category_id
+        WHERE assignment.product_id = $1
+        ORDER BY assignment.position, category.id
+        "#,
+    )
+    .bind(row.id)
+    .fetch_all(pool)
+    .await?;
     Ok(Product {
         id: row.id,
         title: row.title,
@@ -469,6 +766,7 @@ async fn hydrate_product(pool: &PgPool, row: ProductRow) -> Result<Product, sqlx
         search_keywords: row.search_keywords,
         variants,
         media,
+        categories,
     })
 }
 
@@ -476,18 +774,7 @@ fn valid_product(input: &CreateProductRequest) -> bool {
     let slug = input.slug.trim();
     let currency_and_variants_valid = !input.variants.is_empty()
         && input.variants.len() <= 100
-        && input.variants.iter().all(|variant| {
-            !variant.title.trim().is_empty()
-                && !variant.sku.trim().is_empty()
-                && variant.price_minor >= 0
-                && variant.currency.trim().len() == 3
-                && variant
-                    .currency
-                    .trim()
-                    .chars()
-                    .all(|character| character.is_ascii_uppercase())
-                && variant.option_values.is_object()
-        });
+        && input.variants.iter().all(valid_variant);
     let unique_skus = input
         .variants
         .iter()
@@ -502,6 +789,21 @@ fn valid_product(input: &CreateProductRequest) -> bool {
         && input.search_keywords.len() <= 2_000
         && currency_and_variants_valid
         && unique_skus
+}
+
+fn valid_variant(variant: &CreateVariantRequest) -> bool {
+    !variant.title.trim().is_empty()
+        && variant.title.trim().len() <= 200
+        && !variant.sku.trim().is_empty()
+        && variant.sku.trim().len() <= 120
+        && variant.price_minor >= 0
+        && variant.currency.trim().len() == 3
+        && variant
+            .currency
+            .trim()
+            .chars()
+            .all(|character| character.is_ascii_uppercase())
+        && variant.option_values.is_object()
 }
 
 fn valid_slug(slug: &str) -> bool {
@@ -522,14 +824,26 @@ async fn audit(
     entity_id: Uuid,
     reason: Option<&str>,
 ) -> Result<(), sqlx::Error> {
+    audit_entity(transaction, actor, action, "product", entity_id, reason).await
+}
+
+async fn audit_entity(
+    transaction: &mut Transaction<'_, Postgres>,
+    actor: Uuid,
+    action: &str,
+    entity_type: &str,
+    entity_id: Uuid,
+    reason: Option<&str>,
+) -> Result<(), sqlx::Error> {
     sqlx::query(
         r#"
         INSERT INTO audit_log (actor_staff_user_id, action, entity_type, entity_id, reason)
-        VALUES ($1, $2, 'product', $3, $4)
+        VALUES ($1, $2, $3, $4, $5)
         "#,
     )
     .bind(actor)
     .bind(action)
+    .bind(entity_type)
     .bind(entity_id.to_string())
     .bind(reason)
     .execute(&mut **transaction)

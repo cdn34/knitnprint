@@ -48,6 +48,18 @@ pub fn app(state: AppState) -> Router {
             axum::routing::post(catalog::change_status),
         )
         .route(
+            "/api/admin/products/{product_id}/variants",
+            axum::routing::post(catalog::add_variant),
+        )
+        .route(
+            "/api/admin/products/{product_id}/categories",
+            axum::routing::post(catalog::assign_categories),
+        )
+        .route(
+            "/api/admin/categories",
+            get(catalog::category_list).post(catalog::category_create),
+        )
+        .route(
             "/api/admin/media/uploads",
             axum::routing::post(media::initiate),
         )
