@@ -68,12 +68,15 @@ test('lets an owner create, preview, search, and publish a product', async ({
       {
         alt_text: `${title} in a soft neutral finish`,
         position: 0,
+        thumbnail_url: expect.stringContaining('/thumbnail'),
+        card_url: expect.stringContaining('/card'),
+        detail_url: expect.stringContaining('/detail'),
       },
     ],
   })
   const mediaResponse = await page.request.get(publicProduct.media[0].url)
   expect(mediaResponse.ok()).toBeTruthy()
-  expect(mediaResponse.headers()['content-type']).toBe('image/png')
+  expect(mediaResponse.headers()['content-type']).toBe('image/webp')
   expect(mediaResponse.headers()['cache-control']).toContain('immutable')
 
   await page.reload()

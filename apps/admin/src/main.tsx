@@ -452,9 +452,12 @@ function CatalogManagement({
           {products.data?.map((product) => (
             <article className="product-row" key={product.id}>
               <div className="product-thumbnail" aria-hidden="true">
-                {imagePreviews[product.id] ?? product.media[0]?.url ? (
+                {imagePreviews[product.id] ?? product.media[0]?.thumbnail_url ? (
                   <img
-                    src={imagePreviews[product.id] ?? product.media[0]?.url}
+                    src={
+                      imagePreviews[product.id] ??
+                      product.media[0]?.thumbnail_url
+                    }
                     alt=""
                   />
                 ) : (
@@ -615,10 +618,10 @@ function CatalogManagement({
           >
             ×
           </button>
-          {imagePreviews[preview.id] ?? preview.media[0]?.url ? (
+          {imagePreviews[preview.id] ?? preview.media[0]?.detail_url ? (
             <img
               className="preview-art preview-image"
-              src={imagePreviews[preview.id] ?? preview.media[0]?.url}
+              src={imagePreviews[preview.id] ?? preview.media[0]?.detail_url}
               alt={preview.media[0]?.alt_text ?? ''}
             />
           ) : (
