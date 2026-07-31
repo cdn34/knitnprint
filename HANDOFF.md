@@ -168,11 +168,19 @@ The catalog foundation is implemented:
   inline preview, publishing, and archival controls;
 - Playwright coverage proving draft creation, preview, search, publication, and
   public API visibility.
+- private MinIO bucket bootstrap with local admin-origin CORS;
+- five-minute presigned JPEG, PNG, and WebP uploads limited to 10 MB;
+- server-generated quarantine object keys with no storage credentials exposed
+  to the browser;
+- completion verification against S3 object size and declared media type;
+- transactional product attachment, ordering, alt text, and media audit record;
+- admin image selection and immediate product/preview rendering;
+- Playwright coverage performing a real browser-to-MinIO upload and completion.
 
 Continue Phase 2 with:
 
-1. presigned MinIO media upload and completion verification;
-2. product image assignment, ordering, and alt text;
+1. processed image variants and stable public media delivery;
+2. abandoned quarantine upload cleanup;
 3. richer variant and category editing;
 4. storefront product listing, detail, and search UI.
 
