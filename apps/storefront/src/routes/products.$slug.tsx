@@ -38,7 +38,7 @@ function ProductPage() {
           {product.media[0] ? (
             <img
               className="product-detail-photo"
-              src={mediaUrl(product.media[0].url)}
+              src={mediaUrl(product.media[0].detail_url)}
               alt={product.media[0].alt_text}
             />
           ) : (

@@ -152,7 +152,7 @@ function HomePage() {
                     {product.media[0] ? (
                       <img
                         className="catalog-product-photo"
-                        src={mediaUrl(product.media[0].url)}
+                        src={mediaUrl(product.media[0].card_url)}
                         alt={product.media[0].alt_text}
                       />
                     ) : (
