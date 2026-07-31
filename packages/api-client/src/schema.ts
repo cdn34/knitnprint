@@ -78,11 +78,19 @@ export interface MediaRecord {
 export interface Product {
   "description": string
   "id": string
+  "media": Array<ProductMedia>
   "search_keywords": string
   "slug": string
   "status": string
   "title": string
   "variants": Array<Variant>
+}
+
+export interface ProductMedia {
+  "alt_text": string
+  "id": string
+  "position": number
+  "url": string
 }
 
 export interface StaffProfile {

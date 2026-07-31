@@ -13,6 +13,7 @@ export type {
   LoginRequest,
   MediaRecord,
   Product,
+  ProductMedia,
   StaffProfile,
   StaffRecord,
   Variant,
