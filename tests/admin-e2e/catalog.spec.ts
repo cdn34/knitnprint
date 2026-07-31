@@ -58,10 +58,25 @@ test('lets an owner create, preview, search, and publish a product', async ({
 
   const publicResponse = await page.request.get(`/api/products/${slug}`)
   expect(publicResponse.ok()).toBeTruthy()
-  await expect(publicResponse.json()).resolves.toMatchObject({
+  const publicProduct = await publicResponse.json()
+  expect(publicProduct).toMatchObject({
     title,
     slug,
     status: 'active',
     variants: [{ sku, price_minor: 4200, currency: 'EUR' }],
+    media: [
+      {
+        alt_text: `${title} in a soft neutral finish`,
+        position: 0,
+      },
+    ],
   })
+  const mediaResponse = await page.request.get(publicProduct.media[0].url)
+  expect(mediaResponse.ok()).toBeTruthy()
+  expect(mediaResponse.headers()['content-type']).toBe('image/png')
+  expect(mediaResponse.headers()['cache-control']).toContain('immutable')
+
+  await page.reload()
+  const persistedProduct = catalog.getByRole('article').filter({ hasText: slug })
+  await expect(persistedProduct.locator('.product-thumbnail img')).toBeVisible()
 })
