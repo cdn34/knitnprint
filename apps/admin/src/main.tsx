@@ -33,6 +33,7 @@ import './styles.css'
 
 const api = createApiClient()
 const profileKey = ['staff-profile'] as const
+const categoriesKey = ['categories'] as const
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -321,6 +322,10 @@ function CatalogManagement({
     queryKey: [...productsKey, search],
     queryFn: () => api.listAdminProducts({ q: search }),
   })
+  const categories = useQuery({
+    queryKey: categoriesKey,
+    queryFn: api.listCategories,
+  })
   const createProduct = useMutation({
     mutationFn: api.createProduct,
     onSuccess: (product) => {
@@ -336,6 +341,44 @@ function CatalogManagement({
       id: string
       status: 'active' | 'archived'
     }) => api.changeProductStatus(id, { status }),
+    onSuccess: (product) => {
+      client.invalidateQueries({ queryKey: productsKey })
+      setPreview(product)
+    },
+  })
+  const addVariant = useMutation({
+    mutationFn: ({
+      productId,
+      price,
+      sku,
+      title,
+      currency,
+    }: {
+      productId: string
+      price: number
+      sku: string
+      title: string
+      currency: string
+    }) =>
+      api.addProductVariant(productId, {
+        title,
+        sku,
+        price_minor: Math.round(price * 100),
+        currency,
+        option_values: {},
+      }),
+    onSuccess: (product) => {
+      client.invalidateQueries({ queryKey: productsKey })
+      setPreview(product)
+    },
+  })
+  const createCategory = useMutation({
+    mutationFn: api.createCategory,
+    onSuccess: () => client.invalidateQueries({ queryKey: categoriesKey }),
+  })
+  const assignCategories = useMutation({
+    mutationFn: ({ productId, categoryIds }: { productId: string; categoryIds: string[] }) =>
+      api.assignProductCategories(productId, { category_ids: categoryIds }),
     onSuccess: (product) => {
       client.invalidateQueries({ queryKey: productsKey })
       setPreview(product)
@@ -406,6 +449,47 @@ function CatalogManagement({
       },
       { onSuccess: () => formElement.reset() },
     )
+  }
+
+  function submitVariant(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!preview) return
+    const formElement = event.currentTarget
+    const form = new FormData(formElement)
+    addVariant.mutate(
+      {
+        productId: preview.id,
+        title: String(form.get('new-variant-title') ?? ''),
+        sku: String(form.get('new-variant-sku') ?? ''),
+        price: Number(form.get('new-variant-price')),
+        currency: String(form.get('new-variant-currency') ?? ''),
+      },
+      { onSuccess: () => formElement.reset() },
+    )
+  }
+
+  function submitCategory(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const formElement = event.currentTarget
+    const form = new FormData(formElement)
+    createCategory.mutate(
+      {
+        name: String(form.get('category-name') ?? ''),
+        slug: String(form.get('category-slug') ?? ''),
+        description: '',
+      },
+      { onSuccess: () => formElement.reset() },
+    )
+  }
+
+  function submitAssignments(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!preview) return
+    const form = new FormData(event.currentTarget)
+    assignCategories.mutate({
+      productId: preview.id,
+      categoryIds: form.getAll('product-category').map(String),
+    })
   }
 
   return (
@@ -641,6 +725,74 @@ function CatalogManagement({
             </strong>
           </div>
         </article>
+      )}
+      {preview && canWrite && (
+        <div className="catalog-editor" aria-label={`Edit ${preview.title}`}>
+          <section>
+            <div className="panel-title">
+              <Plus size={17} />
+              <div>
+                <strong>Variants</strong>
+                <span>{preview.variants.length} configured for this product.</span>
+              </div>
+            </div>
+            <ul className="variant-list">
+              {preview.variants.map((variant) => (
+                <li key={variant.id}>
+                  <span><strong>{variant.title}</strong><small>{variant.sku}</small></span>
+                  <b>{formatMoney(variant.price_minor, variant.currency)}</b>
+                </li>
+              ))}
+            </ul>
+            <form className="compact-form" onSubmit={submitVariant}>
+              <label htmlFor="new-variant-title">Variant title</label>
+              <input id="new-variant-title" name="new-variant-title" required />
+              <label htmlFor="new-variant-sku">SKU</label>
+              <input id="new-variant-sku" name="new-variant-sku" required />
+              <div className="price-fields">
+                <div>
+                  <label htmlFor="new-variant-price">Price</label>
+                  <input id="new-variant-price" name="new-variant-price" type="number" min="0" step="0.01" required />
+                </div>
+                <div>
+                  <label htmlFor="new-variant-currency">Currency</label>
+                  <select id="new-variant-currency" name="new-variant-currency" defaultValue="EUR">
+                    <option value="EUR">EUR</option><option value="GBP">GBP</option><option value="USD">USD</option>
+                  </select>
+                </div>
+              </div>
+              {addVariant.isError && <p className="panel-error" role="alert">{addVariant.error.message}</p>}
+              <button className="primary-button" disabled={addVariant.isPending}>Add variant</button>
+            </form>
+          </section>
+          <section>
+            <div className="panel-title">
+              <Package size={17} />
+              <div><strong>Categories</strong><span>Group products for future collections.</span></div>
+            </div>
+            <form className="category-assignments" key={`${preview.id}-${preview.categories.map(({ id }) => id).join('-')}`} onSubmit={submitAssignments}>
+              {categories.isPending && <p className="panel-message">Loading categories…</p>}
+              {categories.data?.length === 0 && <p className="panel-message">No categories yet.</p>}
+              {categories.data?.map((category) => (
+                <label key={category.id}>
+                  <input name="product-category" type="checkbox" value={category.id} defaultChecked={preview.categories.some(({ id }) => id === category.id)} />
+                  <span><strong>{category.name}</strong><small>/{category.slug}</small></span>
+                </label>
+              ))}
+              {assignCategories.isError && <p className="panel-error" role="alert">{assignCategories.error.message}</p>}
+              <button className="primary-button" disabled={assignCategories.isPending}>Save categories</button>
+            </form>
+            <form className="compact-form new-category-form" onSubmit={submitCategory}>
+              <div className="variant-heading">New category</div>
+              <label htmlFor="category-name">Name</label>
+              <input id="category-name" name="category-name" required />
+              <label htmlFor="category-slug">URL slug</label>
+              <input id="category-slug" name="category-slug" pattern="[a-z0-9]+(?:-[a-z0-9]+)*" required />
+              {createCategory.isError && <p className="panel-error" role="alert">{createCategory.error.message}</p>}
+              <button className="primary-button" disabled={createCategory.isPending}>Create category</button>
+            </form>
+          </section>
+        </div>
       )}
     </section>
   )

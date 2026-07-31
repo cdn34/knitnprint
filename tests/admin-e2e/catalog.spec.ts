@@ -37,6 +37,23 @@ test('lets an owner create, preview, search, and publish a product', async ({
     catalog.getByRole('article', { name: 'Product preview' }),
   ).toContainText(title)
 
+  const editor = catalog.getByLabel(`Edit ${title}`)
+  const categoryName = `Homewares ${unique}`
+  const categorySlug = `homewares-${unique}`
+  await editor.getByLabel('Name').fill(categoryName)
+  await editor.getByLabel('URL slug').fill(categorySlug)
+  await editor.getByRole('button', { name: 'Create category' }).click()
+  await expect(editor.getByLabel(categoryName)).toBeVisible()
+  await editor.getByLabel(categoryName).check()
+  await editor.getByRole('button', { name: 'Save categories' }).click()
+
+  await editor.getByLabel('Variant title').fill('Plum')
+  await editor.getByLabel('SKU').fill(`PLANTER-PLUM-${unique}`)
+  await editor.getByLabel('Price').fill('46.00')
+  await editor.getByRole('button', { name: 'Add variant' }).click()
+  await expect(editor).toContainText('2 configured for this product')
+  await expect(editor).toContainText(categoryName)
+
   page.once('dialog', async (dialog) => {
     expect(dialog.message()).toContain(title)
     await dialog.accept(`${title} in a soft neutral finish`)
@@ -63,7 +80,15 @@ test('lets an owner create, preview, search, and publish a product', async ({
     title,
     slug,
     status: 'active',
-    variants: [{ sku, price_minor: 4200, currency: 'EUR' }],
+    variants: [
+      { sku, price_minor: 4200, currency: 'EUR' },
+      {
+        sku: `PLANTER-PLUM-${unique}`,
+        price_minor: 4600,
+        currency: 'EUR',
+      },
+    ],
+    categories: [{ name: categoryName, slug: categorySlug }],
     media: [
       {
         alt_text: `${title} in a soft neutral finish`,
