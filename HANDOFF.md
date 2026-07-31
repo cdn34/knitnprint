@@ -216,11 +216,28 @@ The catalog foundation is implemented:
 
 Phase 2 is complete.
 
-Continue with Phase 3 inventory, starting with:
+The first Phase 3 inventory slice is implemented:
 
-1. inventory records linked to variants and immutable movement history;
-2. reason-required manual stock adjustments in the API and admin;
-3. availability and low-stock indicators for catalog consumers.
+- automatically provisioned per-variant inventory with available, reserved,
+  committed, and low-stock threshold quantities;
+- database constraints preventing negative quantities and triggers preventing
+  updates or deletion of immutable inventory movements;
+- row-locked, reason-required manual adjustment transactions with overflow and
+  negative-stock protection;
+- capability-protected inventory list, movement history, and adjustment APIs
+  with independent audit events;
+- available quantity and low-stock state in admin and public variant contracts;
+- a dedicated responsive Inventory page with low-stock indicators, adjustment
+  controls, and actor-attributed movement history;
+- PostgreSQL coverage for authorization, negative-stock rejection, movement
+  immutability, audit records, and public availability, plus a real Playwright
+  admin adjustment workflow.
+
+Continue Phase 3 with:
+
+1. transactional reserve, release, and commit operations with concurrency tests;
+2. storefront stock messaging and variant selection based on availability;
+3. dashboard low-stock metrics and operational filtering.
 
 ## Environment notes
 
