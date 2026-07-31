@@ -9,6 +9,7 @@ import {
 } from '@tanstack/react-query'
 import {
   Eye,
+  ImageUp,
   Archive,
   LayoutDashboard,
   LoaderCircle,
@@ -294,6 +295,7 @@ function AdminShell({ profile }: Readonly<{ profile: StaffProfile }>) {
         {page === 'products' &&
           profile.capabilities.includes('catalog.read') && (
           <CatalogManagement
+            canUpload={profile.capabilities.includes('media.upload')}
             canWrite={profile.capabilities.includes('catalog.write')}
           />
         )}
@@ -307,10 +309,14 @@ function AdminShell({ profile }: Readonly<{ profile: StaffProfile }>) {
 
 const productsKey = ['admin-products'] as const
 
-function CatalogManagement({ canWrite }: Readonly<{ canWrite: boolean }>) {
+function CatalogManagement({
+  canUpload,
+  canWrite,
+}: Readonly<{ canUpload: boolean; canWrite: boolean }>) {
   const client = useQueryClient()
   const [search, setSearch] = useState('')
   const [preview, setPreview] = useState<Product | null>(null)
+  const [imagePreviews, setImagePreviews] = useState<Record<string, string>>({})
   const products = useQuery({
     queryKey: [...productsKey, search],
     queryFn: () => api.listAdminProducts({ q: search }),
@@ -335,6 +341,47 @@ function CatalogManagement({ canWrite }: Readonly<{ canWrite: boolean }>) {
       setPreview(product)
     },
   })
+  const uploadImage = useMutation({
+    mutationFn: async ({
+      altText,
+      file,
+      product,
+    }: {
+      altText: string
+      file: File
+      product: Product
+    }) => {
+      const upload = await api.initiateMediaUpload({
+        filename: file.name,
+        content_type: file.type,
+        byte_size: file.size,
+      })
+      await api.uploadMediaObject(upload.upload_url, file, file.type)
+      await api.completeMediaUpload(upload.id, {
+        product_id: product.id,
+        alt_text: altText,
+      })
+      return { file, product }
+    },
+    onSuccess: ({ file, product }) => {
+      const previewUrl = URL.createObjectURL(file)
+      setImagePreviews((current) => ({
+        ...current,
+        [product.id]: previewUrl,
+      }))
+      setPreview(product)
+    },
+  })
+
+  function selectImage(product: Product, file?: File) {
+    if (!file) return
+    const altText = window.prompt(
+      `Describe the image of ${product.title} for customers using assistive technology.`,
+    )
+    if (altText?.trim()) {
+      uploadImage.mutate({ altText: altText.trim(), file, product })
+    }
+  }
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -405,7 +452,11 @@ function CatalogManagement({ canWrite }: Readonly<{ canWrite: boolean }>) {
           {products.data?.map((product) => (
             <article className="product-row" key={product.id}>
               <div className="product-thumbnail" aria-hidden="true">
-                KP
+                {imagePreviews[product.id] ? (
+                  <img src={imagePreviews[product.id]} alt="" />
+                ) : (
+                  'KP'
+                )}
               </div>
               <div className="product-identity">
                 <div>
@@ -429,6 +480,20 @@ function CatalogManagement({ canWrite }: Readonly<{ canWrite: boolean }>) {
                 <button type="button" onClick={() => setPreview(product)}>
                   <Eye size={15} /> Preview
                 </button>
+                {canUpload && (
+                  <label className="product-upload">
+                    <ImageUp size={15} /> Image
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      disabled={uploadImage.isPending}
+                      onChange={(event) => {
+                        selectImage(product, event.currentTarget.files?.[0])
+                        event.currentTarget.value = ''
+                      }}
+                    />
+                  </label>
+                )}
                 {canWrite && product.status === 'draft' && (
                   <button
                     type="button"
@@ -457,6 +522,11 @@ function CatalogManagement({ canWrite }: Readonly<{ canWrite: boolean }>) {
               </div>
             </article>
           ))}
+          {uploadImage.isError && (
+            <p className="panel-message error" role="alert">
+              {uploadImage.error.message}
+            </p>
+          )}
         </div>
         {canWrite && (
           <form className="product-form" onSubmit={submit}>
@@ -542,9 +612,17 @@ function CatalogManagement({ canWrite }: Readonly<{ canWrite: boolean }>) {
           >
             ×
           </button>
-          <div className="preview-art" aria-hidden="true">
-            KP
-          </div>
+          {imagePreviews[preview.id] ? (
+            <img
+              className="preview-art preview-image"
+              src={imagePreviews[preview.id]}
+              alt=""
+            />
+          ) : (
+            <div className="preview-art" aria-hidden="true">
+              KP
+            </div>
+          )}
           <div>
             <p>{preview.status} preview</p>
             <h3>{preview.title}</h3>

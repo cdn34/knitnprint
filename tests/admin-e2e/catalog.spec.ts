@@ -37,6 +37,20 @@ test('lets an owner create, preview, search, and publish a product', async ({
     catalog.getByRole('article', { name: 'Product preview' }),
   ).toContainText(title)
 
+  page.once('dialog', async (dialog) => {
+    expect(dialog.message()).toContain(title)
+    await dialog.accept(`${title} in a soft neutral finish`)
+  })
+  await product.getByLabel('Image').setInputFiles({
+    name: 'woven-planter.png',
+    mimeType: 'image/png',
+    buffer: Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+      'base64',
+    ),
+  })
+  await expect(product.locator('.product-thumbnail img')).toBeVisible()
+
   await catalog.getByLabel('Search products').fill(`browsercatalog ${unique}`)
   await expect(product).toBeVisible()
   await product.getByRole('button', { name: 'Publish' }).click()
