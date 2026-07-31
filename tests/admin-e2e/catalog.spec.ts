@@ -104,7 +104,22 @@ test('lets an owner create, preview, search, and publish a product', async ({
   expect(mediaResponse.headers()['content-type']).toBe('image/webp')
   expect(mediaResponse.headers()['cache-control']).toContain('immutable')
 
+  await page.getByRole('link', { name: 'Inventory' }).click()
+  const inventory = page.getByRole('region', { name: 'Inventory' })
+  const inventoryRow = inventory.getByRole('button').filter({ hasText: sku })
+  await inventoryRow.click()
+  await inventory.getByLabel('Quantity change').fill('7')
+  await inventory.getByLabel('Reason').fill('Initial browser-test stock')
+  await inventory.getByLabel('Low-stock threshold').fill('3')
+  await inventory.getByRole('button', { name: 'Apply adjustment' }).click()
+  await expect(inventoryRow).toContainText('7')
+  await expect(inventory).toContainText('Initial browser-test stock')
+
   await page.reload()
-  const persistedProduct = catalog.getByRole('article').filter({ hasText: slug })
+  await page.getByRole('link', { name: 'Products' }).click()
+  const persistedProduct = page
+    .getByRole('region', { name: 'Products' })
+    .getByRole('article')
+    .filter({ hasText: slug })
   await expect(persistedProduct.locator('.product-thumbnail img')).toBeVisible()
 })

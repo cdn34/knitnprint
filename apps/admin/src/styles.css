@@ -37,7 +37,7 @@ h1 { margin: .25rem 0 0; font: 500 2rem Georgia, serif; }
 .metrics span { color: #6e6864; font-size: .72rem; }
 .metrics strong { margin-top: .6rem; font: 500 2.3rem Georgia, serif; }
 .metrics small { margin-top: auto; color: #6e6864; }
-.staff-section, .catalog-section { margin-top: 2.5rem; scroll-margin-top: 1rem; }
+.staff-section, .catalog-section, .inventory-section { margin-top: 2.5rem; scroll-margin-top: 1rem; }
 .section-heading { display: flex; align-items: end; justify-content: space-between; margin-bottom: 1rem; }
 .section-heading p { margin: 0 0 .35rem; color: #765c47; font-size: .65rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
 .section-heading h2 { margin: 0; font: 500 1.8rem Georgia, serif; }
@@ -98,11 +98,34 @@ h1 { margin: .25rem 0 0; font: 500 2rem Georgia, serif; }
 .variant-list small, .category-assignments small { color: #6e6864; font-size: .62rem; }
 .variant-list b { color: #5f4652; font: 500 .78rem Georgia, serif; }
 .compact-form > label, .compact-form .price-fields label { display: block; margin: .7rem 0 .35rem; color: #4f4b48; font-size: .67rem; font-weight: 600; }
-.compact-form input, .compact-form select { width: 100%; padding: .6rem .68rem; border: 1px solid #cfc4bc; border-radius: .45rem; color: #2e2e2d; background: #fff; }
+.compact-form input, .compact-form select, .compact-form textarea { width: 100%; padding: .6rem .68rem; border: 1px solid #cfc4bc; border-radius: .45rem; color: #2e2e2d; background: #fff; }
+.compact-form textarea { resize: vertical; }
 .category-assignments { display: grid; gap: .45rem; }
 .category-assignments label { padding: .6rem .7rem; display: flex; align-items: center; gap: .6rem; border: 1px solid #e5dcd5; border-radius: .5rem; cursor: pointer; }
 .category-assignments input { accent-color: #5f4652; }
 .new-category-form { margin-top: 1rem; }
+.inventory-layout { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(330px, .9fr); gap: 1.2rem; align-items: start; }
+.inventory-list, .inventory-editor { border: 1px solid #ded4cc; border-radius: .8rem; background: #fffdfc; }
+.inventory-list > button { width: 100%; padding: 1rem 1.1rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem; border: 0; border-bottom: 1px solid #ede6e1; color: #2e2e2d; background: transparent; text-align: left; cursor: pointer; }
+.inventory-list > button:last-child { border-bottom: 0; }
+.inventory-list > button:hover, .inventory-list > button.selected { background: #f5eef1; }
+.inventory-list button > span:first-child { min-width: 0; display: flex; flex-direction: column; gap: .2rem; }
+.inventory-list button small { color: #6e6864; font-size: .64rem; }
+.stock-count { min-width: 58px; padding: .45rem .55rem; display: flex; flex-direction: column; align-items: center; border-radius: .5rem; color: #315b49; background: #dfece5; }
+.stock-count.low { color: #7a2f3c; background: #f1dfe2; }
+.stock-count strong { font: 600 1rem Georgia, serif; }
+.stock-count small { font-size: .55rem; text-transform: uppercase; }
+.inventory-editor { padding: 1.2rem; }
+.inventory-placeholder { min-height: 280px; display: grid; place-content: center; justify-items: center; gap: .45rem; color: #6e6864; text-align: center; }
+.inventory-placeholder svg { color: #8a6877; }
+.inventory-placeholder strong { color: #2e2e2d; font: 500 1.1rem Georgia, serif; }
+.inventory-placeholder span { font-size: .68rem; }
+.movement-history { margin-top: 1.3rem; }
+.movement-history article { padding: .7rem 0; display: grid; grid-template-columns: 42px 1fr auto; align-items: center; gap: .65rem; border-bottom: 1px solid #ede6e1; }
+.movement-history article > strong { color: #5f4652; font: 600 .85rem Georgia, serif; }
+.movement-history article > span { display: flex; flex-direction: column; gap: .2rem; font-size: .68rem; }
+.movement-history article small { color: #6e6864; font-size: .58rem; }
+.movement-history article b { font-size: .72rem; }
 .staff-layout { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(300px, .6fr); gap: 1.2rem; align-items: start; }
 .staff-list, .staff-form { border: 1px solid #ded4cc; border-radius: .8rem; background: #fffdfc; }
 .staff-list article { padding: 1rem 1.15rem; display: flex; align-items: center; gap: .8rem; border-bottom: 1px solid #ede6e1; }
@@ -177,7 +200,7 @@ h1 { margin: .25rem 0 0; font: 500 2rem Georgia, serif; }
   .welcome-mark { display: none; }
   .metrics { grid-template-columns: 1fr; }
   .staff-layout { grid-template-columns: 1fr; }
-  .catalog-layout, .product-preview, .catalog-editor { grid-template-columns: 1fr; }
+  .catalog-layout, .product-preview, .catalog-editor, .inventory-layout { grid-template-columns: 1fr; }
   .product-actions { flex-direction: column; }
   .storefront-link { display: none; }
   .login-page { grid-template-columns: 1fr; }

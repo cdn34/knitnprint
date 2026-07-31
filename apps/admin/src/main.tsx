@@ -11,6 +11,7 @@ import {
   Eye,
   ImageUp,
   Archive,
+  Boxes,
   LayoutDashboard,
   LoaderCircle,
   LockKeyhole,
@@ -26,6 +27,7 @@ import {
   ApiError,
   createApiClient,
   type Product,
+  type InventoryRecord,
   type StaffProfile,
   type StaffRecord,
 } from '@knitprint/api-client'
@@ -176,6 +178,9 @@ function AdminShell({ profile }: Readonly<{ profile: StaffProfile }>) {
     ...(profile.capabilities.includes('catalog.read')
       ? [{ id: 'products', label: 'Products', icon: Package }]
       : []),
+    ...(profile.capabilities.includes('inventory.adjust')
+      ? [{ id: 'inventory', label: 'Inventory', icon: Boxes }]
+      : []),
     ...(profile.capabilities.includes('staff.manage')
       ? [{ id: 'staff', label: 'Staff', icon: ShieldCheck }]
       : []),
@@ -257,6 +262,8 @@ function AdminShell({ profile }: Readonly<{ profile: StaffProfile }>) {
                 ? `Good to see you, ${profile.display_name.split(' ')[0]}.`
                 : page === 'products'
                   ? 'Product catalog.'
+                  : page === 'inventory'
+                    ? 'Inventory control.'
                   : 'Staff access.'}
             </h1>
           </div>
@@ -288,7 +295,7 @@ function AdminShell({ profile }: Readonly<{ profile: StaffProfile }>) {
               </article>
               <article>
                 <span>Low stock</span><strong>—</strong>
-                <small>Inventory comes in Phase 3</small>
+                <small>Open Inventory from the sidebar</small>
               </article>
             </section>
           </>
@@ -300,11 +307,128 @@ function AdminShell({ profile }: Readonly<{ profile: StaffProfile }>) {
             canWrite={profile.capabilities.includes('catalog.write')}
           />
         )}
+        {page === 'inventory' &&
+          profile.capabilities.includes('inventory.adjust') && (
+            <InventoryManagement />
+          )}
         {page === 'staff' && profile.capabilities.includes('staff.manage') && (
           <StaffManagement currentStaffId={profile.id} />
         )}
       </main>
     </div>
+  )
+}
+
+const inventoryKey = ['inventory'] as const
+
+function InventoryManagement() {
+  const client = useQueryClient()
+  const [selected, setSelected] = useState<InventoryRecord | null>(null)
+  const inventory = useQuery({ queryKey: inventoryKey, queryFn: api.listInventory })
+  const movements = useQuery({
+    queryKey: ['inventory-movements', selected?.variant_id],
+    queryFn: () => api.inventoryMovements(selected?.variant_id ?? ''),
+    enabled: Boolean(selected),
+  })
+  const adjust = useMutation({
+    mutationFn: ({
+      delta,
+      reason,
+      threshold,
+      variantId,
+    }: {
+      delta: number
+      reason: string
+      threshold?: number
+      variantId: string
+    }) =>
+      api.adjustInventory(variantId, {
+        quantity_delta: delta,
+        reason,
+        low_stock_threshold: threshold,
+      }),
+    onSuccess: (record) => {
+      setSelected(record)
+      client.invalidateQueries({ queryKey: inventoryKey })
+      client.invalidateQueries({ queryKey: ['inventory-movements', record.variant_id] })
+    },
+  })
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!selected) return
+    const formElement = event.currentTarget
+    const form = new FormData(formElement)
+    const threshold = String(form.get('stock-threshold') ?? '').trim()
+    adjust.mutate(
+      {
+        variantId: selected.variant_id,
+        delta: Number(form.get('stock-delta')),
+        reason: String(form.get('stock-reason') ?? ''),
+        threshold: threshold ? Number(threshold) : undefined,
+      },
+      { onSuccess: () => formElement.reset() },
+    )
+  }
+
+  return (
+    <section className="inventory-section" aria-labelledby="inventory-heading">
+      <div className="section-heading">
+        <div><p>Phase 3 · Operations</p><h2 id="inventory-heading">Inventory</h2></div>
+        <span>{inventory.data?.filter(({ low_stock }) => low_stock).length ?? '—'} low stock</span>
+      </div>
+      <div className="inventory-layout">
+        <div className="inventory-list">
+          {inventory.isPending && <p className="panel-message">Loading inventory…</p>}
+          {inventory.isError && <p className="panel-message error" role="alert">Inventory could not be loaded.</p>}
+          {inventory.data?.map((record) => (
+            <button
+              className={selected?.variant_id === record.variant_id ? 'selected' : ''}
+              key={record.variant_id}
+              type="button"
+              onClick={() => setSelected(record)}
+            >
+              <span><strong>{record.product_title}</strong><small>{record.variant_title} · {record.sku}</small></span>
+              <span className={record.low_stock ? 'stock-count low' : 'stock-count'}>
+                <strong>{record.available_quantity}</strong><small>available</small>
+              </span>
+            </button>
+          ))}
+          {inventory.data?.length === 0 && <p className="panel-message">Create a product variant to begin tracking stock.</p>}
+        </div>
+        <div className="inventory-editor">
+          {!selected ? (
+            <div className="inventory-placeholder"><Boxes aria-hidden="true" /><strong>Select a variant</strong><span>Adjust stock and inspect its immutable history.</span></div>
+          ) : (
+            <>
+              <div className="panel-title"><Boxes size={17} /><div><strong>{selected.product_title} · {selected.variant_title}</strong><span>{selected.available_quantity} available · low at {selected.low_stock_threshold}</span></div></div>
+              <form className="compact-form" onSubmit={submit}>
+                <label htmlFor="stock-delta">Quantity change</label>
+                <input id="stock-delta" name="stock-delta" type="number" step="1" placeholder="Use + to add or − to remove" required />
+                <label htmlFor="stock-reason">Reason</label>
+                <textarea id="stock-reason" name="stock-reason" rows={3} minLength={3} maxLength={500} required />
+                <label htmlFor="stock-threshold">Low-stock threshold (optional)</label>
+                <input id="stock-threshold" name="stock-threshold" type="number" min="0" step="1" />
+                {adjust.isError && <p className="panel-error" role="alert">{adjust.error.message}</p>}
+                <button className="primary-button" disabled={adjust.isPending}>{adjust.isPending ? 'Saving…' : 'Apply adjustment'}</button>
+              </form>
+              <div className="movement-history">
+                <div className="variant-heading">Movement history</div>
+                {movements.isPending && <p className="panel-message">Loading history…</p>}
+                {movements.data?.map((movement) => (
+                  <article key={movement.id}>
+                    <strong>{movement.quantity_delta > 0 ? '+' : ''}{movement.quantity_delta}</strong>
+                    <span>{movement.reason}<small>{typeof movement.actor_display_name === 'string' ? movement.actor_display_name : 'System'} · {new Date(movement.created_at).toLocaleString()}</small></span>
+                    <b>{movement.resulting_available_quantity}</b>
+                  </article>
+                ))}
+                {movements.data?.length === 0 && <p className="panel-message">No adjustments yet.</p>}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </section>
   )
 }
 
@@ -329,6 +453,13 @@ function CatalogManagement({
   const createProduct = useMutation({
     mutationFn: api.createProduct,
     onSuccess: (product) => {
+      client.setQueriesData<Array<Product>>(
+        { queryKey: productsKey },
+        (current) =>
+          current && !current.some(({ id }) => id === product.id)
+            ? [product, ...current]
+            : current,
+      )
       client.invalidateQueries({ queryKey: productsKey })
       setPreview(product)
     },
