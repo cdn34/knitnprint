@@ -46,6 +46,23 @@ test('opens a published product detail page when available', async ({ page }) =>
   await expect(page.getByText(/SKU /)).toBeVisible()
 })
 
+test('navigates live catalog collections when available', async ({ page }) => {
+  await page.goto('/')
+  const collectionLink = page.locator('#collections a').first()
+  if ((await collectionLink.count()) === 0) return
+
+  const collectionName = (await collectionLink.getAttribute('aria-label'))
+    ?.replace(/^Shop /, '')
+    .replace(/ collection$/, '')
+  await collectionLink.click()
+
+  await expect(page).toHaveURL(/\/collections\/[a-z0-9-]+$/)
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(
+    collectionName ?? '',
+  )
+  await expect(page.locator('.product-card').first()).toBeVisible()
+})
+
 test('has no detectable WCAG A or AA violations', async ({ page }) => {
   await page.goto('/')
 

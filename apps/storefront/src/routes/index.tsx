@@ -12,10 +12,21 @@ import {
   ShoppingBag,
   Sparkles,
 } from 'lucide-react'
-import { mediaUrl, productPrice, publishedProducts } from '../catalog-api'
+import {
+  mediaUrl,
+  productPrice,
+  publishedCategories,
+  publishedProducts,
+} from '../catalog-api'
 
 export const Route = createFileRoute('/')({
-  loader: publishedProducts,
+  loader: async () => {
+    const [products, categories] = await Promise.all([
+      publishedProducts(),
+      publishedCategories(),
+    ])
+    return { products, categories }
+  },
   component: HomePage,
 })
 
@@ -31,7 +42,7 @@ function IconButton({
 }
 
 function HomePage() {
-  const products = Route.useLoaderData()
+  const { products, categories } = Route.useLoaderData()
   const [query, setQuery] = useState('')
   const visibleProducts = useMemo(() => {
     const normalized = query.trim().toLowerCase()
@@ -180,24 +191,25 @@ function HomePage() {
         </section>
 
         <section className="collections" id="collections">
-          <article className="collection collection--home">
-            <div>
-              <p className="eyebrow">For your space</p>
-              <h2>Quiet forms for everyday rituals</h2>
-              <a className="circle-link" href="/collections/home" aria-label="Shop home collection">
-                <ArrowRight />
-              </a>
-            </div>
-          </article>
-          <article className="collection collection--desk">
-            <div>
-              <p className="eyebrow">For your desk</p>
-              <h2>Tactile tools for thoughtful work</h2>
-              <a className="circle-link" href="/collections/desk" aria-label="Shop desk collection">
-                <ArrowRight />
-              </a>
-            </div>
-          </article>
+          {categories.map((category, index) => (
+            <article
+              className={`collection ${index % 2 === 0 ? 'collection--home' : 'collection--desk'}`}
+              key={category.id}
+            >
+              <div>
+                <p className="eyebrow">KnitPrint collection</p>
+                <h2>{category.name}</h2>
+                {category.description && <p>{category.description}</p>}
+                <a
+                  className="circle-link"
+                  href={`/collections/${category.slug}`}
+                  aria-label={`Shop ${category.name} collection`}
+                >
+                  <ArrowRight />
+                </a>
+              </div>
+            </article>
+          ))}
         </section>
 
         <section className="story" id="story">
