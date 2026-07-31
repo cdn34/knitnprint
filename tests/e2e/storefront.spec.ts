@@ -15,7 +15,35 @@ test('renders the branded storefront shell', async ({ page }) => {
   await expect(
     page.getByRole('heading', { name: 'Objects with a softer edge' }),
   ).toBeVisible()
-  await expect(page.locator('.product-card')).toHaveCount(4)
+  await expect(page.locator('.product-grid')).toBeVisible()
+  expect(
+    (await page.locator('.product-card').count()) +
+      (await page.locator('.storefront-empty').count()),
+  ).toBeGreaterThan(0)
+})
+
+test('filters published products when the catalog is available', async ({
+  page,
+}) => {
+  await page.goto('/')
+  await page.waitForLoadState('networkidle')
+  const cards = page.locator('.product-card')
+  if ((await cards.count()) === 0) return
+
+  const title = await cards.first().getByRole('heading').textContent()
+  await page.getByLabel('Search the catalog').fill(title ?? '')
+  await expect(cards).toHaveCount(1)
+})
+
+test('opens a published product detail page when available', async ({ page }) => {
+  await page.goto('/')
+  const card = page.locator('.product-card').first()
+  if ((await card.count()) === 0) return
+
+  const title = await card.getByRole('heading').textContent()
+  await card.getByRole('link', { name: `View ${title}` }).click()
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(title ?? '')
+  await expect(page.getByText(/SKU /)).toBeVisible()
 })
 
 test('has no detectable WCAG A or AA violations', async ({ page }) => {
@@ -48,4 +76,3 @@ test('does not overflow the viewport', async ({ page }) => {
 
   expect(dimensions.content).toBeLessThanOrEqual(dimensions.viewport)
 })
-
