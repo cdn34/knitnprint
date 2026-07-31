@@ -163,11 +163,11 @@ The catalog foundation is implemented:
 - transactional audit records for product creation and status changes;
 - OpenAPI definitions and typed TypeScript client methods;
 - isolated PostgreSQL coverage for permissions, draft privacy, publication,
-  search, archival, and catalog audit history.
+  search, archival, and catalog audit history;
 - admin product workspace with search, draft creation, first-variant pricing,
   inline preview, publishing, and archival controls;
 - Playwright coverage proving draft creation, preview, search, publication, and
-  public API visibility.
+  public API visibility;
 - private MinIO bucket bootstrap with local admin-origin CORS;
 - five-minute presigned JPEG, PNG, and WebP uploads limited to 10 MB;
 - server-generated quarantine object keys with no storage credentials exposed
@@ -175,14 +175,18 @@ The catalog foundation is implemented:
 - completion verification against S3 object size and declared media type;
 - transactional product attachment, ordering, alt text, and media audit record;
 - admin image selection and immediate product/preview rendering;
-- Playwright coverage performing a real browser-to-MinIO upload and completion.
+- Playwright coverage performing a real browser-to-MinIO upload and completion;
+- server-rendered storefront catalog data with a graceful API-unavailable state;
+- responsive published-product grid and client-side catalog filtering;
+- server-rendered product detail route with live price, variant, and SKU data;
+- desktop and mobile Playwright coverage for search and product navigation.
 
 Continue Phase 2 with:
 
 1. processed image variants and stable public media delivery;
 2. abandoned quarantine upload cleanup;
 3. richer variant and category editing;
-4. storefront product listing, detail, and search UI.
+4. category-driven storefront collection navigation.
 
 ## Environment notes
 
