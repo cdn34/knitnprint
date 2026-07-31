@@ -12,7 +12,7 @@ import {
   ShoppingBag,
   Sparkles,
 } from 'lucide-react'
-import { productPrice, publishedProducts } from '../catalog-api'
+import { mediaUrl, productPrice, publishedProducts } from '../catalog-api'
 
 export const Route = createFileRoute('/')({
   loader: publishedProducts,
@@ -149,7 +149,15 @@ function HomePage() {
                     href={`/products/${product.slug}`}
                     aria-label={`View ${product.title}`}
                   >
-                    <span className={`product-form product-form--${['vase', 'planter', 'tray', 'lamp'][index % 4]}`} />
+                    {product.media[0] ? (
+                      <img
+                        className="catalog-product-photo"
+                        src={mediaUrl(product.media[0].url)}
+                        alt={product.media[0].alt_text}
+                      />
+                    ) : (
+                      <span className={`product-form product-form--${['vase', 'planter', 'tray', 'lamp'][index % 4]}`} />
+                    )}
                   </a>
                   <button className="heart" aria-label={`Save ${product.title}`} type="button">
                     <Heart size={19} />

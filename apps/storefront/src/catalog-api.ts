@@ -3,6 +3,7 @@ import { createApiClient, type Product } from '@knitprint/api-client'
 const api = createApiClient({
   baseUrl: process.env.API_BASE_URL ?? 'http://127.0.0.1:8080',
 })
+const apiBaseUrl = process.env.API_BASE_URL ?? 'http://127.0.0.1:8080'
 
 export async function publishedProducts(): Promise<Product[]> {
   try {
@@ -27,4 +28,8 @@ export function productPrice(product: Product) {
     style: 'currency',
     currency: variant.currency,
   }).format(variant.price_minor / 100)
+}
+
+export function mediaUrl(path: string) {
+  return `${apiBaseUrl.replace(/\/$/, '')}${path}`
 }

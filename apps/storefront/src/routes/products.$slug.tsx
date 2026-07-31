@@ -1,6 +1,6 @@
 import { createFileRoute, notFound } from '@tanstack/react-router'
 import { ArrowLeft, PackageCheck, ShieldCheck, Sparkles } from 'lucide-react'
-import { productPrice, publishedProduct } from '../catalog-api'
+import { mediaUrl, productPrice, publishedProduct } from '../catalog-api'
 
 export const Route = createFileRoute('/products/$slug')({
   loader: async ({ params }) => {
@@ -34,8 +34,20 @@ function ProductPage() {
         <a className="text-link" href="/#shop"><ArrowLeft size={17} /> Back to shop</a>
       </header>
       <main className="product-page" id="main-content" tabIndex={-1}>
-        <div className="product-detail-art" aria-label={`${product.title} product image`}>
-          <span className="product-form product-form--planter" />
+        <div className="product-detail-art">
+          {product.media[0] ? (
+            <img
+              className="product-detail-photo"
+              src={mediaUrl(product.media[0].url)}
+              alt={product.media[0].alt_text}
+            />
+          ) : (
+            <span
+              className="product-form product-form--planter"
+              role="img"
+              aria-label={`${product.title} product illustration`}
+            />
+          )}
         </div>
         <section className="product-detail-copy">
           <p className="eyebrow">KnitPrint collection</p>
