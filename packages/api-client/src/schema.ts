@@ -88,8 +88,11 @@ export interface Product {
 
 export interface ProductMedia {
   "alt_text": string
+  "card_url": string
+  "detail_url": string
   "id": string
   "position": number
+  "thumbnail_url": string
   "url": string
 }
 
