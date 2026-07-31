@@ -180,10 +180,16 @@ The catalog foundation is implemented:
 - responsive published-product grid and client-side catalog filtering;
 - server-rendered product detail route with live price, variant, and SKU data;
 - desktop and mobile Playwright coverage for search and product navigation.
+- ordered ready-media metadata in admin and public product responses;
+- stable `/api/media/{id}` delivery restricted to media attached to active
+  products, with immutable caching and object content types;
+- persisted admin thumbnails and previews after reload;
+- uploaded product photography on storefront cards and detail pages;
+- end-to-end verification of media metadata, content headers, and persistence.
 
 Continue Phase 2 with:
 
-1. processed image variants and stable public media delivery;
+1. normalized thumbnail, card, and detail image variants;
 2. abandoned quarantine upload cleanup;
 3. richer variant and category editing;
 4. category-driven storefront collection navigation.
