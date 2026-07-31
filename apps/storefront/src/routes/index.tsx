@@ -1,4 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
+import { useMemo, useState } from 'react'
 import {
   ArrowRight,
   ChevronRight,
@@ -11,17 +12,12 @@ import {
   ShoppingBag,
   Sparkles,
 } from 'lucide-react'
+import { productPrice, publishedProducts } from '../catalog-api'
 
 export const Route = createFileRoute('/')({
+  loader: publishedProducts,
   component: HomePage,
 })
-
-const products = [
-  { name: 'Ripple vase', price: '€34', tone: 'mauve', tag: 'Bestseller', form: 'vase' },
-  { name: 'Soft-loop planter', price: '€42', tone: 'sand', tag: 'New', form: 'planter' },
-  { name: 'Knot desk tray', price: '€28', tone: 'ink', tag: '', form: 'tray' },
-  { name: 'Woven glow lamp', price: '€68', tone: 'clay', tag: 'Small batch', form: 'lamp' },
-]
 
 function IconButton({
   label,
@@ -35,6 +31,21 @@ function IconButton({
 }
 
 function HomePage() {
+  const products = Route.useLoaderData()
+  const [query, setQuery] = useState('')
+  const visibleProducts = useMemo(() => {
+    const normalized = query.trim().toLowerCase()
+    if (!normalized) return products
+    return products.filter((product) =>
+      [
+        product.title,
+        product.description,
+        product.search_keywords,
+        product.slug,
+      ].some((value) => value.toLowerCase().includes(normalized)),
+    )
+  }, [products, query])
+
   return (
     <>
       <div className="announcement">
@@ -116,33 +127,47 @@ function HomePage() {
               <p className="eyebrow">Fresh from the studio</p>
               <h2>Objects with a softer edge</h2>
             </div>
-            <a className="text-link desktop-action" href="/shop">
-              Shop all pieces <ArrowRight size={17} />
-            </a>
+            <label className="shop-search">
+              <Search size={16} aria-hidden="true" />
+              <span className="sr-only">Search the catalog</span>
+              <input
+                type="search"
+                placeholder="Search the collection"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+              />
+            </label>
           </div>
 
           <div className="product-grid">
-            {products.map((product) => (
-              <article className="product-card" key={product.name}>
-                <div className={`product-image tone--${product.tone}`}>
-                  {product.tag && <span className="product-tag">{product.tag}</span>}
+            {visibleProducts.map((product, index) => (
+              <article className="product-card" key={product.id}>
+                <div className={`product-image tone--${['mauve', 'sand', 'ink', 'clay'][index % 4]}`}>
+                  {index === 0 && <span className="product-tag">Freshly published</span>}
                   <a
                     className="product-visual"
-                    href={`/products/${product.form}`}
-                    aria-label={`View ${product.name}`}
+                    href={`/products/${product.slug}`}
+                    aria-label={`View ${product.title}`}
                   >
-                    <span className={`product-form product-form--${product.form}`} />
+                    <span className={`product-form product-form--${['vase', 'planter', 'tray', 'lamp'][index % 4]}`} />
                   </a>
-                  <button className="heart" aria-label={`Save ${product.name}`} type="button">
+                  <button className="heart" aria-label={`Save ${product.title}`} type="button">
                     <Heart size={19} />
                   </button>
                 </div>
                 <div className="product-info">
-                  <h3><a href={`/products/${product.form}`}>{product.name}</a></h3>
-                  <p>{product.price}</p>
+                  <h3><a href={`/products/${product.slug}`}>{product.title}</a></h3>
+                  <p>{productPrice(product)}</p>
                 </div>
               </article>
             ))}
+            {visibleProducts.length === 0 && (
+              <div className="storefront-empty">
+                <PackageCheck aria-hidden="true" />
+                <h3>{query ? 'No pieces match that search.' : 'The next collection is taking shape.'}</h3>
+                <p>{query ? 'Try another word or clear the search.' : 'Fresh pieces will appear here as soon as they leave the studio.'}</p>
+              </div>
+            )}
           </div>
         </section>
 

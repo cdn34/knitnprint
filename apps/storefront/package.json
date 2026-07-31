@@ -8,6 +8,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@knitprint/api-client": "*",
     "@tanstack/react-router": "latest",
     "@tanstack/react-start": "latest",
     "lucide-react": "latest",
@@ -23,4 +24,3 @@
     "vite": "latest"
   }
 }
-
