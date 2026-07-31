@@ -1029,6 +1029,29 @@
         }
       }
     },
+    "/api/categories": {
+      "get": {
+        "tags": [
+          "catalog"
+        ],
+        "operationId": "public_category_list",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Category"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/health": {
       "get": {
         "tags": [
@@ -1110,6 +1133,17 @@
         "parameters": [
           {
             "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "category",
             "in": "query",
             "required": false,
             "schema": {

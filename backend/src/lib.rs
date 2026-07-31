@@ -77,6 +77,7 @@ pub fn app(state: AppState) -> Router {
             get(|| async { Json(openapi::document()) }),
         )
         .route("/api/products", get(catalog::public_list))
+        .route("/api/categories", get(catalog::public_category_list))
         .route("/api/products/{slug}", get(catalog::public_detail))
         .route("/api/media/{media_id}/{variant}", get(media::public_asset))
         .fallback(error::not_found)

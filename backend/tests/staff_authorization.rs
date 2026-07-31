@@ -258,6 +258,27 @@ async fn staff_authorization_and_audit_lifecycle() {
     let search_body = response_json(search).await;
     assert_eq!(search_body[0]["slug"], "woven-planter");
 
+    let categories = request(&router, "GET", "/api/categories", None, None).await;
+    let categories_body = response_json(categories).await;
+    assert_eq!(categories_body[0]["slug"], "homewares");
+
+    let category_products = request(
+        &router,
+        "GET",
+        "/api/products?category=homewares",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(
+        response_json(category_products).await[0]["slug"],
+        "woven-planter"
+    );
+
+    let empty_category =
+        request(&router, "GET", "/api/products?category=missing", None, None).await;
+    assert_eq!(response_json(empty_category).await, json!([]));
+
     let public_detail = request(&router, "GET", "/api/products/woven-planter", None, None).await;
     assert_eq!(public_detail.status(), StatusCode::OK);
 

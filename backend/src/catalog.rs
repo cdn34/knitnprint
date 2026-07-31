@@ -122,6 +122,7 @@ pub struct ProductQuery {
 #[derive(Deserialize, IntoParams)]
 pub struct PublicProductQuery {
     pub q: Option<String>,
+    pub category: Option<String>,
 }
 
 #[utoipa::path(
@@ -146,7 +147,15 @@ pub async fn admin_list(
     let Some(pool) = state.database else {
         return unavailable();
     };
-    match product_rows(&pool, query.q.as_deref(), query.status.as_deref(), false).await {
+    match product_rows(
+        &pool,
+        query.q.as_deref(),
+        query.status.as_deref(),
+        None,
+        false,
+    )
+    .await
+    {
         Ok(rows) => products_response(&pool, rows).await,
         Err(_) => unavailable(),
     }
@@ -614,8 +623,47 @@ pub async fn public_list(
     let Some(pool) = state.database else {
         return unavailable();
     };
-    match product_rows(&pool, query.q.as_deref(), Some("active"), true).await {
+    match product_rows(
+        &pool,
+        query.q.as_deref(),
+        Some("active"),
+        query.category.as_deref(),
+        true,
+    )
+    .await
+    {
         Ok(rows) => products_response(&pool, rows).await,
+        Err(_) => unavailable(),
+    }
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/categories",
+    tag = "catalog",
+    responses((status = 200, body = [Category]))
+)]
+pub async fn public_category_list(State(state): State<AppState>) -> Response {
+    let Some(pool) = state.database else {
+        return unavailable();
+    };
+    match sqlx::query_as::<_, Category>(
+        r#"
+        SELECT category.id, category.name, category.slug, category.description
+        FROM categories category
+        WHERE EXISTS (
+            SELECT 1
+            FROM product_categories assignment
+            JOIN products product ON product.id = assignment.product_id
+            WHERE assignment.category_id = category.id AND product.status = 'active'
+        )
+        ORDER BY category.name, category.id
+        "#,
+    )
+    .fetch_all(&pool)
+    .await
+    {
+        Ok(categories) => Json(categories).into_response(),
         Err(_) => unavailable(),
     }
 }
@@ -652,10 +700,12 @@ async fn product_rows(
     pool: &PgPool,
     query: Option<&str>,
     status: Option<&str>,
+    category: Option<&str>,
     public_order: bool,
 ) -> Result<Vec<ProductRow>, sqlx::Error> {
     let query = query.unwrap_or("").trim();
     let status = status.unwrap_or("").trim();
+    let category = category.unwrap_or("").trim();
     sqlx::query_as(
         r#"
         SELECT id, title, slug, description, status, search_keywords
@@ -666,8 +716,16 @@ async fn product_rows(
             search_document @@ websearch_to_tsquery('simple', $2) OR
             slug ILIKE '%' || $2 || '%'
           )
+          AND (
+            $3 = '' OR EXISTS (
+              SELECT 1
+              FROM product_categories assignment
+              JOIN categories category ON category.id = assignment.category_id
+              WHERE assignment.product_id = products.id AND category.slug = $3
+            )
+          )
         ORDER BY
-            CASE WHEN $3 THEN published_at END DESC NULLS LAST,
+            CASE WHEN $4 THEN published_at END DESC NULLS LAST,
             created_at DESC,
             id
         LIMIT 100
@@ -675,6 +733,7 @@ async fn product_rows(
     )
     .bind(status)
     .bind(query)
+    .bind(category)
     .bind(public_order)
     .fetch_all(pool)
     .await

@@ -24,6 +24,7 @@ use crate::{auth, catalog, error, health, media, staff};
         catalog::add_variant,
         catalog::assign_categories,
         catalog::public_list,
+        catalog::public_category_list,
         catalog::public_detail,
         media::initiate,
         media::complete,
