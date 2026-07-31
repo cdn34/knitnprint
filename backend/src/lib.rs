@@ -66,7 +66,7 @@ pub fn app(state: AppState) -> Router {
         )
         .route("/api/products", get(catalog::public_list))
         .route("/api/products/{slug}", get(catalog::public_detail))
-        .route("/api/media/{media_id}", get(media::public_asset))
+        .route("/api/media/{media_id}/{variant}", get(media::public_asset))
         .fallback(error::not_found)
         .with_state(state)
         .layer(PropagateRequestIdLayer::new(request_id.clone()))

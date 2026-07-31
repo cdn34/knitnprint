@@ -1,8 +1,8 @@
-use std::{env, time::Duration};
+use std::{env, io::Cursor, time::Duration};
 
 use aws_config::BehaviorVersion;
 use aws_credential_types::Credentials;
-use aws_sdk_s3::{Client, config::Region, presigning::PresigningConfig};
+use aws_sdk_s3::{Client, config::Region, presigning::PresigningConfig, primitives::ByteStream};
 use axum::{
     Json,
     body::Body,
@@ -102,6 +102,13 @@ pub struct MediaRecord {
     pub product_id: Uuid,
     pub alt_text: String,
     pub position: i32,
+}
+
+struct ProcessedVariant {
+    kind: &'static str,
+    bytes: Vec<u8>,
+    width: u32,
+    height: u32,
 }
 
 #[utoipa::path(
@@ -238,6 +245,39 @@ pub async fn complete(
     {
         return upload_mismatch();
     }
+    let source = storage
+        .client
+        .get_object()
+        .bucket(&storage.bucket)
+        .key(&object_key)
+        .send()
+        .await;
+    let source = match source {
+        Ok(source) => match source.body.collect().await {
+            Ok(body) => body.into_bytes().to_vec(),
+            Err(_) => return upload_incomplete(),
+        },
+        Err(_) => return upload_incomplete(),
+    };
+    let variants = match tokio::task::spawn_blocking(move || process_image(&source)).await {
+        Ok(Ok(variants)) => variants,
+        _ => return invalid_image(),
+    };
+    for variant in &variants {
+        if storage
+            .client
+            .put_object()
+            .bucket(&storage.bucket)
+            .key(variant_key(media_id, variant.kind))
+            .content_type("image/webp")
+            .body(ByteStream::from(variant.bytes.clone()))
+            .send()
+            .await
+            .is_err()
+        {
+            return unavailable();
+        }
+    }
     let mut transaction = match pool.begin().await {
         Ok(transaction) => transaction,
         Err(_) => return unavailable(),
@@ -252,6 +292,28 @@ pub async fn complete(
         Ok(position) => position,
         Err(_) => return unavailable(),
     };
+    for variant in &variants {
+        if sqlx::query(
+            r#"
+            INSERT INTO media_variants (
+                media_asset_id, kind, object_key, byte_size, width, height
+            )
+            VALUES ($1, $2, $3, $4, $5, $6)
+            "#,
+        )
+        .bind(media_id)
+        .bind(variant.kind)
+        .bind(variant_key(media_id, variant.kind))
+        .bind(variant.bytes.len() as i64)
+        .bind(variant.width as i32)
+        .bind(variant.height as i32)
+        .execute(&mut *transaction)
+        .await
+        .is_err()
+        {
+            return unavailable();
+        }
+    }
     if sqlx::query("UPDATE media_assets SET status = 'ready', completed_at = now() WHERE id = $1")
         .bind(media_id)
         .execute(&mut *transaction)
@@ -293,8 +355,8 @@ pub async fn complete(
 
 #[utoipa::path(
     get,
-    path = "/api/media/{media_id}",
-    params(("media_id" = Uuid, Path)),
+    path = "/api/media/{media_id}/{variant}",
+    params(("media_id" = Uuid, Path), ("variant" = String, Path)),
     tag = "media",
     responses(
         (status = 200, description = "Immutable published product image"),
@@ -302,21 +364,29 @@ pub async fn complete(
         (status = 503, body = ErrorBody)
     )
 )]
-pub async fn public_asset(State(state): State<AppState>, Path(media_id): Path<Uuid>) -> Response {
+pub async fn public_asset(
+    State(state): State<AppState>,
+    Path((media_id, variant)): Path<(Uuid, String)>,
+) -> Response {
+    if !matches!(variant.as_str(), "thumbnail" | "card" | "detail") {
+        return not_found();
+    }
     let (Some(pool), Some(storage)) = (state.database, state.media_storage) else {
         return unavailable();
     };
     let asset = sqlx::query_as::<_, (String, String)>(
         r#"
-        SELECT m.object_key, m.content_type
+        SELECT mv.object_key, mv.content_type
         FROM media_assets m
+        JOIN media_variants mv ON mv.media_asset_id = m.id
         JOIN product_media pm ON pm.media_asset_id = m.id
         JOIN products p ON p.id = pm.product_id
-        WHERE m.id = $1 AND m.status = 'ready' AND p.status = 'active'
+        WHERE m.id = $1 AND mv.kind = $2 AND m.status = 'ready' AND p.status = 'active'
         LIMIT 1
         "#,
     )
     .bind(media_id)
+    .bind(&variant)
     .fetch_optional(&pool)
     .await;
     let (object_key, content_type) = match asset {
@@ -356,6 +426,34 @@ pub async fn public_asset(State(state): State<AppState>, Path(media_id): Path<Uu
         response.headers_mut().insert(header::ETAG, etag);
     }
     response
+}
+
+fn process_image(source: &[u8]) -> Result<Vec<ProcessedVariant>, image::ImageError> {
+    let image = image::load_from_memory(source)?;
+    let pixels = u64::from(image.width()) * u64::from(image.height());
+    if pixels > 40_000_000 {
+        return Err(image::ImageError::Limits(
+            image::error::LimitError::from_kind(image::error::LimitErrorKind::DimensionError),
+        ));
+    }
+    [("thumbnail", 320), ("card", 900), ("detail", 1600)]
+        .into_iter()
+        .map(|(kind, maximum)| {
+            let resized = image.thumbnail(maximum, maximum);
+            let mut output = Cursor::new(Vec::new());
+            resized.write_to(&mut output, image::ImageFormat::WebP)?;
+            Ok(ProcessedVariant {
+                kind,
+                bytes: output.into_inner(),
+                width: resized.width(),
+                height: resized.height(),
+            })
+        })
+        .collect()
+}
+
+fn variant_key(media_id: Uuid, kind: &str) -> String {
+    format!("media-public/{media_id}/{kind}.webp")
 }
 
 fn valid_upload(input: &InitiateUploadRequest) -> bool {
@@ -405,6 +503,17 @@ fn upload_mismatch() -> Response {
         Json(ErrorBody::new(
             "upload_mismatch",
             "The uploaded object does not match the declared file.",
+        )),
+    )
+        .into_response()
+}
+
+fn invalid_image() -> Response {
+    (
+        StatusCode::UNPROCESSABLE_ENTITY,
+        Json(ErrorBody::new(
+            "invalid_image",
+            "The uploaded file is not a supported image or exceeds the pixel limit.",
         )),
     )
         .into_response()

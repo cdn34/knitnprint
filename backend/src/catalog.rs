@@ -50,6 +50,9 @@ pub struct ProductMedia {
     pub alt_text: String,
     pub position: i32,
     pub url: String,
+    pub thumbnail_url: String,
+    pub card_url: String,
+    pub detail_url: String,
 }
 
 #[derive(FromRow)]
@@ -442,10 +445,15 @@ async fn hydrate_product(pool: &PgPool, row: ProductRow) -> Result<Product, sqlx
             m.id,
             pm.alt_text,
             pm.position,
-            '/api/media/' || m.id::text AS url
+            '/api/media/' || m.id::text || '/detail' AS url,
+            '/api/media/' || m.id::text || '/thumbnail' AS thumbnail_url,
+            '/api/media/' || m.id::text || '/card' AS card_url,
+            '/api/media/' || m.id::text || '/detail' AS detail_url
         FROM product_media pm
         JOIN media_assets m ON m.id = pm.media_asset_id
-        WHERE pm.product_id = $1 AND m.status = 'ready'
+        WHERE pm.product_id = $1
+          AND m.status = 'ready'
+          AND (SELECT count(*) FROM media_variants mv WHERE mv.media_asset_id = m.id) = 3
         ORDER BY pm.position, m.id
         "#,
     )
