@@ -4,6 +4,11 @@ export interface ChangeProductStatusRequest {
   "status": string
 }
 
+export interface CompleteUploadRequest {
+  "alt_text": string
+  "product_id": string
+}
+
 export interface CreateProductRequest {
   "description"?: string
   "search_keywords"?: string
@@ -45,9 +50,29 @@ export interface Health {
   "status": string
 }
 
+export interface InitiateUploadRequest {
+  "byte_size": number
+  "content_type": string
+  "filename": string
+}
+
+export interface InitiateUploadResponse {
+  "expires_in_seconds": number
+  "id": string
+  "method": string
+  "upload_url": string
+}
+
 export interface LoginRequest {
   "email": string
   "password": string
+}
+
+export interface MediaRecord {
+  "alt_text": string
+  "id": string
+  "position": number
+  "product_id": string
 }
 
 export interface Product {

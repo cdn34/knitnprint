@@ -1,5 +1,6 @@
 export type {
   ChangeProductStatusRequest,
+  CompleteUploadRequest,
   CreateProductRequest,
   CreateVariantRequest,
   CreateStaffRequest,
@@ -7,7 +8,10 @@ export type {
   ErrorBody,
   ErrorDetail,
   Health,
+  InitiateUploadRequest,
+  InitiateUploadResponse,
   LoginRequest,
+  MediaRecord,
   Product,
   StaffProfile,
   StaffRecord,
@@ -16,12 +20,16 @@ export type {
 
 import type {
   ChangeProductStatusRequest,
+  CompleteUploadRequest,
   CreateProductRequest,
   CreateStaffRequest,
   DisableStaffRequest,
   ErrorBody,
   Health,
+  InitiateUploadRequest,
+  InitiateUploadResponse,
   LoginRequest,
+  MediaRecord,
   Product,
   StaffProfile,
   StaffRecord,
@@ -126,5 +134,31 @@ export function createApiClient(options: ApiClientOptions = {}) {
       send<Array<Product>>(withQuery('/api/products', query)),
     product: (slug: string) =>
       send<Product>(`/api/products/${encodeURIComponent(slug)}`),
+    initiateMediaUpload: (input: InitiateUploadRequest) =>
+      send<InitiateUploadResponse>('/api/admin/media/uploads', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(input),
+      }),
+    uploadMediaObject: async (
+      uploadUrl: string,
+      file: Blob,
+      contentType: string,
+    ) => {
+      const response = await request(uploadUrl, {
+        method: 'PUT',
+        headers: { 'content-type': contentType },
+        body: file,
+      })
+      if (!response.ok) {
+        throw new Error('The image could not be uploaded to media storage.')
+      }
+    },
+    completeMediaUpload: (mediaId: string, input: CompleteUploadRequest) =>
+      send<MediaRecord>(`/api/admin/media/uploads/${mediaId}/complete`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(input),
+      }),
   }
 }
