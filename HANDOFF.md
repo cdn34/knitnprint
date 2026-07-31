@@ -179,20 +179,25 @@ The catalog foundation is implemented:
 - server-rendered storefront catalog data with a graceful API-unavailable state;
 - responsive published-product grid and client-side catalog filtering;
 - server-rendered product detail route with live price, variant, and SKU data;
-- desktop and mobile Playwright coverage for search and product navigation.
+- desktop and mobile Playwright coverage for search and product navigation;
 - ordered ready-media metadata in admin and public product responses;
 - stable `/api/media/{id}` delivery restricted to media attached to active
   products, with immutable caching and object content types;
 - persisted admin thumbnails and previews after reload;
 - uploaded product photography on storefront cards and detail pages;
-- end-to-end verification of media metadata, content headers, and persistence.
+- end-to-end verification of media metadata, content headers, and persistence;
+- image signature decoding with a 40-million-pixel safety limit;
+- normalized WebP thumbnail (320px), card (900px), and detail (1600px)
+  variants stored separately from quarantine originals;
+- variant-specific immutable media URLs used by each admin/storefront context;
+- real MinIO verification of generated objects, dimensions, byte sizes, and
+  WebP delivery headers.
 
 Continue Phase 2 with:
 
-1. normalized thumbnail, card, and detail image variants;
-2. abandoned quarantine upload cleanup;
-3. richer variant and category editing;
-4. category-driven storefront collection navigation.
+1. abandoned quarantine upload cleanup;
+2. richer variant and category editing;
+3. category-driven storefront collection navigation.
 
 ## Environment notes
 
