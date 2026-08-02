@@ -265,9 +265,24 @@ Storefront availability is implemented:
 - cancellation-safe admin product cache updates so concurrent initial loading
   cannot temporarily hide a newly created draft.
 
-Continue Phase 3 with:
+Operational inventory visibility is implemented:
 
-1. dashboard low-stock metrics and operational filtering.
+- live dashboard totals for available units, reserved units, tracked variants,
+  low-stock variants, and out-of-stock variants;
+- an actionable dashboard list ordered by available quantity with direct
+  navigation into Inventory;
+- inventory search across product, variant, and SKU plus all, attention,
+  out-of-stock, and healthy stock-state filters with live counts;
+- shared query invalidation when products and variants provision inventory, so
+  dashboard and inventory data cannot become stale;
+- PostgreSQL-backed browser coverage for metrics, navigation, search, every
+  stock filter, accessibility, and mobile overflow containment.
+
+Phase 3 is complete. Phases 0 through 3 now form the first working milestone:
+secure staff can publish catalog products, manage media and stock, prevent
+overselling, and expose an availability-aware public storefront.
+
+Continue with Phase 4 customer and address foundations.
 
 The complete Rust, API-contract, TypeScript, production-build, 14-test
 storefront Playwright, and three-test PostgreSQL-backed admin Playwright suites

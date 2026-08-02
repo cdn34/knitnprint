@@ -25,6 +25,14 @@ test('protects the admin shell with a persistent staff session', async ({
   await expect(page.getByRole('heading', { name: /Good to see you/ })).toBeVisible()
   await page.reload()
   await expect(page.getByRole('heading', { name: /Good to see you/ })).toBeVisible()
+  const metrics = page.getByRole('region', { name: 'Inventory metrics' })
+  await expect(
+    metrics
+      .getByRole('article')
+      .filter({ hasText: 'Low stock' })
+      .locator('strong'),
+  ).not.toHaveText('—')
+  await expect(page.getByRole('region', { name: 'Low-stock variants' })).toBeVisible()
 
   const dashboardScan = await new AxeBuilder({ page })
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
@@ -36,4 +44,3 @@ test('protects the admin shell with a persistent staff session', async ({
     page.getByRole('heading', { name: 'Welcome back.' }),
   ).toBeVisible()
 })
-

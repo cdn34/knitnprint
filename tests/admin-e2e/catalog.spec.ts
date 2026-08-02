@@ -138,6 +138,63 @@ test('lets an owner create, preview, search, and publish a product', async ({
   await inventory.getByRole('button', { name: 'Apply adjustment' }).click()
   await expect(plumInventoryRow).toContainText('2')
 
+  await page.getByRole('link', { name: 'Dashboard' }).click()
+  const metrics = page.getByRole('region', { name: 'Inventory metrics' })
+  await expect(metrics).toBeVisible()
+  await expect(
+    metrics
+      .getByRole('article')
+      .filter({ hasText: 'Available units' })
+      .locator('strong'),
+  ).not.toHaveText('—')
+  await expect(
+    metrics
+      .getByRole('article')
+      .filter({ hasText: 'Low stock' })
+      .locator('strong'),
+  ).not.toHaveText('—')
+  const stockSummary = page.getByRole('region', { name: 'Low-stock variants' })
+  await expect(stockSummary).toBeVisible()
+  await page.setViewportSize({ width: 390, height: 844 })
+  const dashboardDimensions = await page.evaluate(() => ({
+    viewport: document.documentElement.clientWidth,
+    content: document.documentElement.scrollWidth,
+  }))
+  expect(dashboardDimensions.content).toBeLessThanOrEqual(
+    dashboardDimensions.viewport,
+  )
+  await stockSummary.getByRole('link', { name: 'Review inventory' }).click()
+
+  const filteredInventory = page.getByRole('region', { name: 'Inventory' })
+  await filteredInventory.getByLabel('Search inventory').fill(plumSku)
+  await filteredInventory
+    .getByRole('button', { name: /Needs attention/ })
+    .click()
+  await expect(
+    filteredInventory.getByRole('button').filter({ hasText: plumSku }),
+  ).toBeVisible()
+  await expect(
+    filteredInventory.getByRole('button').filter({ hasText: oatSku }),
+  ).toHaveCount(0)
+
+  await filteredInventory.getByRole('button', { name: /Healthy/ }).click()
+  await expect(filteredInventory).toContainText(
+    'No inventory matches the current search and stock filter.',
+  )
+  await filteredInventory.getByLabel('Search inventory').fill('')
+  await expect(
+    filteredInventory.getByRole('button').filter({ hasText: oatSku }),
+  ).toBeVisible()
+
+  await filteredInventory.getByRole('button', { name: /Out of stock/ }).click()
+  await expect(
+    filteredInventory.getByText(`Default · ${sku}`, { exact: true }),
+  ).toBeVisible()
+  await expect(
+    filteredInventory.getByRole('button').filter({ hasText: plumSku }),
+  ).toHaveCount(0)
+
+  await page.setViewportSize({ width: 1280, height: 900 })
   await page.reload()
   await page.getByRole('link', { name: 'Products' }).click()
   const persistedProduct = page

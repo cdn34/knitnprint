@@ -1,4 +1,10 @@
-import { StrictMode, type FormEvent, useEffect, useState } from 'react'
+import {
+  StrictMode,
+  type FormEvent,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react'
 import { createRoot } from 'react-dom/client'
 import {
   QueryClient,
@@ -11,6 +17,7 @@ import {
   Eye,
   ImageUp,
   Archive,
+  CircleCheck,
   Boxes,
   LayoutDashboard,
   LoaderCircle,
@@ -21,6 +28,7 @@ import {
   Search,
   Send,
   ShieldCheck,
+  TriangleAlert,
   UserRoundX,
 } from 'lucide-react'
 import {
@@ -271,35 +279,7 @@ function AdminShell({ profile }: Readonly<{ profile: StaffProfile }>) {
             View storefront
           </a>
         </header>
-        {page === 'dashboard' && (
-          <>
-            <section className="welcome">
-              <div>
-                <p>Secure workspace</p>
-                <h2>Your KnitPrint operations, in one place.</h2>
-                <span>
-                  Signed in as {profile.role}. Use the sidebar to move between
-                  focused operational areas.
-                </span>
-              </div>
-              <div className="welcome-mark">KP</div>
-            </section>
-            <section className="metrics" aria-label="Store metrics">
-              <article>
-                <span>Orders to fulfill</span><strong>—</strong>
-                <small>Available after order setup</small>
-              </article>
-              <article>
-                <span>Products</span><strong>—</strong>
-                <small>Open Products from the sidebar</small>
-              </article>
-              <article>
-                <span>Low stock</span><strong>—</strong>
-                <small>Open Inventory from the sidebar</small>
-              </article>
-            </section>
-          </>
-        )}
+        {page === 'dashboard' && <Dashboard profile={profile} />}
         {page === 'products' &&
           profile.capabilities.includes('catalog.read') && (
           <CatalogManagement
@@ -321,10 +301,152 @@ function AdminShell({ profile }: Readonly<{ profile: StaffProfile }>) {
 
 const inventoryKey = ['inventory'] as const
 
+function Dashboard({ profile }: Readonly<{ profile: StaffProfile }>) {
+  const canManageInventory = profile.capabilities.includes('inventory.adjust')
+  const inventory = useQuery({
+    queryKey: inventoryKey,
+    queryFn: api.listInventory,
+    enabled: canManageInventory,
+  })
+  const records = inventory.data ?? []
+  const availableUnits = records.reduce(
+    (total, record) => total + record.available_quantity,
+    0,
+  )
+  const reservedUnits = records.reduce(
+    (total, record) => total + record.reserved_quantity,
+    0,
+  )
+  const attention = records
+    .filter(({ low_stock }) => low_stock)
+    .sort(
+      (left, right) =>
+        left.available_quantity - right.available_quantity ||
+        left.product_title.localeCompare(right.product_title),
+    )
+  const outOfStock = records.filter(
+    ({ available_quantity }) => available_quantity === 0,
+  ).length
+  const metric = (value: number) => (inventory.isSuccess ? value : '—')
+  const inventoryContext = !canManageInventory
+    ? 'Requires inventory access'
+    : inventory.isPending
+      ? 'Loading inventory'
+      : inventory.isError
+        ? 'Inventory unavailable'
+        : `${records.length} variants tracked`
+
+  return (
+    <>
+      <section className="welcome">
+        <div>
+          <p>Secure workspace</p>
+          <h2>Your KnitPrint operations, in one place.</h2>
+          <span>
+            Signed in as {profile.role}. Use the sidebar to move between focused
+            operational areas.
+          </span>
+        </div>
+        <div className="welcome-mark">KP</div>
+      </section>
+      <section className="metrics" aria-label="Inventory metrics">
+        <article>
+          <span>Available units</span><strong>{metric(availableUnits)}</strong>
+          <small>{inventoryContext}</small>
+        </article>
+        <article>
+          <span>Reserved units</span><strong>{metric(reservedUnits)}</strong>
+          <small>Held by active reservations</small>
+        </article>
+        <article>
+          <span>Low stock</span><strong>{metric(attention.length)}</strong>
+          <small>{outOfStock} out of stock</small>
+        </article>
+      </section>
+      {canManageInventory && (
+        <section
+          className="dashboard-stock"
+          aria-labelledby="dashboard-stock-heading"
+        >
+          <div className="dashboard-stock-heading">
+            <div>
+              <p>Inventory attention</p>
+              <h2 id="dashboard-stock-heading">Low-stock variants</h2>
+            </div>
+            <a href="#inventory">Review inventory</a>
+          </div>
+          {inventory.isPending && (
+            <p className="panel-message">Loading inventory…</p>
+          )}
+          {inventory.isError && (
+            <p className="panel-message error" role="alert">
+              Inventory metrics could not be loaded.
+            </p>
+          )}
+          {inventory.isSuccess && attention.length === 0 && (
+            <div className="dashboard-stock-empty">
+              <CircleCheck aria-hidden="true" />
+              <span>
+                <strong>Stock levels look healthy.</strong>
+                <small>No variants are at or below their threshold.</small>
+              </span>
+            </div>
+          )}
+          {attention.length > 0 && (
+            <div className="dashboard-stock-list">
+              {attention.slice(0, 6).map((record) => (
+                <article key={record.variant_id}>
+                  <TriangleAlert aria-hidden="true" />
+                  <span>
+                    <strong>
+                      {record.product_title} · {record.variant_title}
+                    </strong>
+                    <small>
+                      {record.sku} · threshold {record.low_stock_threshold}
+                    </small>
+                  </span>
+                  <b>{record.available_quantity}</b>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+    </>
+  )
+}
+
+type InventoryFilter = 'all' | 'attention' | 'out' | 'healthy'
+
 function InventoryManagement() {
   const client = useQueryClient()
   const [selected, setSelected] = useState<InventoryRecord | null>(null)
+  const [query, setQuery] = useState('')
+  const [filter, setFilter] = useState<InventoryFilter>('all')
   const inventory = useQuery({ queryKey: inventoryKey, queryFn: api.listInventory })
+  const records = inventory.data ?? []
+  const counts = {
+    all: records.length,
+    attention: records.filter(({ low_stock }) => low_stock).length,
+    out: records.filter(({ available_quantity }) => available_quantity === 0).length,
+    healthy: records.filter(({ low_stock }) => !low_stock).length,
+  }
+  const visibleInventory = useMemo(() => {
+    const normalized = query.trim().toLowerCase()
+    return records.filter((record) => {
+      const matchesQuery =
+        !normalized ||
+        [record.product_title, record.variant_title, record.sku].some(
+          (value) => value.toLowerCase().includes(normalized),
+        )
+      const matchesFilter =
+        filter === 'all' ||
+        (filter === 'attention' && record.low_stock) ||
+        (filter === 'out' && record.available_quantity === 0) ||
+        (filter === 'healthy' && !record.low_stock)
+      return matchesQuery && matchesFilter
+    })
+  }, [filter, query, records])
   const movements = useQuery({
     queryKey: ['inventory-movements', selected?.variant_id],
     queryFn: () => api.inventoryMovements(selected?.variant_id ?? ''),
@@ -375,13 +497,47 @@ function InventoryManagement() {
     <section className="inventory-section" aria-labelledby="inventory-heading">
       <div className="section-heading">
         <div><p>Phase 3 · Operations</p><h2 id="inventory-heading">Inventory</h2></div>
-        <span>{inventory.data?.filter(({ low_stock }) => low_stock).length ?? '—'} low stock</span>
+        <span>{inventory.isPending ? '—' : counts.attention} low stock</span>
+      </div>
+      <div className="inventory-toolbar">
+        <label className="inventory-search">
+          <Search size={16} aria-hidden="true" />
+          <span className="sr-only">Search inventory</span>
+          <input
+            type="search"
+            placeholder="Search product, variant, or SKU"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+        </label>
+        <div
+          className="inventory-filters"
+          role="group"
+          aria-label="Filter by stock state"
+        >
+          {([
+            ['all', 'All'],
+            ['attention', 'Needs attention'],
+            ['out', 'Out of stock'],
+            ['healthy', 'Healthy'],
+          ] as const).map(([value, label]) => (
+            <button
+              aria-pressed={filter === value}
+              className={filter === value ? 'active' : ''}
+              key={value}
+              type="button"
+              onClick={() => setFilter(value)}
+            >
+              {label} <span>{counts[value]}</span>
+            </button>
+          ))}
+        </div>
       </div>
       <div className="inventory-layout">
         <div className="inventory-list">
           {inventory.isPending && <p className="panel-message">Loading inventory…</p>}
           {inventory.isError && <p className="panel-message error" role="alert">Inventory could not be loaded.</p>}
-          {inventory.data?.map((record) => (
+          {visibleInventory.map((record) => (
             <button
               className={selected?.variant_id === record.variant_id ? 'selected' : ''}
               key={record.variant_id}
@@ -394,7 +550,10 @@ function InventoryManagement() {
               </span>
             </button>
           ))}
-          {inventory.data?.length === 0 && <p className="panel-message">Create a product variant to begin tracking stock.</p>}
+          {inventory.isSuccess && records.length === 0 && <p className="panel-message">Create a product variant to begin tracking stock.</p>}
+          {inventory.isSuccess && records.length > 0 && visibleInventory.length === 0 && (
+            <p className="panel-message">No inventory matches the current search and stock filter.</p>
+          )}
         </div>
         <div className="inventory-editor">
           {!selected ? (
@@ -464,6 +623,7 @@ function CatalogManagement({
             : [product, ...current],
       )
       client.invalidateQueries({ queryKey: productsKey })
+      client.invalidateQueries({ queryKey: inventoryKey })
       setPreview(product)
     },
   })
@@ -503,6 +663,7 @@ function CatalogManagement({
       }),
     onSuccess: (product) => {
       client.invalidateQueries({ queryKey: productsKey })
+      client.invalidateQueries({ queryKey: inventoryKey })
       setPreview(product)
     },
   })
