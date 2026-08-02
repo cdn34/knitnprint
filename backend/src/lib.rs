@@ -1,6 +1,7 @@
 pub mod auth;
 pub mod catalog;
 pub mod config;
+pub mod customers;
 pub mod error;
 pub mod health;
 pub mod inventory;
@@ -61,6 +62,8 @@ pub fn app(state: AppState) -> Router {
             get(catalog::category_list).post(catalog::category_create),
         )
         .route("/api/admin/inventory", get(inventory::list))
+        .route("/api/admin/customers", get(customers::list))
+        .route("/api/admin/customers/{customer_id}", get(customers::detail))
         .route(
             "/api/admin/inventory/{variant_id}/movements",
             get(inventory::movements),
@@ -87,6 +90,10 @@ pub fn app(state: AppState) -> Router {
             get(|| async { Json(openapi::document()) }),
         )
         .route("/api/products", get(catalog::public_list))
+        .route(
+            "/api/customers/guest",
+            axum::routing::post(customers::create_guest),
+        )
         .route("/api/categories", get(catalog::public_category_list))
         .route("/api/products/{slug}", get(catalog::public_detail))
         .route("/api/media/{media_id}/{variant}", get(media::public_asset))

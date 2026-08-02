@@ -1,6 +1,6 @@
 use utoipa::{OpenApi, openapi::OpenApi as OpenApiDocument};
 
-use crate::{auth, catalog, error, health, inventory, media, staff};
+use crate::{auth, catalog, customers, error, health, inventory, media, staff};
 
 #[derive(OpenApi)]
 #[openapi(
@@ -32,6 +32,9 @@ use crate::{auth, catalog, error, health, inventory, media, staff};
         inventory::list,
         inventory::movements,
         inventory::adjust,
+        customers::create_guest,
+        customers::list,
+        customers::detail,
         staff::list,
         staff::create,
         staff::disable
@@ -58,6 +61,12 @@ use crate::{auth, catalog, error, health, inventory, media, staff};
         inventory::InventoryRecord,
         inventory::InventoryMovement,
         inventory::AdjustInventoryRequest,
+        customers::GuestCustomerRequest,
+        customers::CustomerAddressInput,
+        customers::GuestCustomerReceipt,
+        customers::CustomerSummary,
+        customers::CustomerAddress,
+        customers::CustomerDetail,
         staff::StaffRecord,
         staff::CreateStaffRequest,
         staff::DisableStaffRequest
@@ -71,6 +80,8 @@ use crate::{auth, catalog, error, health, inventory, media, staff};
         ,(name = "admin media", description = "Capability-protected direct media uploads"),
         (name = "media", description = "Stable published product media")
         ,(name = "inventory", description = "Variant availability and immutable stock movements")
+        ,(name = "customers", description = "Guest customer contact capture")
+        ,(name = "admin customers", description = "Privacy-aware customer inspection")
     )
 )]
 struct ApiDoc;

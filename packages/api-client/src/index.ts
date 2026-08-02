@@ -8,10 +8,16 @@ export type {
   CreateCategoryRequest,
   CreateVariantRequest,
   CreateStaffRequest,
+  CustomerAddress,
+  CustomerAddressInput,
+  CustomerDetail,
+  CustomerSummary,
   DisableStaffRequest,
   ErrorBody,
   ErrorDetail,
   Health,
+  GuestCustomerReceipt,
+  GuestCustomerRequest,
   InitiateUploadRequest,
   InitiateUploadResponse,
   InventoryMovement,
@@ -35,9 +41,13 @@ import type {
   CreateCategoryRequest,
   CreateVariantRequest,
   CreateStaffRequest,
+  CustomerDetail,
+  CustomerSummary,
   DisableStaffRequest,
   ErrorBody,
   Health,
+  GuestCustomerReceipt,
+  GuestCustomerRequest,
   InitiateUploadRequest,
   InitiateUploadResponse,
   InventoryMovement,
@@ -125,6 +135,19 @@ export function createApiClient(options: ApiClientOptions = {}) {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(input),
       }),
+    createGuestCustomer: (input: GuestCustomerRequest, idempotencyKey: string) =>
+      send<GuestCustomerReceipt>('/api/customers/guest', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'idempotency-key': idempotencyKey,
+        },
+        body: JSON.stringify(input),
+      }),
+    listCustomers: (query: { q?: string } = {}) =>
+      send<Array<CustomerSummary>>(withQuery('/api/admin/customers', query)),
+    customer: (customerId: string) =>
+      send<CustomerDetail>(`/api/admin/customers/${customerId}`),
     listAdminProducts: (query: { q?: string; status?: string } = {}) =>
       send<Array<Product>>(withQuery('/api/admin/products', query)),
     adminProduct: (productId: string) =>

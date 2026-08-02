@@ -55,6 +55,53 @@ export interface CreateVariantRequest {
   "title": string
 }
 
+export interface CustomerAddress {
+  "address_type": string
+  "city": string
+  "country_code": string
+  "id": string
+  "line1": string
+  "line2": string
+  "phone": string
+  "postal_code": string
+  "recipient_name": string
+  "region": string
+}
+
+export interface CustomerAddressInput {
+  "city": string
+  "country_code": string
+  "line1": string
+  "line2"?: string
+  "phone"?: string
+  "postal_code": string
+  "recipient_name": string
+  "region"?: string
+}
+
+export interface CustomerDetail {
+  "addresses": Array<CustomerAddress>
+  "created_at": string
+  "customer_type": string
+  "email": string
+  "first_name": string
+  "id": string
+  "last_name": string
+  "order_count": number
+  "phone": string
+  "retention_expires_at": string
+}
+
+export interface CustomerSummary {
+  "address_count": number
+  "created_at": string
+  "customer_type": string
+  "email": string
+  "first_name": string
+  "id": string
+  "last_name": string
+}
+
 export interface DisableStaffRequest {
   "reason": string
 }
@@ -66,6 +113,19 @@ export interface ErrorBody {
 export interface ErrorDetail {
   "code": string
   "message": string
+}
+
+export interface GuestCustomerReceipt {
+  "address_id": string
+  "customer_id": string
+}
+
+export interface GuestCustomerRequest {
+  "address": CustomerAddressInput
+  "email": string
+  "first_name": string
+  "last_name": string
+  "phone"?: string
 }
 
 export interface Health {

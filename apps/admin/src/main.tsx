@@ -19,21 +19,28 @@ import {
   Archive,
   CircleCheck,
   Boxes,
+  History,
   LayoutDashboard,
   LoaderCircle,
   LockKeyhole,
   LogOut,
+  Mail,
+  MapPin,
   Package,
+  Phone,
   Plus,
   Search,
   Send,
   ShieldCheck,
   TriangleAlert,
+  UsersRound,
   UserRoundX,
 } from 'lucide-react'
 import {
   ApiError,
   createApiClient,
+  type CustomerDetail,
+  type CustomerSummary,
   type Product,
   type InventoryRecord,
   type StaffProfile,
@@ -189,6 +196,9 @@ function AdminShell({ profile }: Readonly<{ profile: StaffProfile }>) {
     ...(profile.capabilities.includes('inventory.adjust')
       ? [{ id: 'inventory', label: 'Inventory', icon: Boxes }]
       : []),
+    ...(profile.capabilities.includes('customers.read')
+      ? [{ id: 'customers', label: 'Customers', icon: UsersRound }]
+      : []),
     ...(profile.capabilities.includes('staff.manage')
       ? [{ id: 'staff', label: 'Staff', icon: ShieldCheck }]
       : []),
@@ -272,7 +282,9 @@ function AdminShell({ profile }: Readonly<{ profile: StaffProfile }>) {
                   ? 'Product catalog.'
                   : page === 'inventory'
                     ? 'Inventory control.'
-                  : 'Staff access.'}
+                    : page === 'customers'
+                      ? 'Customer directory.'
+                      : 'Staff access.'}
             </h1>
           </div>
           <a className="storefront-link" href="http://localhost:3000">
@@ -291,11 +303,216 @@ function AdminShell({ profile }: Readonly<{ profile: StaffProfile }>) {
           profile.capabilities.includes('inventory.adjust') && (
             <InventoryManagement />
           )}
+        {page === 'customers' &&
+          profile.capabilities.includes('customers.read') && (
+            <CustomerManagement />
+          )}
         {page === 'staff' && profile.capabilities.includes('staff.manage') && (
           <StaffManagement currentStaffId={profile.id} />
         )}
       </main>
     </div>
+  )
+}
+
+const customersKey = ['customers'] as const
+
+function customerName(customer: CustomerSummary | CustomerDetail) {
+  return `${customer.first_name} ${customer.last_name}`.trim()
+}
+
+function formatCustomerDate(value: string) {
+  return new Intl.DateTimeFormat('en', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  }).format(new Date(value))
+}
+
+function CustomerManagement() {
+  const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  useEffect(() => {
+    const timeout = window.setTimeout(
+      () => setDebouncedSearch(search.trim()),
+      250,
+    )
+    return () => window.clearTimeout(timeout)
+  }, [search])
+  const customers = useQuery({
+    queryKey: [...customersKey, debouncedSearch],
+    queryFn: () => api.listCustomers({ q: debouncedSearch || undefined }),
+  })
+  const detail = useQuery({
+    queryKey: ['customer', selectedId],
+    queryFn: () => api.customer(selectedId ?? ''),
+    enabled: Boolean(selectedId),
+  })
+
+  return (
+    <section
+      className="customers-section"
+      id="customers"
+      aria-labelledby="customers-heading"
+    >
+      <div className="section-heading">
+        <div>
+          <p>Phase 4 · Relationships</p>
+          <h2 id="customers-heading">Customers</h2>
+        </div>
+        <span>{customers.isPending ? '—' : (customers.data?.length ?? 0)} shown</span>
+      </div>
+      <label className="customer-search">
+        <Search size={16} aria-hidden="true" />
+        <span className="sr-only">Search customers</span>
+        <input
+          type="search"
+          placeholder="Search by name or email"
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+        />
+      </label>
+      <div className="customer-layout">
+        <div className="customer-list">
+          {customers.isPending && (
+            <p className="panel-message">Loading customers…</p>
+          )}
+          {customers.isError && (
+            <p className="panel-message error" role="alert">
+              Customers could not be loaded.
+            </p>
+          )}
+          {customers.data?.map((customer) => (
+            <button
+              aria-controls="customer-detail"
+              aria-pressed={selectedId === customer.id}
+              className={selectedId === customer.id ? 'selected' : ''}
+              key={customer.id}
+              type="button"
+              onClick={() => setSelectedId(customer.id)}
+            >
+              <span className="customer-avatar" aria-hidden="true">
+                {customer.first_name.slice(0, 1).toUpperCase()}
+                {customer.last_name.slice(0, 1).toUpperCase()}
+              </span>
+              <span className="customer-identity">
+                <strong>{customerName(customer)}</strong>
+                <small>{customer.email}</small>
+              </span>
+              <span className="customer-summary">
+                <b>{customer.customer_type}</b>
+                <small>
+                  {customer.address_count}{' '}
+                  {customer.address_count === 1 ? 'address' : 'addresses'}
+                </small>
+              </span>
+            </button>
+          ))}
+          {customers.isSuccess && customers.data.length === 0 && (
+            <div className="customer-empty">
+              <UsersRound aria-hidden="true" />
+              <strong>No customers found</strong>
+              <span>
+                {search.trim()
+                  ? 'Try a different name or email.'
+                  : 'Customer profiles will appear after checkout.'}
+              </span>
+            </div>
+          )}
+        </div>
+        <div className="customer-detail-shell" id="customer-detail">
+          {!selectedId ? (
+            <div className="customer-placeholder">
+              <UsersRound aria-hidden="true" />
+              <strong>Select a customer</strong>
+              <span>Review contact details, addresses, and order history.</span>
+            </div>
+          ) : detail.isPending ? (
+            <p className="panel-message">Loading customer details…</p>
+          ) : detail.isError ? (
+            <p className="panel-message error" role="alert">
+              Customer details could not be loaded.
+            </p>
+          ) : (
+            <CustomerDetailPanel customer={detail.data} />
+          )}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function CustomerDetailPanel({
+  customer,
+}: Readonly<{ customer: CustomerDetail }>) {
+  const name = customerName(customer)
+
+  return (
+    <section className="customer-detail" aria-labelledby="customer-detail-heading">
+      <div className="customer-detail-heading">
+        <div className="customer-avatar large" aria-hidden="true">
+          {customer.first_name.slice(0, 1).toUpperCase()}
+          {customer.last_name.slice(0, 1).toUpperCase()}
+        </div>
+        <div>
+          <p>{customer.customer_type} customer</p>
+          <h3 id="customer-detail-heading">{name}</h3>
+          <small>Customer since {formatCustomerDate(customer.created_at)}</small>
+        </div>
+      </div>
+      <section className="customer-contact" aria-labelledby="customer-contact-heading">
+        <h4 id="customer-contact-heading">Contact</h4>
+        <dl>
+          <div>
+            <dt><Mail aria-hidden="true" /> Email</dt>
+            <dd><a href={`mailto:${customer.email}`}>{customer.email}</a></dd>
+          </div>
+          <div>
+            <dt><Phone aria-hidden="true" /> Phone</dt>
+            <dd>{customer.phone || 'Not provided'}</dd>
+          </div>
+        </dl>
+      </section>
+      <section className="customer-addresses" aria-labelledby="customer-addresses-heading">
+        <h4 id="customer-addresses-heading">
+          Addresses <span>{customer.addresses.length}</span>
+        </h4>
+        {customer.addresses.map((address) => (
+          <article key={address.id} aria-label={`Address for ${address.recipient_name}`}>
+            <MapPin aria-hidden="true" />
+            <address>
+              <strong>{address.recipient_name}</strong>
+              <span>{address.line1}</span>
+              {address.line2 && <span>{address.line2}</span>}
+              <span>
+                {[address.city, address.region, address.postal_code]
+                  .filter(Boolean)
+                  .join(', ')}
+              </span>
+              <span>{address.country_code}</span>
+            </address>
+            <small>{address.address_type}</small>
+          </article>
+        ))}
+        {customer.addresses.length === 0 && (
+          <p className="panel-message">No saved addresses.</p>
+        )}
+      </section>
+      <section className="customer-orders" aria-labelledby="customer-orders-heading">
+        <div>
+          <History aria-hidden="true" />
+          <h4 id="customer-orders-heading">Order history</h4>
+          <span>{customer.order_count}</span>
+        </div>
+        {customer.order_count === 0 && (
+          <p>No orders yet. Completed checkouts will appear here.</p>
+        )}
+      </section>
+      <p className="customer-retention">
+        Profile retained until {formatCustomerDate(customer.retention_expires_at)}.
+      </p>
+    </section>
   )
 }
 

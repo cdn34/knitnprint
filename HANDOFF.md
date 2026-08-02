@@ -282,7 +282,32 @@ Phase 3 is complete. Phases 0 through 3 now form the first working milestone:
 secure staff can publish catalog products, manage media and stock, prevent
 overselling, and expose an availability-aware public storefront.
 
-Continue with Phase 4 customer and address foundations.
+The first Phase 4 customer and address foundation is implemented:
+
+- write-only guest contact and delivery-address capture that remains separate
+  from staff authentication;
+- hashed idempotency keys and transaction-scoped advisory locking so retries
+  return the original customer/address identifiers without duplicate records;
+- database constraints for customer type, contact lengths, address type,
+  country code, retention deadlines, and referential cleanup;
+- a 24-month guest retention deadline, with expired or anonymized records
+  excluded from all application reads;
+- capability-protected, bounded customer search and detail APIs;
+- immutable audit events for guest creation, staff list/search access, and
+  private detail access without storing search terms or copied personal data;
+- generated OpenAPI/TypeScript contracts and client methods;
+- a permission-gated, responsive admin Customers workspace with search,
+  contact and address detail, retention visibility, and an order-history
+  placeholder;
+- isolated PostgreSQL coverage for validation, idempotency, explicit
+  `customers.read` authorization, privacy audits, expiry, and anonymization;
+- Playwright coverage for customer search/detail, WCAG A/AA checks, and mobile
+  overflow containment.
+
+Phase 4 remains in progress. Next, add optional registered customer accounts
+and ownership-based access. Before production customer traffic, bind guest
+capture to checkout anti-abuse controls and add a retention worker that
+irreversibly anonymizes expired contact data and addresses.
 
 The complete Rust, API-contract, TypeScript, production-build, 14-test
 storefront Playwright, and three-test PostgreSQL-backed admin Playwright suites
