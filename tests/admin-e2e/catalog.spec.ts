@@ -11,6 +11,8 @@ test('lets an owner create, preview, search, and publish a product', async ({
   const title = `Woven Planter ${unique}`
   const slug = `woven-planter-${unique}`
   const sku = `PLANTER-${unique}`
+  const plumSku = `PLANTER-PLUM-${unique}`
+  const oatSku = `PLANTER-OAT-${unique}`
 
   await page.goto('/')
   await page.getByLabel('Email address').fill(ownerEmail)
@@ -48,10 +50,16 @@ test('lets an owner create, preview, search, and publish a product', async ({
   await editor.getByRole('button', { name: 'Save categories' }).click()
 
   await editor.getByLabel('Variant title').fill('Plum')
-  await editor.getByLabel('SKU').fill(`PLANTER-PLUM-${unique}`)
+  await editor.getByLabel('SKU').fill(plumSku)
   await editor.getByLabel('Price').fill('46.00')
   await editor.getByRole('button', { name: 'Add variant' }).click()
   await expect(editor).toContainText('2 configured for this product')
+
+  await editor.getByLabel('Variant title').fill('Oat')
+  await editor.getByLabel('SKU').fill(oatSku)
+  await editor.getByLabel('Price').fill('48.00')
+  await editor.getByRole('button', { name: 'Add variant' }).click()
+  await expect(editor).toContainText('3 configured for this product')
   await expect(editor).toContainText(categoryName)
 
   page.once('dialog', async (dialog) => {
@@ -83,8 +91,13 @@ test('lets an owner create, preview, search, and publish a product', async ({
     variants: [
       { sku, price_minor: 4200, currency: 'EUR' },
       {
-        sku: `PLANTER-PLUM-${unique}`,
+        sku: plumSku,
         price_minor: 4600,
+        currency: 'EUR',
+      },
+      {
+        sku: oatSku,
+        price_minor: 4800,
         currency: 'EUR',
       },
     ],
@@ -106,14 +119,24 @@ test('lets an owner create, preview, search, and publish a product', async ({
 
   await page.getByRole('link', { name: 'Inventory' }).click()
   const inventory = page.getByRole('region', { name: 'Inventory' })
-  const inventoryRow = inventory.getByRole('button').filter({ hasText: sku })
+  const inventoryRow = inventory.getByRole('button').filter({ hasText: oatSku })
   await inventoryRow.click()
   await inventory.getByLabel('Quantity change').fill('7')
-  await inventory.getByLabel('Reason').fill('Initial browser-test stock')
+  await inventory.getByLabel('Reason').fill('Initial oat stock')
   await inventory.getByLabel('Low-stock threshold').fill('3')
   await inventory.getByRole('button', { name: 'Apply adjustment' }).click()
   await expect(inventoryRow).toContainText('7')
-  await expect(inventory).toContainText('Initial browser-test stock')
+  await expect(inventory).toContainText('Initial oat stock')
+
+  const plumInventoryRow = inventory
+    .getByRole('button')
+    .filter({ hasText: plumSku })
+  await plumInventoryRow.click()
+  await inventory.getByLabel('Quantity change').fill('2')
+  await inventory.getByLabel('Reason').fill('Small plum batch')
+  await inventory.getByLabel('Low-stock threshold').fill('3')
+  await inventory.getByRole('button', { name: 'Apply adjustment' }).click()
+  await expect(plumInventoryRow).toContainText('2')
 
   await page.reload()
   await page.getByRole('link', { name: 'Products' }).click()
@@ -122,4 +145,32 @@ test('lets an owner create, preview, search, and publish a product', async ({
     .getByRole('article')
     .filter({ hasText: slug })
   await expect(persistedProduct.locator('.product-thumbnail img')).toBeVisible()
+
+  await page.goto(`http://127.0.0.1:3000/products/${slug}`)
+  await page.waitForLoadState('networkidle')
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(title)
+  await expect(page.getByRole('radio', { name: /Default/ })).toBeDisabled()
+  await expect(page.getByRole('radio', { name: /Plum/ })).toBeChecked()
+  await expect(page.locator('.product-detail-price')).toContainText('46.00')
+  await expect(page.getByRole('status')).toContainText('Only 2 left')
+
+  await page.locator('.variant-option').filter({ hasText: 'Oat' }).click()
+  await expect(page.getByRole('radio', { name: /Oat/ })).toBeChecked()
+  await expect(page.getByText(`SKU ${oatSku}`)).toBeVisible()
+  await expect(page.locator('.product-detail-price')).toContainText('48.00')
+  await expect(page.getByRole('status')).toContainText('In stock')
+
+  await page.locator('.variant-option').filter({ hasText: 'Plum' }).click()
+  await expect(page.getByRole('radio', { name: /Plum/ })).toBeChecked()
+  await expect(page.getByText(`SKU ${plumSku}`)).toBeVisible()
+  await expect(page.locator('.product-detail-price')).toContainText('46.00')
+  await expect(page.getByRole('status')).toContainText('Only 2 left')
+
+  await page.setViewportSize({ width: 390, height: 844 })
+  await expect(page.getByRole('radio', { name: /Plum/ })).toBeVisible()
+  const dimensions = await page.evaluate(() => ({
+    viewport: document.documentElement.clientWidth,
+    content: document.documentElement.scrollWidth,
+  }))
+  expect(dimensions.content).toBeLessThanOrEqual(dimensions.viewport)
 })

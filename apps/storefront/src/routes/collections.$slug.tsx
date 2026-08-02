@@ -1,6 +1,11 @@
 import { createFileRoute, notFound } from '@tanstack/react-router'
 import { ArrowLeft, PackageCheck, Sparkles } from 'lucide-react'
-import { mediaUrl, productPrice, publishedCollection } from '../catalog-api'
+import {
+  mediaUrl,
+  productPrice,
+  productStock,
+  publishedCollection,
+} from '../catalog-api'
 
 export const Route = createFileRoute('/collections/$slug')({
   loader: async ({ params }) => {
@@ -55,8 +60,9 @@ function CollectionPage() {
         </header>
         <section aria-label={`${category.name} products`}>
           <div className="product-grid">
-            {products.map((product, index) => (
-              <article className="product-card" key={product.id}>
+            {products.map((product, index) => {
+              const stock = productStock(product)
+              return <article className="product-card" key={product.id}>
                 <div
                   className={`product-image tone--${['mauve', 'sand', 'ink', 'clay'][index % 4]}`}
                 >
@@ -77,13 +83,16 @@ function CollectionPage() {
                   </a>
                 </div>
                 <div className="product-info">
-                  <h2>
-                    <a href={`/products/${product.slug}`}>{product.title}</a>
-                  </h2>
+                  <div>
+                    <h2>
+                      <a href={`/products/${product.slug}`}>{product.title}</a>
+                    </h2>
+                    {stock && <span className={`product-stock product-stock--${stock.state}`}>{stock.label}</span>}
+                  </div>
                   <p>{productPrice(product)}</p>
                 </div>
               </article>
-            ))}
+            })}
             {products.length === 0 && (
               <div className="storefront-empty">
                 <PackageCheck aria-hidden="true" />

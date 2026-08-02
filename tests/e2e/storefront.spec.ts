@@ -41,9 +41,25 @@ test('opens a published product detail page when available', async ({ page }) =>
   if ((await card.count()) === 0) return
 
   const title = await card.getByRole('heading').textContent()
+  await expect(card.locator('.product-stock')).toBeVisible()
   await card.getByRole('link', { name: `View ${title}` }).click()
   await expect(page.getByRole('heading', { level: 1 })).toHaveText(title ?? '')
-  await expect(page.getByText(/SKU /)).toBeVisible()
+  await expect(page.getByRole('radio').first()).toBeVisible()
+  await expect(page.getByRole('status')).toContainText(
+    /In stock|Only \d+ left|Sold out/,
+  )
+
+  const availableVariants = page.locator(
+    'input[type="radio"]:not(:disabled)',
+  )
+  if ((await availableVariants.count()) > 0) {
+    await expect(availableVariants.first()).toBeChecked()
+  }
+
+  const results = await new AxeBuilder({ page })
+    .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+    .analyze()
+  expect(results.violations).toEqual([])
 })
 
 test('navigates live catalog collections when available', async ({ page }) => {

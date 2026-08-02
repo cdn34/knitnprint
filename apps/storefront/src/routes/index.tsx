@@ -15,6 +15,7 @@ import {
 import {
   mediaUrl,
   productPrice,
+  productStock,
   publishedCategories,
   publishedProducts,
 } from '../catalog-api'
@@ -151,8 +152,9 @@ function HomePage() {
           </div>
 
           <div className="product-grid">
-            {visibleProducts.map((product, index) => (
-              <article className="product-card" key={product.id}>
+            {visibleProducts.map((product, index) => {
+              const stock = productStock(product)
+              return <article className="product-card" key={product.id}>
                 <div className={`product-image tone--${['mauve', 'sand', 'ink', 'clay'][index % 4]}`}>
                   {index === 0 && <span className="product-tag">Freshly published</span>}
                   <a
@@ -175,11 +177,14 @@ function HomePage() {
                   </button>
                 </div>
                 <div className="product-info">
-                  <h3><a href={`/products/${product.slug}`}>{product.title}</a></h3>
+                  <div>
+                    <h3><a href={`/products/${product.slug}`}>{product.title}</a></h3>
+                    {stock && <span className={`product-stock product-stock--${stock.state}`}>{stock.label}</span>}
+                  </div>
                   <p>{productPrice(product)}</p>
                 </div>
               </article>
-            ))}
+            })}
             {visibleProducts.length === 0 && (
               <div className="storefront-empty">
                 <PackageCheck aria-hidden="true" />

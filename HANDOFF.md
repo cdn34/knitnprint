@@ -1,6 +1,6 @@
 # Project handoff
 
-Last updated: 2026-07-29
+Last updated: 2026-08-02
 
 ## Goal
 
@@ -233,11 +233,45 @@ The first Phase 3 inventory slice is implemented:
   immutability, audit records, and public availability, plus a real Playwright
   admin adjustment workflow.
 
+The transactional inventory lifecycle is also implemented:
+
+- reusable availability, reserve, release, commit, and adjustment service
+  operations for later cart and order flows;
+- row-locked mutations that serialize competing operations for each variant;
+- checked arithmetic and explicit insufficient-available/reserved errors that
+  preserve all non-negative inventory invariants;
+- reservation, release, and commitment entries in the immutable movement
+  history, including system-attributed reasons;
+- PostgreSQL lifecycle coverage for reserve/release/commit behavior and error
+  paths;
+- a 12-way contention test proving that only five reservations can succeed
+  when five units are available, with exactly five corresponding movements.
+
+Storefront availability is implemented:
+
+- concise in-stock, low-stock, and sold-out messaging on home and collection
+  product cards;
+- product detail variant controls that keep sold-out options visible but
+  disabled and default to the first available variant;
+- live selected-variant price, SKU, availability message, and future cart
+  action state;
+- accessible native radio semantics, keyboard focus, live status messaging,
+  WCAG AA color contrast, and responsive layouts without viewport overflow;
+- desktop/mobile storefront coverage for stock rendering and detail-page
+  accessibility;
+- a deterministic PostgreSQL-backed browser lifecycle covering a sold-out
+  default, a low-stock option, an in-stock option, price/SKU changes, and mobile
+  layout;
+- cancellation-safe admin product cache updates so concurrent initial loading
+  cannot temporarily hide a newly created draft.
+
 Continue Phase 3 with:
 
-1. transactional reserve, release, and commit operations with concurrency tests;
-2. storefront stock messaging and variant selection based on availability;
-3. dashboard low-stock metrics and operational filtering.
+1. dashboard low-stock metrics and operational filtering.
+
+The complete Rust, API-contract, TypeScript, production-build, 14-test
+storefront Playwright, and three-test PostgreSQL-backed admin Playwright suites
+passed on 2026-08-02.
 
 ## Environment notes
 

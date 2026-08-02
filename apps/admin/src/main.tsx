@@ -452,13 +452,16 @@ function CatalogManagement({
   })
   const createProduct = useMutation({
     mutationFn: api.createProduct,
+    onMutate: async () => {
+      await client.cancelQueries({ queryKey: productsKey })
+    },
     onSuccess: (product) => {
       client.setQueriesData<Array<Product>>(
         { queryKey: productsKey },
-        (current) =>
-          current && !current.some(({ id }) => id === product.id)
-            ? [product, ...current]
-            : current,
+        (current = []) =>
+          current.some(({ id }) => id === product.id)
+            ? current
+            : [product, ...current],
       )
       client.invalidateQueries({ queryKey: productsKey })
       setPreview(product)
