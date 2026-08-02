@@ -481,7 +481,7 @@ fn valid_guest(input: &GuestCustomerRequest) -> bool {
         && input.address.phone.trim().len() <= 40
 }
 
-fn valid_email(value: &str) -> bool {
+pub(crate) fn valid_email(value: &str) -> bool {
     let value = value.trim();
     let mut parts = value.split('@');
     let local = parts.next().unwrap_or_default();

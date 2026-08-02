@@ -25,6 +25,7 @@ npm run db:migrate
 npm run db:seed
 npm run dev:storefront
 npm run dev:admin
+DATABASE_URL=postgres://knitprint:knitprint@localhost:5432/knitprint \
 cargo run -p knitprint-api
 ```
 
@@ -60,6 +61,20 @@ The admin starts on a session-aware login screen and proxies `/api` requests to
 the local Rust API. Both processes must be running. After signing in, refreshing
 the browser preserves the server-side session; use the sign-out button beside
 the staff profile to revoke it.
+
+The storefront also proxies `/api` to the local Rust API and provides optional
+registered customer accounts at http://localhost:3000/account. Customers can
+register, sign in, preserve their session across reloads, view their contact
+details and owned delivery addresses, add an address, and sign out. Customer
+sessions and staff sessions are separate, and guest checkout data remains
+independent of registered accounts.
+
+The Vite proxies are development-only. In production, the public web server or
+ingress must route `/api/*` to the Rust API under the same public origin as the
+storefront. It must preserve request cookies and API `Set-Cookie` headers, and
+production must use HTTPS so secure session cookies work. Do not configure the
+browser to call a separate API origin unless the cookie and CSRF design is
+intentionally revised.
 
 Failed admin sign-ins are limited to five attempts per email in a rolling
 15-minute window. Run authentication cleanup from a scheduler (daily is
@@ -119,6 +134,23 @@ Install the local Chromium runtime once before running browser tests:
 ```bash
 npx playwright install chromium
 ```
+
+The registered-customer integration and browser lifecycle require migrated
+PostgreSQL and a database-connected API. Keep the API command from the local
+setup section running, then use:
+
+```bash
+DATABASE_URL=postgres://knitprint:knitprint@localhost:5432/knitprint \
+cargo test --test customer_account_lifecycle
+DATABASE_URL=postgres://knitprint:knitprint@localhost:5432/knitprint \
+npx playwright test tests/e2e/account.spec.ts
+```
+
+Registered accounts are not production-ready yet. Email verification and
+password recovery are not implemented. The existing per-email login limit
+must be supplemented with perimeter/global/IP throttling and hardened against
+concurrent login attempts. Expired customer contact data and addresses also
+need an irreversible retention-cleanup worker before real customer traffic.
 
 Brand derivatives are generated deterministically from `images/logo.png`:
 

@@ -82,14 +82,14 @@ function HomePage() {
         </nav>
 
         <div className="header-actions">
-          <IconButton label="Search">
-            <Search />
-          </IconButton>
           <span className="desktop-action">
-            <IconButton label="Account">
-              <CircleUserRound />
+            <IconButton label="Search">
+              <Search />
             </IconButton>
           </span>
+          <a className="icon-button" aria-label="Account" href="/account">
+            <CircleUserRound />
+          </a>
           <IconButton label="Cart, 0 items">
             <ShoppingBag />
           </IconButton>

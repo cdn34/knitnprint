@@ -1,6 +1,6 @@
 use utoipa::{OpenApi, openapi::OpenApi as OpenApiDocument};
 
-use crate::{auth, catalog, customers, error, health, inventory, media, staff};
+use crate::{auth, catalog, customer_auth, customers, error, health, inventory, media, staff};
 
 #[derive(OpenApi)]
 #[openapi(
@@ -15,6 +15,11 @@ use crate::{auth, catalog, customers, error, health, inventory, media, staff};
         auth::login,
         auth::logout,
         auth::me,
+        customer_auth::register,
+        customer_auth::login,
+        customer_auth::logout,
+        customer_auth::me,
+        customer_auth::add_address,
         catalog::admin_list,
         catalog::admin_detail,
         catalog::create,
@@ -45,6 +50,10 @@ use crate::{auth, catalog, customers, error, health, inventory, media, staff};
         error::ErrorDetail,
         auth::LoginRequest,
         auth::StaffProfile,
+        customer_auth::CustomerRegisterRequest,
+        customer_auth::CustomerLoginRequest,
+        customer_auth::CreateAccountAddressRequest,
+        customer_auth::CustomerAccountProfile,
         catalog::Variant,
         catalog::Category,
         catalog::Product,
@@ -74,6 +83,7 @@ use crate::{auth, catalog, customers, error, health, inventory, media, staff};
     tags(
         (name = "system", description = "Application health and readiness"),
         (name = "staff auth", description = "Private staff authentication"),
+        (name = "customer account", description = "Optional storefront customer authentication and owned data"),
         (name = "staff", description = "Owner-authorized staff management"),
         (name = "admin catalog", description = "Capability-protected catalog management"),
         (name = "catalog", description = "Public published product catalog")

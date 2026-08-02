@@ -304,13 +304,46 @@ The first Phase 4 customer and address foundation is implemented:
 - Playwright coverage for customer search/detail, WCAG A/AA checks, and mobile
   overflow containment.
 
-Phase 4 remains in progress. Next, add optional registered customer accounts
-and ownership-based access. Before production customer traffic, bind guest
-capture to checkout anti-abuse controls and add a retention worker that
-irreversibly anonymizes expired contact data and addresses.
+The registered customer account slice is also implemented:
 
-The complete Rust, API-contract, TypeScript, production-build, 14-test
-storefront Playwright, and three-test PostgreSQL-backed admin Playwright suites
+- separate storefront customer identities with normalized unique email
+  addresses and Argon2 password hashes;
+- registration, login, logout, current-profile, and owned address-creation
+  APIs with generated OpenAPI and TypeScript client support;
+- opaque 30-day customer sessions stored only as SHA-256 token hashes, using
+  HTTP-only, `SameSite=Lax` cookies and secure cookies in production;
+- customer/staff authentication isolation, durable session revocation,
+  private no-store responses, and customer-attributed audit events;
+- rolling registered-customer retention renewal on authenticated activity;
+- per-email failed-login limiting at five attempts in 15 minutes;
+- ownership-scoped address reads and writes that do not expose another
+  customer's records;
+- an accessible responsive `/account` storefront experience for registration,
+  login, persistent profile/address display, address creation, and logout;
+- a real account link in storefront navigation and a development `/api` proxy
+  for same-origin session-cookie behavior;
+- isolated PostgreSQL lifecycle coverage for validation, password/session
+  storage, auth isolation, ownership, throttling, logout, expiry, and auditing;
+- desktop/mobile browser coverage for registration, reload persistence,
+  address creation, logout/login, WCAG A/AA, and viewport overflow.
+
+Phase 4 remains in progress. Production deployment must route storefront
+`/api/*` requests to the Rust API on the same public origin, preserving cookies
+and `Set-Cookie` headers over HTTPS; the Vite proxy only covers development.
+
+Before production customer traffic:
+
+- implement registered-email verification and password recovery;
+- add perimeter/global/IP throttling and make login limiting robust under
+  concurrent attempts rather than relying only on the current per-email
+  database counter;
+- add irreversible retention cleanup that anonymizes expired customer contact
+  fields, deletes or anonymizes owned addresses, and removes expired sessions;
+- bind guest capture to the checkout/order lifecycle and its anti-abuse
+  controls.
+
+The complete Rust, API-contract, TypeScript, production-build, 16-test
+storefront Playwright, and four-test PostgreSQL-backed admin Playwright suites
 passed on 2026-08-02.
 
 ## Environment notes

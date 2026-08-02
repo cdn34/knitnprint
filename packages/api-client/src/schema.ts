@@ -26,6 +26,18 @@ export interface CompleteUploadRequest {
   "product_id": string
 }
 
+export interface CreateAccountAddressRequest {
+  "address_type": string
+  "city": string
+  "country_code": string
+  "line1": string
+  "line2"?: string
+  "phone"?: string
+  "postal_code": string
+  "recipient_name": string
+  "region"?: string
+}
+
 export interface CreateCategoryRequest {
   "description"?: string
   "name": string
@@ -53,6 +65,15 @@ export interface CreateVariantRequest {
   "price_minor": number
   "sku": string
   "title": string
+}
+
+export interface CustomerAccountProfile {
+  "addresses": Array<CustomerAddress>
+  "email": string
+  "first_name": string
+  "id": string
+  "last_name": string
+  "phone": string
 }
 
 export interface CustomerAddress {
@@ -90,6 +111,19 @@ export interface CustomerDetail {
   "order_count": number
   "phone": string
   "retention_expires_at": string
+}
+
+export interface CustomerLoginRequest {
+  "email": string
+  "password": string
+}
+
+export interface CustomerRegisterRequest {
+  "email": string
+  "first_name": string
+  "last_name": string
+  "password": string
+  "phone"?: string
 }
 
 export interface CustomerSummary {

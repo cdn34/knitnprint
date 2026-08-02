@@ -358,7 +358,7 @@ pub fn hash_password(password: &str) -> Result<String, argon2::password_hash::Er
         .to_string())
 }
 
-fn verify_password(password: &str, encoded: &str) -> bool {
+pub(crate) fn verify_password(password: &str, encoded: &str) -> bool {
     let Ok(hash) = PasswordHash::new(encoded) else {
         return false;
     };

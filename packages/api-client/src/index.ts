@@ -4,13 +4,17 @@ export type {
   AdjustInventoryRequest,
   Category,
   CompleteUploadRequest,
+  CreateAccountAddressRequest,
   CreateProductRequest,
   CreateCategoryRequest,
   CreateVariantRequest,
   CreateStaffRequest,
   CustomerAddress,
   CustomerAddressInput,
+  CustomerAccountProfile,
   CustomerDetail,
+  CustomerLoginRequest,
+  CustomerRegisterRequest,
   CustomerSummary,
   DisableStaffRequest,
   ErrorBody,
@@ -37,11 +41,16 @@ import type {
   AdjustInventoryRequest,
   Category,
   CompleteUploadRequest,
+  CreateAccountAddressRequest,
   CreateProductRequest,
   CreateCategoryRequest,
   CreateVariantRequest,
   CreateStaffRequest,
+  CustomerAddress,
+  CustomerAccountProfile,
   CustomerDetail,
+  CustomerLoginRequest,
+  CustomerRegisterRequest,
   CustomerSummary,
   DisableStaffRequest,
   ErrorBody,
@@ -122,6 +131,28 @@ export function createApiClient(options: ApiClientOptions = {}) {
         method: 'POST',
       }),
     profile: () => send<StaffProfile>('/api/admin/auth/me'),
+    customerAccount: () =>
+      send<CustomerAccountProfile>('/api/account/me'),
+    registerCustomer: (input: CustomerRegisterRequest) =>
+      send<CustomerAccountProfile>('/api/account/register', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(input),
+      }),
+    loginCustomer: (input: CustomerLoginRequest) =>
+      send<CustomerAccountProfile>('/api/account/login', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(input),
+      }),
+    logoutCustomer: () =>
+      send<void>('/api/account/logout', { method: 'POST' }),
+    addCustomerAddress: (input: CreateAccountAddressRequest) =>
+      send<CustomerAddress>('/api/account/addresses', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(input),
+      }),
     listStaff: () => send<Array<StaffRecord>>('/api/admin/staff'),
     createStaff: (input: CreateStaffRequest) =>
       send<StaffRecord>('/api/admin/staff', {

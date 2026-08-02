@@ -1,6 +1,7 @@
 pub mod auth;
 pub mod catalog;
 pub mod config;
+pub mod customer_auth;
 pub mod customers;
 pub mod error;
 pub mod health;
@@ -37,6 +38,23 @@ pub fn app(state: AppState) -> Router {
         .route("/api/admin/auth/login", axum::routing::post(auth::login))
         .route("/api/admin/auth/logout", axum::routing::post(auth::logout))
         .route("/api/admin/auth/me", get(auth::me))
+        .route(
+            "/api/account/register",
+            axum::routing::post(customer_auth::register),
+        )
+        .route(
+            "/api/account/login",
+            axum::routing::post(customer_auth::login),
+        )
+        .route(
+            "/api/account/logout",
+            axum::routing::post(customer_auth::logout),
+        )
+        .route("/api/account/me", get(customer_auth::me))
+        .route(
+            "/api/account/addresses",
+            axum::routing::post(customer_auth::add_address),
+        )
         .route(
             "/api/admin/products",
             get(catalog::admin_list).post(catalog::create),

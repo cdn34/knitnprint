@@ -9,6 +9,239 @@
     "version": "0.1.0"
   },
   "paths": {
+    "/api/account/addresses": {
+      "post": {
+        "tags": [
+          "customer account"
+        ],
+        "operationId": "add_address",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAccountAddressRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerAddress"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/account/login": {
+      "post": {
+        "tags": [
+          "customer account"
+        ],
+        "operationId": "login",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CustomerLoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerAccountProfile"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/account/logout": {
+      "post": {
+        "tags": [
+          "customer account"
+        ],
+        "operationId": "logout",
+        "responses": {
+          "204": {
+            "description": "Customer session revoked"
+          }
+        }
+      }
+    },
+    "/api/account/me": {
+      "get": {
+        "tags": [
+          "customer account"
+        ],
+        "operationId": "me",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerAccountProfile"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/account/register": {
+      "post": {
+        "tags": [
+          "customer account"
+        ],
+        "operationId": "register",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CustomerRegisterRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerAccountProfile"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/admin/auth/login": {
       "post": {
         "tags": [
@@ -1719,6 +1952,46 @@
           }
         }
       },
+      "CreateAccountAddressRequest": {
+        "type": "object",
+        "required": [
+          "address_type",
+          "recipient_name",
+          "line1",
+          "city",
+          "postal_code",
+          "country_code"
+        ],
+        "properties": {
+          "address_type": {
+            "type": "string"
+          },
+          "city": {
+            "type": "string"
+          },
+          "country_code": {
+            "type": "string"
+          },
+          "line1": {
+            "type": "string"
+          },
+          "line2": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string"
+          },
+          "postal_code": {
+            "type": "string"
+          },
+          "recipient_name": {
+            "type": "string"
+          },
+          "region": {
+            "type": "string"
+          }
+        }
+      },
       "CreateCategoryRequest": {
         "type": "object",
         "required": [
@@ -1811,6 +2084,41 @@
             "type": "string"
           },
           "title": {
+            "type": "string"
+          }
+        }
+      },
+      "CustomerAccountProfile": {
+        "type": "object",
+        "required": [
+          "id",
+          "email",
+          "first_name",
+          "last_name",
+          "phone",
+          "addresses"
+        ],
+        "properties": {
+          "addresses": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CustomerAddress"
+            }
+          },
+          "email": {
+            "type": "string"
+          },
+          "first_name": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "last_name": {
+            "type": "string"
+          },
+          "phone": {
             "type": "string"
           }
         }
@@ -1947,6 +2255,47 @@
             "type": "string"
           },
           "retention_expires_at": {
+            "type": "string"
+          }
+        }
+      },
+      "CustomerLoginRequest": {
+        "type": "object",
+        "required": [
+          "email",
+          "password"
+        ],
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string"
+          }
+        }
+      },
+      "CustomerRegisterRequest": {
+        "type": "object",
+        "required": [
+          "email",
+          "password",
+          "first_name",
+          "last_name"
+        ],
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "first_name": {
+            "type": "string"
+          },
+          "last_name": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string"
+          },
+          "phone": {
             "type": "string"
           }
         }
@@ -2479,6 +2828,10 @@
     {
       "name": "staff auth",
       "description": "Private staff authentication"
+    },
+    {
+      "name": "customer account",
+      "description": "Optional storefront customer authentication and owned data"
     },
     {
       "name": "staff",

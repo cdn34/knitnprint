@@ -10,12 +10,18 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AccountRouteImport } from './routes/account'
 import { Route as CollectionsSlugRouteImport } from './routes/collections.$slug'
 import { Route as ProductsSlugRouteImport } from './routes/products.$slug'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AccountRoute = AccountRouteImport.update({
+  id: '/account',
+  path: '/account',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CollectionsSlugRoute = CollectionsSlugRouteImport.update({
@@ -31,30 +37,34 @@ const ProductsSlugRoute = ProductsSlugRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/account': typeof AccountRoute
   '/collections/$slug': typeof CollectionsSlugRoute
   '/products/$slug': typeof ProductsSlugRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/account': typeof AccountRoute
   '/collections/$slug': typeof CollectionsSlugRoute
   '/products/$slug': typeof ProductsSlugRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/account': typeof AccountRoute
   '/collections/$slug': typeof CollectionsSlugRoute
   '/products/$slug': typeof ProductsSlugRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/collections/$slug' | '/products/$slug'
+  fullPaths: '/' | '/account' | '/collections/$slug' | '/products/$slug'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/collections/$slug' | '/products/$slug'
-  id: '__root__' | '/' | '/collections/$slug' | '/products/$slug'
+  to: '/' | '/account' | '/collections/$slug' | '/products/$slug'
+  id: '__root__' | '/' | '/account' | '/collections/$slug' | '/products/$slug'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AccountRoute: typeof AccountRoute
   CollectionsSlugRoute: typeof CollectionsSlugRoute
   ProductsSlugRoute: typeof ProductsSlugRoute
 }
@@ -66,6 +76,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/account': {
+      id: '/account'
+      path: '/account'
+      fullPath: '/account'
+      preLoaderRoute: typeof AccountRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/collections/$slug': {
@@ -87,6 +104,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AccountRoute: AccountRoute,
   CollectionsSlugRoute: CollectionsSlugRoute,
   ProductsSlugRoute: ProductsSlugRoute,
 }
