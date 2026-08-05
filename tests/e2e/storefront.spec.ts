@@ -109,3 +109,48 @@ test('does not overflow the viewport', async ({ page }) => {
 
   expect(dimensions.content).toBeLessThanOrEqual(dimensions.viewport)
 })
+
+test('shows an accessible persistent cart surface', async ({ page }) => {
+  await page.goto('/cart')
+
+  await expect(page).toHaveTitle(/Your cart/)
+  await expect(page.getByRole('heading', { level: 1, name: 'Cart' })).toBeVisible()
+  await expect(
+    page.getByRole('heading', { name: 'Your cart is waiting for its first piece.' }),
+  ).toBeVisible()
+
+  const results = await new AxeBuilder({ page })
+    .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+    .analyze()
+  expect(results.violations).toEqual([])
+})
+
+test('adds an available product and captures cart delivery details', async ({
+  page,
+}) => {
+  await page.goto('/')
+  const card = page.locator('.product-card').first()
+  if ((await card.count()) === 0) return
+  await card.locator('.product-visual').click()
+
+  if ((await page.locator('input[type="radio"]:not(:disabled)').count()) === 0) return
+  const addButton = page.getByRole('button', { name: 'Add to cart' })
+  await expect(addButton).toBeEnabled()
+  await addButton.click()
+  await page.getByRole('link', { name: 'View your cart' }).click()
+
+  await expect(page.locator('.cart-item')).toHaveCount(1)
+  await page.getByLabel('Email').fill('browser-cart@example.com')
+  await page.getByLabel('First name').fill('Browser')
+  await page.getByLabel('Last name').fill('Cart')
+  await page.getByLabel('Recipient').fill('Browser Cart')
+  await page.getByLabel('Address', { exact: true }).fill('12 Loom Lane')
+  await page.getByLabel('City').fill('Lisbon')
+  await page.getByLabel('Postal code').fill('1000-001')
+  await page.getByRole('button', { name: 'Save delivery details' }).click()
+
+  await expect(page.getByRole('status')).toContainText('Delivery details saved.')
+  await expect(page.locator('.cart-ready-state')).toContainText(
+    'Cart and delivery details are ready.',
+  )
+})

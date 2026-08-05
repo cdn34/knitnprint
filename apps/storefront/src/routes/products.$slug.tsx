@@ -8,7 +8,8 @@ import {
   Sparkles,
   TriangleAlert,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { cartApi, cartMutationKey } from '../cart-api'
 import {
   mediaUrl,
   preferredVariant,
@@ -42,6 +43,26 @@ function ProductPage() {
     product.variants.find(({ id }) => id === selectedVariantId) ??
     defaultVariant
   const stock = variant ? variantStock(variant) : null
+  const [cartState, setCartState] = useState<
+    'idle' | 'adding' | 'added' | 'error'
+  >('idle')
+  const [hydrated, setHydrated] = useState(false)
+
+  useEffect(() => setHydrated(true), [])
+
+  async function addToCart() {
+    if (!variant || !stock || stock.state === 'sold-out') return
+    setCartState('adding')
+    try {
+      await cartApi.addCartItem(
+        { variant_id: variant.id, quantity: 1 },
+        cartMutationKey(),
+      )
+      setCartState('added')
+    } catch {
+      setCartState('error')
+    }
+  }
 
   return (
     <>
@@ -124,12 +145,25 @@ function ProductPage() {
           <button
             className="button button--primary"
             type="button"
-            disabled
+            disabled={!hydrated || !variant || stock?.state === 'sold-out' || cartState === 'adding'}
+            onClick={addToCart}
           >
             {stock?.state === 'sold-out'
               ? 'Currently unavailable'
-              : 'Add to cart · coming in Phase 5'}
+              : !hydrated
+                ? 'Preparing cart…'
+                : cartState === 'adding'
+                  ? 'Adding…'
+                  : cartState === 'added'
+                    ? 'Added to cart'
+                    : 'Add to cart'}
           </button>
+          <div className="cart-action-status" aria-live="polite">
+            {cartState === 'added' && <a href="/cart">View your cart</a>}
+            {cartState === 'error' && (
+              <span>We couldn’t update your cart. Please try again.</span>
+            )}
+          </div>
           <div className="product-promises">
             <span><PackageCheck /> Made in small batches</span>
             <span><ShieldCheck /> Secure checkout</span>

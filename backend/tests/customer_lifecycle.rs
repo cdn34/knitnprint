@@ -55,8 +55,7 @@ async fn guest_capture_and_private_customer_inspection_enforce_privacy_rules() {
     .await;
     let router = app(AppState {
         database: Some(pool.clone()),
-        media_storage: None,
-        secure_cookies: false,
+        ..AppState::default()
     });
 
     let invalid = request(

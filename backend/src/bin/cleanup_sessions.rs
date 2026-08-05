@@ -45,7 +45,7 @@ async fn main() -> ExitCode {
     .execute(&pool)
     .await;
     let attempts = sqlx::query(
-        "DELETE FROM staff_login_attempts WHERE updated_at < now() - interval '24 hours'",
+        "DELETE FROM auth_login_rate_limits WHERE auth_scope = 'staff' AND updated_at < now() - interval '24 hours'",
     )
     .execute(&pool)
     .await;

@@ -182,6 +182,82 @@
         }
       }
     },
+    "/api/account/password/forgot": {
+      "post": {
+        "tags": [
+          "customer account"
+        ],
+        "operationId": "forgot_password",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ForgotPasswordRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Reset email requested when the account exists"
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/account/password/reset": {
+      "post": {
+        "tags": [
+          "customer account"
+        ],
+        "operationId": "reset_password",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResetPasswordRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Password changed and existing sessions revoked"
+          },
+          "422": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/account/register": {
       "post": {
         "tags": [
@@ -220,6 +296,82 @@
             }
           },
           "422": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/account/verification/confirm": {
+      "post": {
+        "tags": [
+          "customer account"
+        ],
+        "operationId": "confirm_verification",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountTokenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Email verified"
+          },
+          "422": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/account/verification/request": {
+      "post": {
+        "tags": [
+          "customer account"
+        ],
+        "operationId": "request_verification",
+        "responses": {
+          "204": {
+            "description": "Verification email requested or recently sent"
+          },
+          "401": {
             "description": "",
             "content": {
               "application/json": {
@@ -1577,6 +1729,342 @@
         }
       }
     },
+    "/api/cart": {
+      "get": {
+        "tags": [
+          "cart"
+        ],
+        "operationId": "get",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Cart"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/cart/delivery": {
+      "post": {
+        "tags": [
+          "cart"
+        ],
+        "operationId": "set_delivery",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GuestCustomerRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Cart"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/cart/items": {
+      "post": {
+        "tags": [
+          "cart"
+        ],
+        "operationId": "add_item",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddCartItemRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Idempotent replay",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Cart"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Cart"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/cart/items/{line_id}": {
+      "delete": {
+        "tags": [
+          "cart"
+        ],
+        "operationId": "remove_item",
+        "parameters": [
+          {
+            "name": "line_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Cart"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "cart"
+        ],
+        "operationId": "update_item",
+        "parameters": [
+          {
+            "name": "line_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateCartItemRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Cart"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/categories": {
       "get": {
         "tags": [
@@ -1863,6 +2351,34 @@
   },
   "components": {
     "schemas": {
+      "AccountTokenRequest": {
+        "type": "object",
+        "required": [
+          "token"
+        ],
+        "properties": {
+          "token": {
+            "type": "string"
+          }
+        }
+      },
+      "AddCartItemRequest": {
+        "type": "object",
+        "required": [
+          "variant_id",
+          "quantity"
+        ],
+        "properties": {
+          "quantity": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "variant_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
       "AdjustInventoryRequest": {
         "type": "object",
         "required": [
@@ -1898,6 +2414,231 @@
               "type": "string",
               "format": "uuid"
             }
+          }
+        }
+      },
+      "Cart": {
+        "type": "object",
+        "required": [
+          "id",
+          "items",
+          "item_count",
+          "subtotal_minor",
+          "checkout_ready",
+          "issues",
+          "expires_at"
+        ],
+        "properties": {
+          "checkout_ready": {
+            "type": "boolean"
+          },
+          "currency": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "delivery": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CartDelivery"
+              }
+            ]
+          },
+          "expires_at": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "issues": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CartIssue"
+            }
+          },
+          "item_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CartItem"
+            }
+          },
+          "subtotal_minor": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "CartAddress": {
+        "type": "object",
+        "required": [
+          "recipient_name",
+          "line1",
+          "line2",
+          "city",
+          "region",
+          "postal_code",
+          "country_code",
+          "phone"
+        ],
+        "properties": {
+          "city": {
+            "type": "string"
+          },
+          "country_code": {
+            "type": "string"
+          },
+          "line1": {
+            "type": "string"
+          },
+          "line2": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string"
+          },
+          "postal_code": {
+            "type": "string"
+          },
+          "recipient_name": {
+            "type": "string"
+          },
+          "region": {
+            "type": "string"
+          }
+        }
+      },
+      "CartDelivery": {
+        "type": "object",
+        "required": [
+          "customer_id",
+          "address_id",
+          "email",
+          "first_name",
+          "last_name",
+          "phone",
+          "address"
+        ],
+        "properties": {
+          "address": {
+            "$ref": "#/components/schemas/CartAddress"
+          },
+          "address_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "customer_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "email": {
+            "type": "string"
+          },
+          "first_name": {
+            "type": "string"
+          },
+          "last_name": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string"
+          }
+        }
+      },
+      "CartIssue": {
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "line_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "CartItem": {
+        "type": "object",
+        "required": [
+          "id",
+          "variant_id",
+          "product_slug",
+          "product_title",
+          "variant_title",
+          "sku",
+          "quantity",
+          "unit_price_minor",
+          "currency",
+          "line_total_minor",
+          "available_quantity",
+          "available"
+        ],
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "available_quantity": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "image_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "line_total_minor": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "product_slug": {
+            "type": "string"
+          },
+          "product_title": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "sku": {
+            "type": "string"
+          },
+          "unit_price_minor": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "variant_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "variant_title": {
+            "type": "string"
           }
         }
       },
@@ -2096,6 +2837,7 @@
           "first_name",
           "last_name",
           "phone",
+          "email_verified",
           "addresses"
         ],
         "properties": {
@@ -2107,6 +2849,9 @@
           },
           "email": {
             "type": "string"
+          },
+          "email_verified": {
+            "type": "boolean"
           },
           "first_name": {
             "type": "string"
@@ -2370,6 +3115,17 @@
             "type": "string"
           },
           "message": {
+            "type": "string"
+          }
+        }
+      },
+      "ForgotPasswordRequest": {
+        "type": "object",
+        "required": [
+          "email"
+        ],
+        "properties": {
+          "email": {
             "type": "string"
           }
         }
@@ -2707,6 +3463,21 @@
           }
         }
       },
+      "ResetPasswordRequest": {
+        "type": "object",
+        "required": [
+          "token",
+          "password"
+        ],
+        "properties": {
+          "password": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string"
+          }
+        }
+      },
       "StaffProfile": {
         "type": "object",
         "required": [
@@ -2770,6 +3541,18 @@
           },
           "role": {
             "type": "string"
+          }
+        }
+      },
+      "UpdateCartItemRequest": {
+        "type": "object",
+        "required": [
+          "quantity"
+        ],
+        "properties": {
+          "quantity": {
+            "type": "integer",
+            "format": "int32"
           }
         }
       },
@@ -2864,6 +3647,10 @@
     {
       "name": "admin customers",
       "description": "Privacy-aware customer inspection"
+    },
+    {
+      "name": "cart",
+      "description": "Disposable server-priced checkout preparation"
     }
   ]
 }

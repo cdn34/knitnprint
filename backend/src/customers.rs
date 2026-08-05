@@ -18,7 +18,7 @@ use crate::{
 
 const CUSTOMERS_READ: &str = "customers.read";
 
-#[derive(Deserialize, ToSchema)]
+#[derive(Deserialize, Serialize, ToSchema)]
 pub struct GuestCustomerRequest {
     pub email: String,
     pub first_name: String,
@@ -28,7 +28,7 @@ pub struct GuestCustomerRequest {
     pub address: CustomerAddressInput,
 }
 
-#[derive(Deserialize, ToSchema)]
+#[derive(Deserialize, Serialize, ToSchema)]
 pub struct CustomerAddressInput {
     pub recipient_name: String,
     pub line1: String,
@@ -460,7 +460,7 @@ async fn audit(
     Ok(())
 }
 
-fn valid_guest(input: &GuestCustomerRequest) -> bool {
+pub(crate) fn valid_guest(input: &GuestCustomerRequest) -> bool {
     valid_email(&input.email)
         && valid_required(&input.first_name, 100)
         && valid_required(&input.last_name, 100)

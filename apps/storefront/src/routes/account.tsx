@@ -4,7 +4,15 @@ import {
   type CustomerAccountProfile,
 } from "@knitprint/api-client";
 import { createFileRoute } from "@tanstack/react-router";
-import { ArrowLeft, CircleUserRound, Home, LogOut, MapPin } from "lucide-react";
+import {
+  ArrowLeft,
+  CircleUserRound,
+  Home,
+  KeyRound,
+  LogOut,
+  MailCheck,
+  MapPin,
+} from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 
 export const Route = createFileRoute("/account")({
@@ -22,7 +30,7 @@ export const Route = createFileRoute("/account")({
 
 const api = createApiClient();
 
-type Mode = "login" | "register";
+type Mode = "login" | "register" | "forgot" | "reset";
 
 function messageFor(error: unknown) {
   if (error instanceof ApiError) return error.body.error.message;
@@ -36,22 +44,38 @@ function AccountPage() {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [resetToken, setResetToken] = useState("");
 
   useEffect(() => {
     let active = true;
-    api
-      .customerAccount()
-      .then((account) => {
+    async function initialize() {
+      const search = new URLSearchParams(window.location.search);
+      const verificationToken = search.get("verify");
+      const passwordToken = search.get("reset");
+      if (verificationToken || passwordToken) {
+        window.history.replaceState({}, "", window.location.pathname);
+      }
+      try {
+        if (verificationToken) {
+          await api.confirmCustomerVerification({ token: verificationToken });
+          setNotice("Your email address is verified.");
+        }
+        if (passwordToken) {
+          setResetToken(passwordToken);
+          setMode("reset");
+          return;
+        }
+        const account = await api.customerAccount();
         if (active) setProfile(account);
-      })
-      .catch((cause: unknown) => {
+      } catch (cause) {
         if (active && !(cause instanceof ApiError && cause.status === 401)) {
           setError(messageFor(cause));
         }
-      })
-      .finally(() => {
+      } finally {
         if (active) setCheckingSession(false);
-      });
+      }
+    }
+    void initialize();
     return () => {
       active = false;
     };
@@ -79,8 +103,66 @@ function AccountPage() {
             });
       setProfile(account);
       setNotice(
-        mode === "register" ? "Your account is ready." : "Welcome back.",
+        mode === "register"
+          ? "Your account is ready. Check your email to verify your address."
+          : "Welcome back.",
       );
+    } catch (cause) {
+      setError(messageFor(cause));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function forgotPassword(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError("");
+    setNotice("");
+    setPending(true);
+    const values = new FormData(event.currentTarget);
+    try {
+      await api.forgotCustomerPassword({
+        email: String(values.get("email") ?? ""),
+      });
+      setNotice(
+        "If an account exists for that address, a password-reset email is on its way.",
+      );
+    } catch (cause) {
+      setError(messageFor(cause));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function resetPassword(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError("");
+    setNotice("");
+    setPending(true);
+    const values = new FormData(event.currentTarget);
+    try {
+      await api.resetCustomerPassword({
+        token: resetToken,
+        password: String(values.get("password") ?? ""),
+      });
+      setResetToken("");
+      setMode("login");
+      window.history.replaceState({}, "", window.location.pathname);
+      setNotice("Your password has been changed. Sign in with the new password.");
+    } catch (cause) {
+      setError(messageFor(cause));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function requestVerification() {
+    setError("");
+    setNotice("");
+    setPending(true);
+    try {
+      await api.requestCustomerVerification();
+      setNotice("Verification email requested. Please check your inbox.");
     } catch (cause) {
       setError(messageFor(cause));
     } finally {
@@ -196,6 +278,7 @@ function AccountPage() {
               pending={pending}
               onAddAddress={addAddress}
               onLogout={logout}
+              onRequestVerification={requestVerification}
             />
           ) : (
             <GuestAccount
@@ -207,6 +290,8 @@ function AccountPage() {
                 setNotice("");
               }}
               onSubmit={authenticate}
+              onForgotPassword={forgotPassword}
+              onResetPassword={resetPassword}
             />
           )}
         </div>
@@ -220,12 +305,77 @@ function GuestAccount({
   pending,
   onModeChange,
   onSubmit,
+  onForgotPassword,
+  onResetPassword,
 }: Readonly<{
   mode: Mode;
   pending: boolean;
   onModeChange: (mode: Mode) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onForgotPassword: (event: FormEvent<HTMLFormElement>) => void;
+  onResetPassword: (event: FormEvent<HTMLFormElement>) => void;
 }>) {
+  if (mode === "forgot" || mode === "reset") {
+    return (
+      <section className="account-panel" aria-labelledby="access-title">
+        <div className="account-recovery-mark" aria-hidden="true">
+          <KeyRound />
+        </div>
+        <div className="account-panel-heading">
+          <p className="eyebrow">Secure account access</p>
+          <h2 id="access-title">
+            {mode === "forgot" ? "Reset your password" : "Choose a new password"}
+          </h2>
+          <p className="account-panel-copy">
+            {mode === "forgot"
+              ? "Enter your account email. We’ll send a one-hour reset link if the address is registered."
+              : "Your new password must contain at least 12 characters."}
+          </p>
+        </div>
+        <form
+          className="account-form"
+          onSubmit={mode === "forgot" ? onForgotPassword : onResetPassword}
+        >
+          {mode === "forgot" ? (
+            <Field
+              label="Email address"
+              name="email"
+              type="email"
+              autoComplete="email"
+            />
+          ) : (
+            <Field
+              label="New password"
+              name="password"
+              type="password"
+              autoComplete="new-password"
+              minLength={12}
+            />
+          )}
+          <button
+            className="button button--primary account-submit"
+            disabled={pending}
+            type="submit"
+          >
+            {pending
+              ? "Please wait…"
+              : mode === "forgot"
+                ? "Send reset link"
+                : "Change password"}
+          </button>
+          <button
+            className="account-secondary-action"
+            disabled={pending}
+            type="button"
+            onClick={() => onModeChange("login")}
+          >
+            Back to sign in
+          </button>
+        </form>
+      </section>
+    );
+  }
+
   return (
     <section className="account-panel" aria-labelledby="access-title">
       <div className="account-tabs" role="group" aria-label="Account access">
@@ -300,6 +450,16 @@ function GuestAccount({
               ? "Sign in"
               : "Create account"}
         </button>
+        {mode === "login" && (
+          <button
+            className="account-secondary-action"
+            disabled={pending}
+            type="button"
+            onClick={() => onModeChange("forgot")}
+          >
+            Forgot your password?
+          </button>
+        )}
       </form>
     </section>
   );
@@ -310,11 +470,13 @@ function AuthenticatedAccount({
   pending,
   onAddAddress,
   onLogout,
+  onRequestVerification,
 }: Readonly<{
   profile: CustomerAccountProfile;
   pending: boolean;
   onAddAddress: (event: FormEvent<HTMLFormElement>) => void;
   onLogout: () => void;
+  onRequestVerification: () => void;
 }>) {
   return (
     <div className="account-authenticated">
@@ -350,6 +512,33 @@ function AuthenticatedAccount({
             </div>
           )}
         </dl>
+        <div
+          className={`account-verification ${profile.email_verified ? "account-verification--complete" : ""}`}
+        >
+          <MailCheck aria-hidden="true" />
+          <div>
+            <strong>
+              {profile.email_verified
+                ? "Email address verified"
+                : "Email verification needed"}
+            </strong>
+            <p>
+              {profile.email_verified
+                ? "Your account email is ready for secure order updates."
+                : "Verify this address before using it for account recovery and future order updates."}
+            </p>
+          </div>
+          {!profile.email_verified && (
+            <button
+              className="account-secondary-action"
+              disabled={pending}
+              type="button"
+              onClick={onRequestVerification}
+            >
+              Send another link
+            </button>
+          )}
+        </div>
       </section>
 
       <section

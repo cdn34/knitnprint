@@ -8,6 +8,7 @@ pub struct Config {
     pub host: IpAddr,
     pub port: u16,
     pub database_url: Option<String>,
+    pub trust_proxy_headers: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -27,6 +28,8 @@ pub enum ConfigError {
     InvalidPort,
     #[error("DATABASE_URL is required in production")]
     MissingProductionDatabase,
+    #[error("TRUST_PROXY_HEADERS must be true or false")]
+    InvalidTrustProxyHeaders,
 }
 
 impl Config {
@@ -36,6 +39,7 @@ impl Config {
             env::var("HOST").ok().as_deref(),
             env::var("PORT").ok().as_deref(),
             env::var("DATABASE_URL").ok(),
+            env::var("TRUST_PROXY_HEADERS").ok().as_deref(),
         )
     }
 
@@ -44,6 +48,7 @@ impl Config {
         host: Option<&str>,
         port: Option<&str>,
         database_url: Option<String>,
+        trust_proxy_headers: Option<&str>,
     ) -> Result<Self, ConfigError> {
         let environment = match environment.unwrap_or("development") {
             "development" => Environment::Development,
@@ -65,12 +70,18 @@ impl Config {
         {
             return Err(ConfigError::MissingProductionDatabase);
         }
+        let trust_proxy_headers = match trust_proxy_headers.unwrap_or("false") {
+            "true" => true,
+            "false" => false,
+            _ => return Err(ConfigError::InvalidTrustProxyHeaders),
+        };
 
         Ok(Self {
             environment,
             host,
             port,
             database_url,
+            trust_proxy_headers,
         })
     }
 }
@@ -81,21 +92,30 @@ mod tests {
 
     #[test]
     fn development_defaults_are_safe_and_predictable() {
-        let config = Config::from_values(None, None, None, None).unwrap();
+        let config = Config::from_values(None, None, None, None, None).unwrap();
         assert_eq!(config.environment, Environment::Development);
         assert_eq!(config.host.to_string(), "0.0.0.0");
         assert_eq!(config.port, 8080);
+        assert!(!config.trust_proxy_headers);
     }
 
     #[test]
     fn production_requires_a_database() {
-        let error = Config::from_values(Some("production"), None, None, None).unwrap_err();
+        let error = Config::from_values(Some("production"), None, None, None, None).unwrap_err();
         assert_eq!(error, ConfigError::MissingProductionDatabase);
     }
 
     #[test]
     fn invalid_ports_fail_early() {
-        let error = Config::from_values(None, None, Some("70000"), None).unwrap_err();
+        let error = Config::from_values(None, None, Some("70000"), None, None).unwrap_err();
         assert_eq!(error, ConfigError::InvalidPort);
+    }
+
+    #[test]
+    fn proxy_header_trust_is_explicit() {
+        let config = Config::from_values(None, None, None, None, Some("true")).unwrap();
+        assert!(config.trust_proxy_headers);
+        let error = Config::from_values(None, None, None, None, Some("yes")).unwrap_err();
+        assert_eq!(error, ConfigError::InvalidTrustProxyHeaders);
     }
 }

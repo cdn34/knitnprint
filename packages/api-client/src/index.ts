@@ -1,6 +1,13 @@
 export type {
+  AddCartItemRequest,
+  AccountTokenRequest,
   ChangeProductStatusRequest,
   AssignCategoriesRequest,
+  Cart,
+  CartAddress,
+  CartDelivery,
+  CartIssue,
+  CartItem,
   AdjustInventoryRequest,
   Category,
   CompleteUploadRequest,
@@ -22,6 +29,7 @@ export type {
   Health,
   GuestCustomerReceipt,
   GuestCustomerRequest,
+  ForgotPasswordRequest,
   InitiateUploadRequest,
   InitiateUploadResponse,
   InventoryMovement,
@@ -30,16 +38,21 @@ export type {
   MediaRecord,
   Product,
   ProductMedia,
+  ResetPasswordRequest,
   StaffProfile,
   StaffRecord,
   Variant,
+  UpdateCartItemRequest,
 } from './schema'
 
 import type {
+  AddCartItemRequest,
+  AccountTokenRequest,
   ChangeProductStatusRequest,
   AssignCategoriesRequest,
   AdjustInventoryRequest,
   Category,
+  Cart,
   CompleteUploadRequest,
   CreateAccountAddressRequest,
   CreateProductRequest,
@@ -57,6 +70,7 @@ import type {
   Health,
   GuestCustomerReceipt,
   GuestCustomerRequest,
+  ForgotPasswordRequest,
   InitiateUploadRequest,
   InitiateUploadResponse,
   InventoryMovement,
@@ -64,8 +78,10 @@ import type {
   LoginRequest,
   MediaRecord,
   Product,
+  ResetPasswordRequest,
   StaffProfile,
   StaffRecord,
+  UpdateCartItemRequest,
 } from './schema'
 
 export class ApiError extends Error {
@@ -153,6 +169,26 @@ export function createApiClient(options: ApiClientOptions = {}) {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(input),
       }),
+    requestCustomerVerification: () =>
+      send<void>('/api/account/verification/request', { method: 'POST' }),
+    confirmCustomerVerification: (input: AccountTokenRequest) =>
+      send<void>('/api/account/verification/confirm', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(input),
+      }),
+    forgotCustomerPassword: (input: ForgotPasswordRequest) =>
+      send<void>('/api/account/password/forgot', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(input),
+      }),
+    resetCustomerPassword: (input: ResetPasswordRequest) =>
+      send<void>('/api/account/password/reset', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(input),
+      }),
     listStaff: () => send<Array<StaffRecord>>('/api/admin/staff'),
     createStaff: (input: CreateStaffRequest) =>
       send<StaffRecord>('/api/admin/staff', {
@@ -179,6 +215,43 @@ export function createApiClient(options: ApiClientOptions = {}) {
       send<Array<CustomerSummary>>(withQuery('/api/admin/customers', query)),
     customer: (customerId: string) =>
       send<CustomerDetail>(`/api/admin/customers/${customerId}`),
+    cart: () => send<Cart>('/api/cart'),
+    addCartItem: (input: AddCartItemRequest, idempotencyKey: string) =>
+      send<Cart>('/api/cart/items', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'idempotency-key': idempotencyKey,
+        },
+        body: JSON.stringify(input),
+      }),
+    updateCartItem: (
+      lineId: string,
+      input: UpdateCartItemRequest,
+      idempotencyKey: string,
+    ) =>
+      send<Cart>(`/api/cart/items/${lineId}`, {
+        method: 'PATCH',
+        headers: {
+          'content-type': 'application/json',
+          'idempotency-key': idempotencyKey,
+        },
+        body: JSON.stringify(input),
+      }),
+    removeCartItem: (lineId: string, idempotencyKey: string) =>
+      send<Cart>(`/api/cart/items/${lineId}`, {
+        method: 'DELETE',
+        headers: { 'idempotency-key': idempotencyKey },
+      }),
+    setCartDelivery: (input: GuestCustomerRequest, idempotencyKey: string) =>
+      send<Cart>('/api/cart/delivery', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'idempotency-key': idempotencyKey,
+        },
+        body: JSON.stringify(input),
+      }),
     listAdminProducts: (query: { q?: string; status?: string } = {}) =>
       send<Array<Product>>(withQuery('/api/admin/products', query)),
     adminProduct: (productId: string) =>

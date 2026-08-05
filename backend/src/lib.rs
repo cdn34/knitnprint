@@ -1,11 +1,15 @@
 pub mod auth;
+pub mod carts;
 pub mod catalog;
 pub mod config;
 pub mod customer_auth;
+pub mod customer_retention;
 pub mod customers;
+pub mod email;
 pub mod error;
 pub mod health;
 pub mod inventory;
+pub mod login_rate_limit;
 pub mod media;
 pub mod openapi;
 pub mod staff;
@@ -26,6 +30,8 @@ use tower_http::{
 pub struct AppState {
     pub database: Option<PgPool>,
     pub media_storage: Option<media::MediaStorage>,
+    pub email: email::EmailService,
+    pub trust_proxy_headers: bool,
     pub secure_cookies: bool,
 }
 
@@ -52,8 +58,28 @@ pub fn app(state: AppState) -> Router {
         )
         .route("/api/account/me", get(customer_auth::me))
         .route(
+            "/api/development/emails/latest",
+            get(email::development_latest),
+        )
+        .route(
             "/api/account/addresses",
             axum::routing::post(customer_auth::add_address),
+        )
+        .route(
+            "/api/account/verification/request",
+            axum::routing::post(customer_auth::request_verification),
+        )
+        .route(
+            "/api/account/verification/confirm",
+            axum::routing::post(customer_auth::confirm_verification),
+        )
+        .route(
+            "/api/account/password/forgot",
+            axum::routing::post(customer_auth::forgot_password),
+        )
+        .route(
+            "/api/account/password/reset",
+            axum::routing::post(customer_auth::reset_password),
         )
         .route(
             "/api/admin/products",
@@ -108,6 +134,16 @@ pub fn app(state: AppState) -> Router {
             get(|| async { Json(openapi::document()) }),
         )
         .route("/api/products", get(catalog::public_list))
+        .route("/api/cart", get(carts::get))
+        .route("/api/cart/items", axum::routing::post(carts::add_item))
+        .route(
+            "/api/cart/items/{line_id}",
+            axum::routing::patch(carts::update_item).delete(carts::remove_item),
+        )
+        .route(
+            "/api/cart/delivery",
+            axum::routing::post(carts::set_delivery),
+        )
         .route(
             "/api/customers/guest",
             axum::routing::post(customers::create_guest),
@@ -123,7 +159,7 @@ pub fn app(state: AppState) -> Router {
         .layer(
             CorsLayer::new()
                 .allow_origin(Any)
-                .allow_methods([Method::GET, Method::POST])
+                .allow_methods([Method::GET, Method::POST, Method::PATCH, Method::DELETE])
                 .allow_headers(Any),
         )
 }

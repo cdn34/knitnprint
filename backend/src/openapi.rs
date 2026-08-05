@@ -1,6 +1,8 @@
 use utoipa::{OpenApi, openapi::OpenApi as OpenApiDocument};
 
-use crate::{auth, catalog, customer_auth, customers, error, health, inventory, media, staff};
+use crate::{
+    auth, carts, catalog, customer_auth, customers, error, health, inventory, media, staff,
+};
 
 #[derive(OpenApi)]
 #[openapi(
@@ -20,6 +22,15 @@ use crate::{auth, catalog, customer_auth, customers, error, health, inventory, m
         customer_auth::logout,
         customer_auth::me,
         customer_auth::add_address,
+        customer_auth::request_verification,
+        customer_auth::confirm_verification,
+        customer_auth::forgot_password,
+        customer_auth::reset_password,
+        carts::get,
+        carts::add_item,
+        carts::update_item,
+        carts::remove_item,
+        carts::set_delivery,
         catalog::admin_list,
         catalog::admin_detail,
         catalog::create,
@@ -53,7 +64,17 @@ use crate::{auth, catalog, customer_auth, customers, error, health, inventory, m
         customer_auth::CustomerRegisterRequest,
         customer_auth::CustomerLoginRequest,
         customer_auth::CreateAccountAddressRequest,
+        customer_auth::AccountTokenRequest,
+        customer_auth::ForgotPasswordRequest,
+        customer_auth::ResetPasswordRequest,
         customer_auth::CustomerAccountProfile,
+        carts::AddCartItemRequest,
+        carts::UpdateCartItemRequest,
+        carts::Cart,
+        carts::CartItem,
+        carts::CartIssue,
+        carts::CartDelivery,
+        carts::CartAddress,
         catalog::Variant,
         catalog::Category,
         catalog::Product,
@@ -92,6 +113,7 @@ use crate::{auth, catalog, customer_auth, customers, error, health, inventory, m
         ,(name = "inventory", description = "Variant availability and immutable stock movements")
         ,(name = "customers", description = "Guest customer contact capture")
         ,(name = "admin customers", description = "Privacy-aware customer inspection")
+        ,(name = "cart", description = "Disposable server-priced checkout preparation")
     )
 )]
 struct ApiDoc;

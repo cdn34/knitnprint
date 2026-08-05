@@ -44,8 +44,8 @@ async fn customer_account_authentication_and_address_ownership_lifecycle() {
     insert_staff(&pool, "owner@account.test").await;
     let router = app(AppState {
         database: Some(pool.clone()),
-        media_storage: None,
-        secure_cookies: false,
+        email: knitprint_api::email::EmailService::development("http://127.0.0.1:3000"),
+        ..AppState::default()
     });
 
     let anonymous_me = request(&router, "GET", "/api/account/me", None, None).await;
@@ -609,7 +609,7 @@ fn assert_development_customer_cookie(response: &axum::response::Response) {
     let attributes = cookie.to_ascii_lowercase();
     assert!(attributes.contains("; httponly"));
     assert!(attributes.contains("; samesite=lax"));
-    assert!(attributes.contains("; path=/api/account"));
+    assert!(attributes.contains("; path=/api"));
     assert!(
         !attributes
             .split(';')

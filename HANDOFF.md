@@ -1,6 +1,6 @@
 # Project handoff
 
-Last updated: 2026-08-02
+Last updated: 2026-08-05
 
 ## Goal
 
@@ -315,7 +315,7 @@ The registered customer account slice is also implemented:
 - customer/staff authentication isolation, durable session revocation,
   private no-store responses, and customer-attributed audit events;
 - rolling registered-customer retention renewal on authenticated activity;
-- per-email failed-login limiting at five attempts in 15 minutes;
+- hashed per-account failed-login limiting at five attempts in 15 minutes;
 - ownership-scoped address reads and writes that do not expose another
   customer's records;
 - an accessible responsive `/account` storefront experience for registration,
@@ -327,24 +327,106 @@ The registered customer account slice is also implemented:
 - desktop/mobile browser coverage for registration, reload persistence,
   address creation, logout/login, WCAG A/AA, and viewport overflow.
 
-Phase 4 remains in progress. Production deployment must route storefront
+Customer retention cleanup is implemented:
+
+- bounded 100-record batches that claim expired customers with
+  `FOR UPDATE SKIP LOCKED` for safe concurrent scheduling;
+- irreversible replacement of retained customer contact fields and deletion
+  of owned addresses, account credentials, and customer sessions;
+- removal of globally expired sessions, old revoked sessions, and stale
+  customer login-limit buckets;
+- retained non-personal customer identities for future commercial history and
+  immutable, non-PII `customer.retention_anonymize` audit events;
+- configurable batch and revoked-session retention bounds with repeat-safe
+  behavior;
+- isolated PostgreSQL coverage proving expired guest and registered cleanup,
+  active-customer preservation, dependent-record removal, auditability, and
+  idempotent reruns.
+
+Registered-email verification and password recovery are implemented:
+
+- automatic 24-hour verification links and authenticated resend with a
+  five-minute suppression window;
+- generic forgotten-password responses, one-hour reset links, and matching
+  resend suppression that do not disclose whether an account exists;
+- opaque 256-bit single-use action tokens stored only as SHA-256 hashes, with
+  expiry and durable consumption enforced by PostgreSQL;
+- password replacement that also verifies email ownership, invalidates account
+  action tokens, revokes every customer session, and clears the current cookie;
+- AWS SES v2 production delivery through the standard AWS credential chain,
+  optional configuration-set support, validated HTTPS action URLs, and a
+  development-only in-memory mailbox;
+- accessible account verification, resend, forgotten-password, and new-password
+  storefront states with generic privacy-preserving messaging;
+- isolated PostgreSQL and real browser coverage for hashing, expiry/single-use
+  behavior, unknown-address privacy, resend suppression, verification,
+  password replacement, session revocation, accessibility, and mobile layout.
+
+Concurrent login throttling is implemented for staff and customers:
+
+- one shared PostgreSQL limiter with isolated staff/customer scopes and hashed
+  account, client-IP, and global bucket identifiers;
+- exact five-failure account limits under contention using transaction-scoped
+  advisory locks without serializing unrelated password verification;
+- short serialized counter transactions enforcing 60 login requests per IP in
+  five minutes and 1,000 requests per authentication scope per minute;
+- successful login cleanup of the relevant account-failure bucket and bounded
+  `Retry-After` responses for account, IP, and global limits;
+- direct TCP peer addresses by default, with explicit `TRUST_PROXY_HEADERS`
+  opt-in only for an ingress that overwrites `X-Forwarded-For` and prevents
+  direct API access;
+- cleanup support for stale hashed buckets and PostgreSQL contention coverage
+  proving exactly five ordinary failures followed by seven concurrent 429s,
+  plus the independent 60-request IP boundary.
+
+Phase 4 is complete. Production deployment must route storefront
 `/api/*` requests to the Rust API on the same public origin, preserving cookies
 and `Set-Cookie` headers over HTTPS; the Vite proxy only covers development.
 
-Before production customer traffic:
+## Phase 5 progress
 
-- implement registered-email verification and password recovery;
-- add perimeter/global/IP throttling and make login limiting robust under
-  concurrent attempts rather than relying only on the current per-email
-  database counter;
-- add irreversible retention cleanup that anonymizes expired customer contact
-  fields, deletes or anonymizes owned addresses, and removes expired sessions;
-- bind guest capture to the checkout/order lifecycle and its anti-abuse
-  controls.
+Cart and checkout preparation are implemented:
 
-The complete Rust, API-contract, TypeScript, production-build, 16-test
-storefront Playwright, and four-test PostgreSQL-backed admin Playwright suites
-passed on 2026-08-02.
+- persistent 30-day carts identified by opaque HTTP-only browser tokens stored
+  only as SHA-256 hashes;
+- server-owned cart lines that accept only variant IDs and quantities, never
+  browser-supplied prices;
+- add, quantity-update, and remove operations with payload-bound idempotency
+  keys that reject accidental key reuse for a different mutation;
+- one-currency cart enforcement and reconciliation against current catalog
+  prices, publication state, and available inventory on every response;
+- explicit price-change, unavailable-product, insufficient-quantity, and
+  currency-change issues that prevent a cart from becoming checkout-ready;
+- no stock reservation during disposable cart activity;
+- guest contact/address creation and updates bound transactionally to the cart,
+  closing the remaining Phase 4 checkout-lifecycle gap;
+- authenticated delivery capture that reuses the registered customer identity
+  while keeping staff and customer sessions separate;
+- a responsive storefront cart with quantity controls, removal, delivery
+  capture, summaries, reconciliation messages, empty/loading/error states, and
+  hydration-safe add-to-cart actions;
+- bounded `FOR UPDATE SKIP LOCKED` cleanup for expired carts, with configurable
+  1–1000 record batches;
+- generated OpenAPI/TypeScript contracts and client methods for the complete
+  cart surface;
+- isolated PostgreSQL coverage for server pricing, stock/publication
+  reconciliation, idempotent retries and conflicts, guest and registered
+  delivery ownership, expiration, cleanup, and hashed token storage;
+- desktop/mobile browser coverage for empty carts, product addition, delivery
+  capture, WCAG A/AA checks, and responsive behavior.
+
+Phase 5 is complete. The next vertical slice is Phase 6 order creation:
+
+- immutable order and order-line commercial snapshots;
+- explicit order, payment, and fulfillment states;
+- idempotent cart-to-order conversion;
+- development-only manual payment;
+- admin order list, detail, and timeline.
+
+The complete Rust workspace suite, API contract check, TypeScript checks,
+production builds, and 22-test desktop/mobile storefront and customer-account
+Playwright suite passed on 2026-08-05. The four-test PostgreSQL-backed admin
+Playwright suite is unchanged from its passing Phase 4 verification.
 
 ## Environment notes
 

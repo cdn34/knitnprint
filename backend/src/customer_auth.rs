@@ -16,12 +16,14 @@ use crate::{
     AppState,
     auth::{hash_password, verify_password},
     customers::{CustomerAddress, valid_email},
+    email::{AccountEmailKind, log_delivery_failure},
     error::ErrorBody,
+    login_rate_limit::{AccountLoginGuard, AuthScope, ClientIp, LoginLimitError},
 };
 
 pub const CUSTOMER_SESSION_COOKIE: &str = "knitprint_customer";
 const CUSTOMER_SESSION_DAYS: i64 = 30;
-const LOGIN_ATTEMPT_LIMIT: i32 = 5;
+const ACCOUNT_EMAIL_RESEND_MINUTES: i32 = 5;
 
 #[derive(Deserialize, ToSchema)]
 pub struct CustomerRegisterRequest {
@@ -36,6 +38,22 @@ pub struct CustomerRegisterRequest {
 #[derive(Deserialize, ToSchema)]
 pub struct CustomerLoginRequest {
     pub email: String,
+    pub password: String,
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct AccountTokenRequest {
+    pub token: String,
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct ForgotPasswordRequest {
+    pub email: String,
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct ResetPasswordRequest {
+    pub token: String,
     pub password: String,
 }
 
@@ -62,6 +80,7 @@ pub struct CustomerAccountProfile {
     pub first_name: String,
     pub last_name: String,
     pub phone: String,
+    pub email_verified: bool,
     pub addresses: Vec<CustomerAddress>,
 }
 
@@ -72,6 +91,7 @@ struct AccountIdentity {
     first_name: String,
     last_name: String,
     phone: String,
+    email_verified: bool,
 }
 
 #[derive(FromRow)]
@@ -81,6 +101,7 @@ struct AccountCredentials {
     first_name: String,
     last_name: String,
     phone: String,
+    email_verified: bool,
     password_hash: String,
 }
 
@@ -91,6 +112,7 @@ pub struct AuthenticatedCustomer {
     pub first_name: String,
     pub last_name: String,
     pub phone: String,
+    pub email_verified: bool,
 }
 
 #[utoipa::path(
@@ -124,6 +146,9 @@ pub async fn register(
     let session_id = Uuid::now_v7();
     let token = new_session_token();
     let token_hash = hash_token(&token);
+    let email_token_id = Uuid::now_v7();
+    let email_token = new_session_token();
+    let email_token_hash = hash_token(&email_token);
     let email = input.email.trim().to_ascii_lowercase();
     let mut transaction = match pool.begin().await {
         Ok(transaction) => transaction,
@@ -154,6 +179,15 @@ pub async fn register(
         || insert_session(&mut transaction, session_id, customer_id, &token_hash)
             .await
             .is_err()
+        || insert_account_token(
+            &mut transaction,
+            email_token_id,
+            customer_id,
+            AccountEmailKind::Verification,
+            &email_token_hash,
+        )
+        .await
+        .is_err()
         || audit(
             &mut transaction,
             customer_id,
@@ -167,6 +201,18 @@ pub async fn register(
     {
         return unavailable();
     }
+    if let Err(error) = state
+        .email
+        .send_account_action(
+            &email,
+            input.first_name.trim(),
+            AccountEmailKind::Verification,
+            &email_token,
+        )
+        .await
+    {
+        log_delivery_failure(&error, AccountEmailKind::Verification);
+    }
     no_store(
         (
             StatusCode::CREATED,
@@ -177,6 +223,7 @@ pub async fn register(
                 first_name: input.first_name.trim().into(),
                 last_name: input.last_name.trim().into(),
                 phone: input.phone.trim().into(),
+                email_verified: false,
                 addresses: Vec::new(),
             }),
         )
@@ -198,6 +245,7 @@ pub async fn register(
 )]
 pub async fn login(
     State(state): State<AppState>,
+    ClientIp(client_ip): ClientIp,
     jar: CookieJar,
     Json(input): Json<CustomerLoginRequest>,
 ) -> Response {
@@ -205,18 +253,30 @@ pub async fn login(
         return unavailable();
     };
     let email = input.email.trim().to_ascii_lowercase();
+    let mut guard = match AccountLoginGuard::acquire(
+        &pool,
+        AuthScope::Customer,
+        bounded_identifier(&email),
+        client_ip,
+    )
+    .await
+    {
+        Ok(guard) => guard,
+        Err(LoginLimitError::Limited(retry_after)) => return login_limited(retry_after),
+        Err(LoginLimitError::Database(_)) => return unavailable(),
+    };
     if !valid_email(&email) || !(12..=256).contains(&input.password.len()) {
+        if guard.record_failure().await.is_err() {
+            return unavailable();
+        }
         return invalid_credentials();
-    }
-    match login_is_limited(&pool, &email).await {
-        Ok(true) => return login_limited(),
-        Ok(false) => {}
-        Err(_) => return unavailable(),
     }
     let credentials = match sqlx::query_as::<_, AccountCredentials>(
         r#"
         SELECT customer.id, customer.email::text AS email, customer.first_name,
-               customer.last_name, customer.phone, account.password_hash
+               customer.last_name, customer.phone,
+               account.email_verified_at IS NOT NULL AS email_verified,
+               account.password_hash
         FROM customer_accounts account
         JOIN customers customer ON customer.id = account.customer_id
         WHERE customer.email = $1
@@ -227,13 +287,13 @@ pub async fn login(
         "#,
     )
     .bind(&email)
-    .fetch_optional(&pool)
+    .fetch_optional(&mut **guard.transaction())
     .await
     {
         Ok(Some(credentials)) => credentials,
         Ok(None) => {
             let _ = hash_password(&input.password);
-            if record_login_failure(&pool, &email).await.is_err() {
+            if guard.record_failure().await.is_err() {
                 return unavailable();
             }
             return invalid_credentials();
@@ -241,7 +301,7 @@ pub async fn login(
         Err(_) => return unavailable(),
     };
     if !verify_password(&input.password, &credentials.password_hash) {
-        if record_login_failure(&pool, &email).await.is_err() {
+        if guard.record_failure().await.is_err() {
             return unavailable();
         }
         return invalid_credentials();
@@ -249,26 +309,17 @@ pub async fn login(
     let session_id = Uuid::now_v7();
     let token = new_session_token();
     let token_hash = hash_token(&token);
-    let mut transaction = match pool.begin().await {
-        Ok(transaction) => transaction,
-        Err(_) => return unavailable(),
-    };
-    if lock_active_account(&mut transaction, credentials.id)
+    if lock_active_account(guard.transaction(), credentials.id)
         .await
         .is_err()
-        || insert_session(&mut transaction, session_id, credentials.id, &token_hash)
+        || insert_session(guard.transaction(), session_id, credentials.id, &token_hash)
             .await
             .is_err()
-        || refresh_retention(&mut transaction, credentials.id)
-            .await
-            .is_err()
-        || sqlx::query("DELETE FROM customer_login_attempts WHERE email = $1")
-            .bind(&email)
-            .execute(&mut *transaction)
+        || refresh_retention(guard.transaction(), credentials.id)
             .await
             .is_err()
         || audit(
-            &mut transaction,
+            guard.transaction(),
             credentials.id,
             "customer.login",
             "customer_session",
@@ -276,7 +327,7 @@ pub async fn login(
         )
         .await
         .is_err()
-        || transaction.commit().await.is_err()
+        || guard.record_success().await.is_err()
     {
         return unavailable();
     }
@@ -293,6 +344,7 @@ pub async fn login(
                 first_name: credentials.first_name,
                 last_name: credentials.last_name,
                 phone: credentials.phone,
+                email_verified: credentials.email_verified,
                 addresses,
             }),
         )
@@ -447,6 +499,353 @@ pub async fn add_address(
     no_store((StatusCode::CREATED, Json(address)).into_response())
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/account/verification/request",
+    tag = "customer account",
+    responses(
+        (status = 204, description = "Verification email requested or recently sent"),
+        (status = 401, body = ErrorBody),
+        (status = 503, body = ErrorBody)
+    )
+)]
+pub async fn request_verification(
+    State(state): State<AppState>,
+    customer: AuthenticatedCustomer,
+) -> Response {
+    if customer.email_verified {
+        return no_store(StatusCode::NO_CONTENT.into_response());
+    }
+    let Some(pool) = state.database else {
+        return unavailable();
+    };
+    let token = new_session_token();
+    let token_hash = hash_token(&token);
+    let token_id = Uuid::now_v7();
+    let mut transaction = match pool.begin().await {
+        Ok(transaction) => transaction,
+        Err(_) => return unavailable(),
+    };
+    if lock_active_account(&mut transaction, customer.id)
+        .await
+        .is_err()
+    {
+        return unavailable();
+    }
+    match recently_issued_token(
+        &mut transaction,
+        customer.id,
+        AccountEmailKind::Verification,
+    )
+    .await
+    {
+        Ok(true) => {
+            return if transaction.commit().await.is_ok() {
+                no_store(StatusCode::NO_CONTENT.into_response())
+            } else {
+                unavailable()
+            };
+        }
+        Ok(false) => {}
+        Err(_) => return unavailable(),
+    }
+    if replace_account_token(
+        &mut transaction,
+        token_id,
+        customer.id,
+        AccountEmailKind::Verification,
+        &token_hash,
+    )
+    .await
+    .is_err()
+        || audit(
+            &mut transaction,
+            customer.id,
+            "customer.email_verification_requested",
+            "customer",
+            customer.id,
+        )
+        .await
+        .is_err()
+        || transaction.commit().await.is_err()
+    {
+        return unavailable();
+    }
+    if let Err(error) = state
+        .email
+        .send_account_action(
+            &customer.email,
+            &customer.first_name,
+            AccountEmailKind::Verification,
+            &token,
+        )
+        .await
+    {
+        log_delivery_failure(&error, AccountEmailKind::Verification);
+    }
+    no_store(StatusCode::NO_CONTENT.into_response())
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/account/verification/confirm",
+    tag = "customer account",
+    request_body = AccountTokenRequest,
+    responses(
+        (status = 204, description = "Email verified"),
+        (status = 422, body = ErrorBody),
+        (status = 503, body = ErrorBody)
+    )
+)]
+pub async fn confirm_verification(
+    State(state): State<AppState>,
+    Json(input): Json<AccountTokenRequest>,
+) -> Response {
+    let Some(token_hash) = valid_action_token(&input.token) else {
+        return invalid_action_token();
+    };
+    let Some(pool) = state.database else {
+        return unavailable();
+    };
+    let mut transaction = match pool.begin().await {
+        Ok(transaction) => transaction,
+        Err(_) => return unavailable(),
+    };
+    let customer_id = match active_token_customer(
+        &mut transaction,
+        &token_hash,
+        AccountEmailKind::Verification,
+    )
+    .await
+    {
+        Ok(Some(customer_id)) => customer_id,
+        Ok(None) => return invalid_action_token(),
+        Err(_) => return unavailable(),
+    };
+    if sqlx::query(
+        "UPDATE customer_accounts SET email_verified_at = COALESCE(email_verified_at, now()), updated_at = now() WHERE customer_id = $1",
+    )
+    .bind(customer_id)
+    .execute(&mut *transaction)
+    .await
+    .is_err()
+        || use_account_tokens(
+            &mut transaction,
+            customer_id,
+            AccountEmailKind::Verification,
+        )
+        .await
+        .is_err()
+        || audit(
+            &mut transaction,
+            customer_id,
+            "customer.email_verified",
+            "customer",
+            customer_id,
+        )
+        .await
+        .is_err()
+        || transaction.commit().await.is_err()
+    {
+        return unavailable();
+    }
+    no_store(StatusCode::NO_CONTENT.into_response())
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/account/password/forgot",
+    tag = "customer account",
+    request_body = ForgotPasswordRequest,
+    responses(
+        (status = 204, description = "Reset email requested when the account exists"),
+        (status = 503, body = ErrorBody)
+    )
+)]
+pub async fn forgot_password(
+    State(state): State<AppState>,
+    Json(input): Json<ForgotPasswordRequest>,
+) -> Response {
+    let Some(pool) = state.database else {
+        return unavailable();
+    };
+    let email = input.email.trim().to_ascii_lowercase();
+    let token = new_session_token();
+    let token_hash = hash_token(&token);
+    let token_id = Uuid::now_v7();
+    let mut transaction = match pool.begin().await {
+        Ok(transaction) => transaction,
+        Err(_) => return unavailable(),
+    };
+    let account = if valid_email(&email) {
+        sqlx::query_as::<_, (Uuid, String)>(
+            r#"
+            SELECT customer.id, customer.first_name
+            FROM customer_accounts account
+            JOIN customers customer ON customer.id = account.customer_id
+            WHERE customer.email = $1
+              AND customer.customer_type = 'registered'
+              AND customer.anonymized_at IS NULL
+              AND customer.retention_expires_at > now()
+              AND account.disabled_at IS NULL
+            FOR UPDATE OF account, customer
+            "#,
+        )
+        .bind(&email)
+        .fetch_optional(&mut *transaction)
+        .await
+    } else {
+        Ok(None)
+    };
+    let Some((customer_id, first_name)) = (match account {
+        Ok(account) => account,
+        Err(_) => return unavailable(),
+    }) else {
+        if transaction.commit().await.is_err() {
+            return unavailable();
+        }
+        let _ = hash_password("password-recovery-timing-padding");
+        return no_store(StatusCode::NO_CONTENT.into_response());
+    };
+    match recently_issued_token(
+        &mut transaction,
+        customer_id,
+        AccountEmailKind::PasswordReset,
+    )
+    .await
+    {
+        Ok(true) => {
+            return if transaction.commit().await.is_ok() {
+                no_store(StatusCode::NO_CONTENT.into_response())
+            } else {
+                unavailable()
+            };
+        }
+        Ok(false) => {}
+        Err(_) => return unavailable(),
+    }
+    if replace_account_token(
+        &mut transaction,
+        token_id,
+        customer_id,
+        AccountEmailKind::PasswordReset,
+        &token_hash,
+    )
+    .await
+    .is_err()
+        || audit_system(
+            &mut transaction,
+            "customer.password_reset_requested",
+            "customer",
+            customer_id,
+        )
+        .await
+        .is_err()
+        || transaction.commit().await.is_err()
+    {
+        return unavailable();
+    }
+    if let Err(error) = state
+        .email
+        .send_account_action(&email, &first_name, AccountEmailKind::PasswordReset, &token)
+        .await
+    {
+        log_delivery_failure(&error, AccountEmailKind::PasswordReset);
+    }
+    no_store(StatusCode::NO_CONTENT.into_response())
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/account/password/reset",
+    tag = "customer account",
+    request_body = ResetPasswordRequest,
+    responses(
+        (status = 204, description = "Password changed and existing sessions revoked"),
+        (status = 422, body = ErrorBody),
+        (status = 503, body = ErrorBody)
+    )
+)]
+pub async fn reset_password(
+    State(state): State<AppState>,
+    jar: CookieJar,
+    Json(input): Json<ResetPasswordRequest>,
+) -> Response {
+    let Some(token_hash) = valid_action_token(&input.token) else {
+        return invalid_action_token();
+    };
+    if !(12..=256).contains(&input.password.len()) {
+        return invalid_reset_password();
+    }
+    let password_hash = match hash_password(&input.password) {
+        Ok(hash) => hash,
+        Err(_) => return unavailable(),
+    };
+    let Some(pool) = state.database else {
+        return unavailable();
+    };
+    let mut transaction = match pool.begin().await {
+        Ok(transaction) => transaction,
+        Err(_) => return unavailable(),
+    };
+    let customer_id = match active_token_customer(
+        &mut transaction,
+        &token_hash,
+        AccountEmailKind::PasswordReset,
+    )
+    .await
+    {
+        Ok(Some(customer_id)) => customer_id,
+        Ok(None) => return invalid_action_token(),
+        Err(_) => return unavailable(),
+    };
+    if sqlx::query(
+        "UPDATE customer_accounts SET password_hash = $2, email_verified_at = COALESCE(email_verified_at, now()), updated_at = now() WHERE customer_id = $1",
+    )
+    .bind(customer_id)
+    .bind(password_hash)
+    .execute(&mut *transaction)
+    .await
+    .is_err()
+        || use_account_tokens(
+            &mut transaction,
+            customer_id,
+            AccountEmailKind::PasswordReset,
+        )
+        .await
+        .is_err()
+        || use_account_tokens(
+            &mut transaction,
+            customer_id,
+            AccountEmailKind::Verification,
+        )
+        .await
+        .is_err()
+        || sqlx::query(
+            "UPDATE customer_sessions SET revoked_at = COALESCE(revoked_at, now()) WHERE customer_id = $1",
+        )
+        .bind(customer_id)
+        .execute(&mut *transaction)
+        .await
+        .is_err()
+        || refresh_retention(&mut transaction, customer_id)
+            .await
+            .is_err()
+        || audit_system(
+            &mut transaction,
+            "customer.password_reset",
+            "customer",
+            customer_id,
+        )
+        .await
+        .is_err()
+        || transaction.commit().await.is_err()
+    {
+        return unavailable();
+    }
+    no_store((jar.remove(removal_cookie()), StatusCode::NO_CONTENT).into_response())
+}
+
 impl FromRequestParts<AppState> for AuthenticatedCustomer {
     type Rejection = Response;
 
@@ -468,7 +867,8 @@ impl FromRequestParts<AppState> for AuthenticatedCustomer {
         let identity = sqlx::query_as::<_, AccountIdentity>(
             r#"
             SELECT customer.id, customer.email::text AS email, customer.first_name,
-                   customer.last_name, customer.phone
+                   customer.last_name, customer.phone,
+                   account.email_verified_at IS NOT NULL AS email_verified
             FROM customer_sessions session
             JOIN customer_accounts account ON account.customer_id = session.customer_id
             JOIN customers customer ON customer.id = account.customer_id
@@ -505,6 +905,7 @@ impl FromRequestParts<AppState> for AuthenticatedCustomer {
             first_name: identity.first_name,
             last_name: identity.last_name,
             phone: identity.phone,
+            email_verified: identity.email_verified,
         })
     }
 }
@@ -520,7 +921,114 @@ async fn profile_for(
         first_name: customer.first_name,
         last_name: customer.last_name,
         phone: customer.phone,
+        email_verified: customer.email_verified,
     })
+}
+
+async fn insert_account_token(
+    transaction: &mut Transaction<'_, Postgres>,
+    token_id: Uuid,
+    customer_id: Uuid,
+    kind: AccountEmailKind,
+    token_hash: &[u8; 32],
+) -> Result<(), sqlx::Error> {
+    let expires_at = match kind {
+        AccountEmailKind::Verification => "24 hours",
+        AccountEmailKind::PasswordReset => "1 hour",
+    };
+    sqlx::query(
+        r#"
+        INSERT INTO customer_account_tokens (
+            id, customer_id, token_kind, token_hash, expires_at
+        )
+        VALUES ($1, $2, $3, $4, now() + $5::interval)
+        "#,
+    )
+    .bind(token_id)
+    .bind(customer_id)
+    .bind(kind.as_str())
+    .bind(token_hash.as_slice())
+    .bind(expires_at)
+    .execute(&mut **transaction)
+    .await?;
+    Ok(())
+}
+
+async fn replace_account_token(
+    transaction: &mut Transaction<'_, Postgres>,
+    token_id: Uuid,
+    customer_id: Uuid,
+    kind: AccountEmailKind,
+    token_hash: &[u8; 32],
+) -> Result<(), sqlx::Error> {
+    use_account_tokens(transaction, customer_id, kind).await?;
+    insert_account_token(transaction, token_id, customer_id, kind, token_hash).await
+}
+
+async fn use_account_tokens(
+    transaction: &mut Transaction<'_, Postgres>,
+    customer_id: Uuid,
+    kind: AccountEmailKind,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE customer_account_tokens SET used_at = now() WHERE customer_id = $1 AND token_kind = $2 AND used_at IS NULL",
+    )
+    .bind(customer_id)
+    .bind(kind.as_str())
+    .execute(&mut **transaction)
+    .await?;
+    Ok(())
+}
+
+async fn recently_issued_token(
+    transaction: &mut Transaction<'_, Postgres>,
+    customer_id: Uuid,
+    kind: AccountEmailKind,
+) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar(
+        r#"
+        SELECT EXISTS (
+            SELECT 1 FROM customer_account_tokens
+            WHERE customer_id = $1
+              AND token_kind = $2
+              AND used_at IS NULL
+              AND expires_at > now()
+              AND created_at > now() - make_interval(mins => $3)
+        )
+        "#,
+    )
+    .bind(customer_id)
+    .bind(kind.as_str())
+    .bind(ACCOUNT_EMAIL_RESEND_MINUTES)
+    .fetch_one(&mut **transaction)
+    .await
+}
+
+async fn active_token_customer(
+    transaction: &mut Transaction<'_, Postgres>,
+    token_hash: &[u8; 32],
+    kind: AccountEmailKind,
+) -> Result<Option<Uuid>, sqlx::Error> {
+    sqlx::query_scalar(
+        r#"
+        SELECT token.customer_id
+        FROM customer_account_tokens token
+        JOIN customer_accounts account ON account.customer_id = token.customer_id
+        JOIN customers customer ON customer.id = token.customer_id
+        WHERE token.token_hash = $1
+          AND token.token_kind = $2
+          AND token.used_at IS NULL
+          AND token.expires_at > now()
+          AND account.disabled_at IS NULL
+          AND customer.anonymized_at IS NULL
+          AND customer.retention_expires_at > now()
+        FOR UPDATE OF token, account, customer
+        "#,
+    )
+    .bind(token_hash.as_slice())
+    .bind(kind.as_str())
+    .fetch_optional(&mut **transaction)
+    .await
 }
 
 async fn addresses_for(
@@ -646,43 +1154,18 @@ async fn audit_pool(
     Ok(())
 }
 
-async fn login_is_limited(pool: &PgPool, email: &str) -> Result<bool, sqlx::Error> {
-    sqlx::query_scalar(
-        "SELECT COALESCE(locked_until > now(), false) FROM customer_login_attempts WHERE email = $1",
-    )
-    .bind(email)
-    .fetch_optional(pool)
-    .await
-    .map(|limited| limited.unwrap_or(false))
-}
-
-async fn record_login_failure(pool: &PgPool, email: &str) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        r#"
-        INSERT INTO customer_login_attempts (email, failed_count) VALUES ($1, 1)
-        ON CONFLICT (email) DO UPDATE SET
-            failed_count = CASE
-                WHEN customer_login_attempts.window_started_at < now() - interval '15 minutes' THEN 1
-                ELSE customer_login_attempts.failed_count + 1
-            END,
-            window_started_at = CASE
-                WHEN customer_login_attempts.window_started_at < now() - interval '15 minutes' THEN now()
-                ELSE customer_login_attempts.window_started_at
-            END,
-            locked_until = CASE
-                WHEN (CASE
-                    WHEN customer_login_attempts.window_started_at < now() - interval '15 minutes' THEN 1
-                    ELSE customer_login_attempts.failed_count + 1
-                END) >= $2 THEN now() + interval '15 minutes'
-                ELSE NULL
-            END,
-            updated_at = now()
-        "#,
-    )
-    .bind(email)
-    .bind(LOGIN_ATTEMPT_LIMIT)
-    .execute(pool)
-    .await?;
+async fn audit_system(
+    transaction: &mut Transaction<'_, Postgres>,
+    action: &str,
+    entity_type: &str,
+    entity_id: Uuid,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("INSERT INTO audit_log (action, entity_type, entity_id) VALUES ($1, $2, $3)")
+        .bind(action)
+        .bind(entity_type)
+        .bind(entity_id.to_string())
+        .execute(&mut **transaction)
+        .await?;
     Ok(())
 }
 
@@ -757,6 +1240,22 @@ fn invalid_credentials() -> Response {
     )
 }
 
+fn invalid_action_token() -> Response {
+    error_response(
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "invalid_account_token",
+        "This account link is invalid or has expired.",
+    )
+}
+
+fn invalid_reset_password() -> Response {
+    error_response(
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "invalid_reset_password",
+        "Choose a password of at least 12 characters.",
+    )
+}
+
 fn authentication_required() -> Response {
     error_response(
         StatusCode::UNAUTHORIZED,
@@ -765,16 +1264,24 @@ fn authentication_required() -> Response {
     )
 }
 
-fn login_limited() -> Response {
+fn login_limited(retry_after: u64) -> Response {
     let mut response = error_response(
         StatusCode::TOO_MANY_REQUESTS,
         "customer_login_rate_limited",
-        "Too many sign-in attempts. Try again in 15 minutes.",
+        "Too many sign-in attempts. Try again later.",
     );
+    if let Ok(value) = header::HeaderValue::from_str(&retry_after.to_string()) {
+        response.headers_mut().insert(header::RETRY_AFTER, value);
+    }
     response
-        .headers_mut()
-        .insert(header::RETRY_AFTER, header::HeaderValue::from_static("900"));
-    response
+}
+
+fn bounded_identifier(identifier: &str) -> &str {
+    if identifier.len() <= 320 {
+        identifier
+    } else {
+        "__invalid__"
+    }
 }
 
 fn unavailable() -> Response {
@@ -801,8 +1308,17 @@ fn new_session_token() -> String {
     format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple())
 }
 
-fn hash_token(token: &str) -> [u8; 32] {
+pub(crate) fn hash_token(token: &str) -> [u8; 32] {
     Sha256::digest(token.as_bytes()).into()
+}
+
+fn valid_action_token(token: &str) -> Option<[u8; 32]> {
+    let token = token.trim();
+    if token.len() == 64 && token.chars().all(|character| character.is_ascii_hexdigit()) {
+        Some(hash_token(token))
+    } else {
+        None
+    }
 }
 
 fn session_cookie(token: String, secure: bool) -> Cookie<'static> {
@@ -810,14 +1326,14 @@ fn session_cookie(token: String, secure: bool) -> Cookie<'static> {
         .http_only(true)
         .secure(secure)
         .same_site(SameSite::Lax)
-        .path("/api/account")
+        .path("/api")
         .max_age(Duration::days(CUSTOMER_SESSION_DAYS))
         .build()
 }
 
 fn removal_cookie() -> Cookie<'static> {
     Cookie::build(CUSTOMER_SESSION_COOKIE)
-        .path("/api/account")
+        .path("/api")
         .max_age(Duration::ZERO)
         .build()
 }

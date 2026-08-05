@@ -24,6 +24,12 @@ async fn main() {
                 eprintln!("invalid media storage configuration: {error}");
                 std::process::exit(2);
             });
+    let email = knitprint_api::email::EmailService::from_env(config.environment)
+        .await
+        .unwrap_or_else(|error| {
+            eprintln!("invalid email configuration: {error}");
+            std::process::exit(2);
+        });
 
     if config.environment == Environment::Production && database.is_none() {
         eprintln!("database connection is required in production");
@@ -41,8 +47,11 @@ async fn main() {
         app(AppState {
             database,
             media_storage,
+            email,
+            trust_proxy_headers: config.trust_proxy_headers,
             secure_cookies: config.environment == Environment::Production,
-        }),
+        })
+        .into_make_service_with_connect_info::<SocketAddr>(),
     )
     .with_graceful_shutdown(shutdown_signal())
     .await

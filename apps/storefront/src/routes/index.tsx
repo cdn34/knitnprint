@@ -90,9 +90,9 @@ function HomePage() {
           <a className="icon-button" aria-label="Account" href="/account">
             <CircleUserRound />
           </a>
-          <IconButton label="Cart, 0 items">
+          <a className="icon-button" aria-label="View cart" href="/cart">
             <ShoppingBag />
-          </IconButton>
+          </a>
           <span className="mobile-action">
             <IconButton label="Open menu">
               <Menu />

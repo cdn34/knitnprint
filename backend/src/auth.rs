@@ -16,11 +16,14 @@ use time::Duration;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::{AppState, error::ErrorBody};
+use crate::{
+    AppState,
+    error::ErrorBody,
+    login_rate_limit::{AccountLoginGuard, AuthScope, ClientIp, LoginLimitError},
+};
 
 pub const SESSION_COOKIE: &str = "knitprint_admin";
 const SESSION_HOURS: i64 = 12;
-const LOGIN_ATTEMPT_LIMIT: i32 = 5;
 
 #[derive(Deserialize, ToSchema)]
 pub struct LoginRequest {
@@ -77,6 +80,7 @@ struct SessionProfile {
 )]
 pub async fn login(
     State(state): State<AppState>,
+    ClientIp(client_ip): ClientIp,
     jar: CookieJar,
     Json(input): Json<LoginRequest>,
 ) -> Response {
@@ -84,17 +88,27 @@ pub async fn login(
         return unavailable();
     };
     let email = input.email.trim().to_lowercase();
+    let mut guard = match AccountLoginGuard::acquire(
+        &pool,
+        AuthScope::Staff,
+        bounded_identifier(&email),
+        client_ip,
+    )
+    .await
+    {
+        Ok(guard) => guard,
+        Err(LoginLimitError::Limited(retry_after)) => return login_limited(retry_after),
+        Err(LoginLimitError::Database(_)) => return unavailable(),
+    };
     if email.is_empty()
         || email.len() > 254
         || input.password.is_empty()
         || input.password.len() > 256
     {
+        if guard.record_failure().await.is_err() {
+            return unavailable();
+        }
         return invalid_credentials();
-    }
-    match login_is_limited(&pool, &email).await {
-        Ok(true) => return login_limited(),
-        Ok(false) => {}
-        Err(_) => return unavailable(),
     }
     let credentials = match sqlx::query_as::<_, StaffCredentials>(
         r#"
@@ -104,13 +118,13 @@ pub async fn login(
         "#,
     )
     .bind(&email)
-    .fetch_optional(&pool)
+    .fetch_optional(&mut **guard.transaction())
     .await
     {
         Ok(Some(credentials)) => credentials,
         Ok(None) => {
             let _ = hash_password(&input.password);
-            if record_login_failure(&pool, &email).await.is_err() {
+            if guard.record_failure().await.is_err() {
                 return unavailable();
             }
             return invalid_credentials();
@@ -119,7 +133,7 @@ pub async fn login(
     };
 
     if !verify_password(&input.password, &credentials.password_hash) {
-        if record_login_failure(&pool, &email).await.is_err() {
+        if guard.record_failure().await.is_err() {
             return unavailable();
         }
         return invalid_credentials();
@@ -128,11 +142,6 @@ pub async fn login(
     let token = new_session_token();
     let token_hash = hash_token(&token);
     let session_id = Uuid::now_v7();
-    let mut transaction = match pool.begin().await {
-        Ok(transaction) => transaction,
-        Err(_) => return unavailable(),
-    };
-
     if sqlx::query(
         r#"
         INSERT INTO staff_sessions (id, staff_user_id, token_hash, expires_at)
@@ -142,7 +151,7 @@ pub async fn login(
     .bind(session_id)
     .bind(credentials.id)
     .bind(token_hash.as_slice())
-    .execute(&mut *transaction)
+    .execute(&mut **guard.transaction())
     .await
     .is_err()
     {
@@ -150,7 +159,7 @@ pub async fn login(
     }
 
     if insert_audit(
-        &mut transaction,
+        guard.transaction(),
         credentials.id,
         "staff.login",
         "staff_session",
@@ -158,12 +167,7 @@ pub async fn login(
     )
     .await
     .is_err()
-        || sqlx::query("DELETE FROM staff_login_attempts WHERE email = $1")
-            .bind(&email)
-            .execute(&mut *transaction)
-            .await
-            .is_err()
-        || transaction.commit().await.is_err()
+        || guard.record_success().await.is_err()
     {
         return unavailable();
     }
@@ -184,53 +188,6 @@ pub async fn login(
         }),
     )
         .into_response()
-}
-
-async fn login_is_limited(pool: &PgPool, email: &str) -> Result<bool, sqlx::Error> {
-    sqlx::query_scalar(
-        "SELECT COALESCE(locked_until > now(), false) FROM staff_login_attempts WHERE email = $1",
-    )
-    .bind(email)
-    .fetch_optional(pool)
-    .await
-    .map(|limited| limited.unwrap_or(false))
-}
-
-async fn record_login_failure(pool: &PgPool, email: &str) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        r#"
-        INSERT INTO staff_login_attempts (email, failed_count)
-        VALUES ($1, 1)
-        ON CONFLICT (email) DO UPDATE SET
-            failed_count = CASE
-                WHEN staff_login_attempts.window_started_at < now() - interval '15 minutes'
-                    THEN 1
-                ELSE staff_login_attempts.failed_count + 1
-            END,
-            window_started_at = CASE
-                WHEN staff_login_attempts.window_started_at < now() - interval '15 minutes'
-                    THEN now()
-                ELSE staff_login_attempts.window_started_at
-            END,
-            locked_until = CASE
-                WHEN (
-                    CASE
-                        WHEN staff_login_attempts.window_started_at < now() - interval '15 minutes'
-                            THEN 1
-                        ELSE staff_login_attempts.failed_count + 1
-                    END
-                ) >= $2
-                    THEN now() + interval '15 minutes'
-                ELSE NULL
-            END,
-            updated_at = now()
-        "#,
-    )
-    .bind(email)
-    .bind(LOGIN_ATTEMPT_LIMIT)
-    .execute(pool)
-    .await?;
-    Ok(())
 }
 
 #[utoipa::path(
@@ -465,19 +422,27 @@ fn invalid_credentials() -> Response {
         .into_response()
 }
 
-fn login_limited() -> Response {
+fn login_limited(retry_after: u64) -> Response {
     let mut response = (
         StatusCode::TOO_MANY_REQUESTS,
         Json(ErrorBody::new(
             "login_rate_limited",
-            "Too many sign-in attempts. Try again in 15 minutes.",
+            "Too many sign-in attempts. Try again later.",
         )),
     )
         .into_response();
+    if let Ok(value) = header::HeaderValue::from_str(&retry_after.to_string()) {
+        response.headers_mut().insert(header::RETRY_AFTER, value);
+    }
     response
-        .headers_mut()
-        .insert(header::RETRY_AFTER, header::HeaderValue::from_static("900"));
-    response
+}
+
+fn bounded_identifier(identifier: &str) -> &str {
+    if identifier.len() <= 320 {
+        identifier
+    } else {
+        "__invalid__"
+    }
 }
 
 fn authentication_required() -> Response {
