@@ -371,7 +371,7 @@ function OrderManagement({
     <section className="orders-section" id="orders" aria-labelledby="orders-heading">
       <div className="section-heading">
         <div>
-          <p>Phase 6 · Operations</p>
+          <p>Phase 7 · Payments</p>
           <h2 id="orders-heading">Orders</h2>
         </div>
         <span>{orders.data?.length ?? '—'} recent</span>
@@ -443,12 +443,41 @@ function OrderDetail({
         <div><span>Payment</span><b>{order.payment_status}</b></div>
         <div><span>Fulfillment</span><b>{order.fulfillment_status}</b></div>
       </div>
-      {canRecordPayment && order.payment_status === 'pending' && (
+      {canRecordPayment && order.payment.provider === 'manual' && order.payment_status === 'pending' && (
         <button className="primary-button" type="button" disabled={paymentPending} onClick={() => onRecordPayment(order)}>
           {paymentPending ? 'Recording…' : 'Record manual payment'}
         </button>
       )}
       {paymentError && <p className="panel-error" role="alert">The payment could not be recorded.</p>}
+      <section className="order-detail-section">
+        <h4>Payment activity</h4>
+        <p className="panel-message">
+          Provider: {order.payment.provider} · {order.payment.status}
+        </p>
+        {order.payment.attempts.map((attempt) => (
+          <div className="order-line" key={attempt.id}>
+            <span>
+              <strong>Attempt {attempt.attempt_number}</strong>
+              <small>{attempt.provider}{attempt.expires_at ? ` · expires ${orderDate(attempt.expires_at)}` : ''}</small>
+            </span>
+            <b>{attempt.status}</b>
+          </div>
+        ))}
+        {order.payment.history.length > 0 && (
+          <ol className="order-timeline">
+            {order.payment.history.map((event) => (
+              <li key={event.id}>
+                <span aria-hidden="true" />
+                <div>
+                  <strong>{event.event_type}</strong>
+                  {event.detail && <small>{event.detail}</small>}
+                  <time dateTime={event.created_at}>{orderDate(event.created_at)} · {event.provider_status}</time>
+                </div>
+              </li>
+            ))}
+          </ol>
+        )}
+      </section>
       <section className="order-detail-section">
         <h4>Items</h4>
         {order.lines.map((line) => (
