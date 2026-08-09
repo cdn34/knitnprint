@@ -2516,6 +2516,181 @@
         }
       }
     },
+    "/api/orders/{order_id}": {
+      "get": {
+        "tags": [
+          "orders"
+        ],
+        "operationId": "customer_detail",
+        "parameters": [
+          {
+            "name": "order_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Order"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/orders/{order_id}/payment": {
+      "post": {
+        "tags": [
+          "payments"
+        ],
+        "operationId": "start_checkout",
+        "parameters": [
+          {
+            "name": "order_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentCheckout"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/payments/options": {
+      "get": {
+        "tags": [
+          "payments"
+        ],
+        "operationId": "options",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentOptions"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/payments/stripe/webhook": {
+      "post": {
+        "tags": [
+          "payments"
+        ],
+        "operationId": "stripe_webhook",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "string"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Verified event accepted"
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/products": {
       "get": {
         "tags": [
@@ -3912,15 +4087,41 @@
           "provider",
           "status",
           "amount_minor",
-          "currency"
+          "currency",
+          "attempts",
+          "history"
         ],
         "properties": {
           "amount_minor": {
             "type": "integer",
             "format": "int64"
           },
+          "attempts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PaymentAttempt"
+            }
+          },
           "currency": {
             "type": "string"
+          },
+          "failure_code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "failure_message": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "history": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PaymentStatusEvent"
+            }
           },
           "paid_at": {
             "type": [
@@ -3987,6 +4188,120 @@
           "total_minor": {
             "type": "integer",
             "format": "int64"
+          }
+        }
+      },
+      "PaymentAttempt": {
+        "type": "object",
+        "required": [
+          "id",
+          "attempt_number",
+          "provider",
+          "status",
+          "created_at"
+        ],
+        "properties": {
+          "attempt_number": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "expires_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "failure_code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "failure_message": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        }
+      },
+      "PaymentCheckout": {
+        "type": "object",
+        "required": [
+          "order_id",
+          "provider",
+          "checkout_url",
+          "expires_at"
+        ],
+        "properties": {
+          "checkout_url": {
+            "type": "string"
+          },
+          "expires_at": {
+            "type": "string"
+          },
+          "order_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "provider": {
+            "type": "string"
+          }
+        }
+      },
+      "PaymentOptions": {
+        "type": "object",
+        "required": [
+          "stripe",
+          "manual"
+        ],
+        "properties": {
+          "manual": {
+            "type": "boolean"
+          },
+          "stripe": {
+            "type": "boolean"
+          }
+        }
+      },
+      "PaymentStatusEvent": {
+        "type": "object",
+        "required": [
+          "id",
+          "event_type",
+          "provider_status",
+          "detail",
+          "created_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "event_type": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "provider_status": {
+            "type": "string"
           }
         }
       },
@@ -4276,6 +4591,10 @@
     {
       "name": "admin orders",
       "description": "Capability-protected order operations"
+    },
+    {
+      "name": "payments",
+      "description": "Server-owned payment initiation and verified provider events"
     }
   ]
 }

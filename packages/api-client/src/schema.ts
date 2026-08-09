@@ -353,7 +353,11 @@ export interface OrderLine {
 
 export interface OrderPayment {
   "amount_minor": number
+  "attempts": Array<PaymentAttempt>
   "currency": string
+  "failure_code"?: string | null
+  "failure_message"?: string | null
+  "history": Array<PaymentStatusEvent>
   "paid_at"?: string | null
   "provider": string
   "status": string
@@ -371,6 +375,37 @@ export interface OrderSummary {
   "order_status": string
   "payment_status": string
   "total_minor": number
+}
+
+export interface PaymentAttempt {
+  "attempt_number": number
+  "created_at": string
+  "expires_at"?: string | null
+  "failure_code"?: string | null
+  "failure_message"?: string | null
+  "id": string
+  "provider": string
+  "status": string
+}
+
+export interface PaymentCheckout {
+  "checkout_url": string
+  "expires_at": string
+  "order_id": string
+  "provider": string
+}
+
+export interface PaymentOptions {
+  "manual": boolean
+  "stripe": boolean
+}
+
+export interface PaymentStatusEvent {
+  "created_at": string
+  "detail": string
+  "event_type": string
+  "id": string
+  "provider_status": string
 }
 
 export interface Product {

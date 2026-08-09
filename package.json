@@ -27,6 +27,7 @@
     "admin:cleanup-media": "cargo run -p knitprint-api --bin cleanup_media",
     "admin:cleanup-customers": "cargo run -p knitprint-api --bin cleanup_customers",
     "admin:cleanup-carts": "cargo run -p knitprint-api --bin cleanup_carts",
+    "admin:cleanup-payments": "cargo run -p knitprint-api --bin cleanup_payments",
     "admin:create-owner": "cargo run -p knitprint-api --bin create_owner"
   },
   "devDependencies": {

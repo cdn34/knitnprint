@@ -367,6 +367,22 @@ pub async fn release(
     transition(pool, variant_id, quantity, reason, StockTransition::Release).await
 }
 
+pub async fn release_in_transaction(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    variant_id: Uuid,
+    quantity: i64,
+    reason: &str,
+) -> Result<Availability, InventoryOperationError> {
+    transition_in_transaction(
+        transaction,
+        variant_id,
+        quantity,
+        reason,
+        StockTransition::Release,
+    )
+    .await
+}
+
 pub async fn commit(
     pool: &PgPool,
     variant_id: Uuid,

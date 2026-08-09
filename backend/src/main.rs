@@ -30,6 +30,11 @@ async fn main() {
             eprintln!("invalid email configuration: {error}");
             std::process::exit(2);
         });
+    let payments = knitprint_api::payments::PaymentService::from_env(config.environment)
+        .unwrap_or_else(|error| {
+            eprintln!("invalid payment configuration: {error}");
+            std::process::exit(2);
+        });
 
     if config.environment == Environment::Production && database.is_none() {
         eprintln!("database connection is required in production");
@@ -48,6 +53,7 @@ async fn main() {
             database,
             media_storage,
             email,
+            payments,
             trust_proxy_headers: config.trust_proxy_headers,
             secure_cookies: config.environment == Environment::Production,
             manual_payments_enabled: config.environment != Environment::Production,

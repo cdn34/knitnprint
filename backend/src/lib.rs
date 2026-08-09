@@ -13,6 +13,7 @@ pub mod login_rate_limit;
 pub mod media;
 pub mod openapi;
 pub mod orders;
+pub mod payments;
 pub mod staff;
 
 use axum::{
@@ -32,6 +33,7 @@ pub struct AppState {
     pub database: Option<PgPool>,
     pub media_storage: Option<media::MediaStorage>,
     pub email: email::EmailService,
+    pub payments: payments::PaymentService,
     pub trust_proxy_headers: bool,
     pub secure_cookies: bool,
     pub manual_payments_enabled: bool,
@@ -141,8 +143,18 @@ pub fn app(state: AppState) -> Router {
             "/api/openapi.json",
             get(|| async { Json(openapi::document()) }),
         )
+        .route("/api/payments/options", get(payments::options))
+        .route(
+            "/api/payments/stripe/webhook",
+            axum::routing::post(payments::stripe_webhook),
+        )
         .route("/api/products", get(catalog::public_list))
         .route("/api/orders", axum::routing::post(orders::create))
+        .route("/api/orders/{order_id}", get(orders::customer_detail))
+        .route(
+            "/api/orders/{order_id}/payment",
+            axum::routing::post(payments::start_checkout),
+        )
         .route("/api/cart", get(carts::get))
         .route("/api/cart/items", axum::routing::post(carts::add_item))
         .route(

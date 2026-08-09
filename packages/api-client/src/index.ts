@@ -45,6 +45,10 @@ export type {
   OrderLine,
   OrderPayment,
   OrderSummary,
+  PaymentAttempt,
+  PaymentCheckout,
+  PaymentOptions,
+  PaymentStatusEvent,
   Product,
   ProductMedia,
   ResetPasswordRequest,
@@ -90,6 +94,8 @@ import type {
   ManualPaymentRequest,
   Order,
   OrderSummary,
+  PaymentCheckout,
+  PaymentOptions,
   Product,
   ResetPasswordRequest,
   StaffProfile,
@@ -273,6 +279,13 @@ export function createApiClient(options: ApiClientOptions = {}) {
           'idempotency-key': idempotencyKey,
         },
         body: JSON.stringify(input),
+      }),
+    customerOrder: (orderId: string) =>
+      send<Order>(`/api/orders/${orderId}`),
+    paymentOptions: () => send<PaymentOptions>('/api/payments/options'),
+    startOrderPayment: (orderId: string) =>
+      send<PaymentCheckout>(`/api/orders/${orderId}/payment`, {
+        method: 'POST',
       }),
     listOrders: () => send<Array<OrderSummary>>('/api/admin/orders'),
     order: (orderId: string) =>

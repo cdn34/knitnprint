@@ -16,6 +16,7 @@ use crate::{
     auth::{AuthenticatedStaff, require_capability},
     error::ErrorBody,
     inventory::{InventoryOperationError, commit_in_transaction, reserve_in_transaction},
+    payments::{PaymentAttempt, PaymentStatusEvent, load_attempts, load_status_events},
 };
 
 const CART_COOKIE: &str = "knitprint_cart";
@@ -92,6 +93,10 @@ pub struct OrderPayment {
     pub amount_minor: i64,
     pub currency: String,
     pub paid_at: Option<String>,
+    pub failure_code: Option<String>,
+    pub failure_message: Option<String>,
+    pub attempts: Vec<PaymentAttempt>,
+    pub history: Vec<PaymentStatusEvent>,
 }
 
 #[derive(Serialize, ToSchema, FromRow)]
@@ -187,10 +192,13 @@ struct OrderHead {
     shipping_postal_code: String,
     shipping_country_code: String,
     shipping_phone: String,
+    payment_id: Uuid,
     payment_provider: String,
     payment_amount_minor: i64,
     payment_currency: String,
     paid_at: Option<String>,
+    payment_failure_code: Option<String>,
+    payment_failure_message: Option<String>,
     created_at: String,
 }
 
@@ -214,13 +222,17 @@ pub async fn create(
     headers: HeaderMap,
     Json(input): Json<CreateOrderRequest>,
 ) -> Response {
-    if input.payment_method != "manual" || !state.manual_payments_enabled {
-        return error(
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "payment_method_unavailable",
-            "That payment method is not available.",
-        );
-    }
+    let provider = match input.payment_method.as_str() {
+        "manual" if state.manual_payments_enabled => "manual",
+        "stripe" if state.payments.enabled() => "stripe",
+        _ => {
+            return error(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "payment_method_unavailable",
+                "That payment method is not available.",
+            );
+        }
+    };
     let Some(idempotency_hash) = idempotency_hash(&headers) else {
         return invalid_idempotency_key();
     };
@@ -231,7 +243,7 @@ pub async fn create(
     let Some(pool) = state.database else {
         return unavailable();
     };
-    match create_order(&pool, token_hash, idempotency_hash).await {
+    match create_order(&pool, token_hash, idempotency_hash, provider).await {
         Ok((order, created)) => no_store(
             (
                 if created {
@@ -246,7 +258,59 @@ pub async fn create(
         Err(CreateError::NotReady) => cart_not_ready(),
         Err(CreateError::Changed) => cart_changed(),
         Err(CreateError::InsufficientStock) => insufficient_stock(),
+        Err(CreateError::IdempotencyConflict) => error(
+            StatusCode::CONFLICT,
+            "checkout_idempotency_conflict",
+            "That checkout key was already used for a different request.",
+        ),
         Err(CreateError::Database) => unavailable(),
+    }
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/orders/{order_id}",
+    tag = "orders",
+    params(("order_id" = Uuid, Path)),
+    responses(
+        (status = 200, body = Order),
+        (status = 404, body = ErrorBody),
+        (status = 503, body = ErrorBody)
+    )
+)]
+pub async fn customer_detail(
+    State(state): State<AppState>,
+    jar: CookieJar,
+    Path(order_id): Path<Uuid>,
+) -> Response {
+    let Some(cookie) = jar.get(CART_COOKIE) else {
+        return not_found();
+    };
+    let Some(pool) = state.database else {
+        return unavailable();
+    };
+    let token_hash: [u8; 32] = Sha256::digest(cookie.value().as_bytes()).into();
+    let owned = sqlx::query_scalar::<_, bool>(
+        r#"
+        SELECT EXISTS (
+            SELECT 1 FROM orders order_record
+            JOIN carts cart ON cart.id = order_record.cart_id
+            WHERE order_record.id = $1 AND cart.token_hash = $2
+        )
+        "#,
+    )
+    .bind(order_id)
+    .bind(token_hash.as_slice())
+    .fetch_one(&pool)
+    .await;
+    match owned {
+        Ok(true) => match load_order(&pool, order_id).await {
+            Ok(Some(order)) => no_store(Json(order).into_response()),
+            Ok(None) => not_found(),
+            Err(_) => unavailable(),
+        },
+        Ok(false) => not_found(),
+        Err(_) => unavailable(),
     }
 }
 
@@ -383,6 +447,7 @@ enum CreateError {
     NotReady,
     Changed,
     InsufficientStock,
+    IdempotencyConflict,
     Database,
 }
 
@@ -390,6 +455,7 @@ async fn create_order(
     pool: &PgPool,
     token_hash: [u8; 32],
     idempotency_hash: [u8; 32],
+    provider: &str,
 ) -> Result<(Order, bool), CreateError> {
     let mut transaction = pool.begin().await.map_err(|_| CreateError::Database)?;
     let cart = sqlx::query_as::<_, CheckoutCart>(
@@ -407,16 +473,26 @@ async fn create_order(
     .ok_or(CreateError::NotReady)?;
 
     if cart.status == "converted" {
-        let order_id: Uuid = sqlx::query_scalar("SELECT id FROM orders WHERE cart_id = $1")
-            .bind(cart.id)
-            .fetch_one(&mut *transaction)
-            .await
-            .map_err(|_| CreateError::Database)?;
+        let existing: (Uuid, Vec<u8>, String) = sqlx::query_as(
+            r#"
+            SELECT order_record.id, order_record.checkout_idempotency_hash, payment.provider
+            FROM orders order_record
+            JOIN order_payments payment ON payment.order_id = order_record.id
+            WHERE order_record.cart_id = $1
+            "#,
+        )
+        .bind(cart.id)
+        .fetch_one(&mut *transaction)
+        .await
+        .map_err(|_| CreateError::Database)?;
+        if existing.1.as_slice() != idempotency_hash.as_slice() || existing.2 != provider {
+            return Err(CreateError::IdempotencyConflict);
+        }
         transaction
             .commit()
             .await
             .map_err(|_| CreateError::Database)?;
-        return load_order(pool, order_id)
+        return load_order(pool, existing.0)
             .await
             .map_err(|_| CreateError::Database)?
             .map(|order| (order, false))
@@ -557,10 +633,11 @@ async fn create_order(
         .map_err(map_inventory_create_error)?;
     }
     sqlx::query(
-        "INSERT INTO order_payments (id, order_id, provider, amount_minor, currency) VALUES ($1, $2, 'manual', $3, $4)",
+        "INSERT INTO order_payments (id, order_id, provider, amount_minor, currency) VALUES ($1, $2, $3, $4, $5)",
     )
     .bind(Uuid::now_v7())
     .bind(order_id)
+    .bind(provider)
     .bind(subtotal_minor)
     .bind(currency)
     .execute(&mut *transaction)
@@ -643,9 +720,9 @@ async fn pay_order(
     reason: &str,
 ) -> Result<(), PaymentError> {
     let mut transaction = pool.begin().await.map_err(|_| PaymentError::Database)?;
-    let status: Option<(String, String)> = sqlx::query_as(
+    let status: Option<(String, String, String)> = sqlx::query_as(
         r#"
-        SELECT order_record.order_status, payment.status
+        SELECT order_record.order_status, payment.status, payment.provider
         FROM orders order_record JOIN order_payments payment ON payment.order_id = order_record.id
         WHERE order_record.id = $1 FOR UPDATE OF order_record, payment
         "#,
@@ -654,7 +731,7 @@ async fn pay_order(
     .fetch_optional(&mut *transaction)
     .await
     .map_err(|_| PaymentError::Database)?;
-    let Some((order_status, payment_status)) = status else {
+    let Some((order_status, payment_status, provider)) = status else {
         return Err(PaymentError::NotFound);
     };
     if order_status == "confirmed" && payment_status == "paid" {
@@ -664,7 +741,7 @@ async fn pay_order(
             .map_err(|_| PaymentError::Database)?;
         return Ok(());
     }
-    if order_status != "pending" || payment_status != "pending" {
+    if order_status != "pending" || payment_status != "pending" || provider != "manual" {
         return Err(PaymentError::Conflict);
     }
     let lines: Vec<(Uuid, i32)> = sqlx::query_as(
@@ -688,6 +765,24 @@ async fn pay_order(
         "UPDATE order_payments SET status = 'paid', paid_at = now(), updated_at = now() WHERE order_id = $1",
     )
     .bind(order_id)
+    .execute(&mut *transaction)
+    .await
+    .map_err(|_| PaymentError::Database)?;
+    let payment_id: Uuid = sqlx::query_scalar("SELECT id FROM order_payments WHERE order_id = $1")
+        .bind(order_id)
+        .fetch_one(&mut *transaction)
+        .await
+        .map_err(|_| PaymentError::Database)?;
+    sqlx::query(
+        r#"
+        INSERT INTO payment_status_events (
+            id, order_payment_id, provider, event_type, provider_status, detail
+        ) VALUES ($1, $2, 'manual', 'payment.manual_recorded', 'succeeded', $3)
+        "#,
+    )
+    .bind(Uuid::now_v7())
+    .bind(payment_id)
+    .bind(reason)
     .execute(&mut *transaction)
     .await
     .map_err(|_| PaymentError::Database)?;
@@ -766,9 +861,12 @@ async fn load_order(pool: &PgPool, order_id: Uuid) -> Result<Option<Order>, sqlx
                order_record.shipping_line1, order_record.shipping_line2, order_record.shipping_city,
                order_record.shipping_region, order_record.shipping_postal_code,
                order_record.shipping_country_code::text AS shipping_country_code,
-               order_record.shipping_phone, payment.provider AS payment_provider,
+               order_record.shipping_phone, payment.id AS payment_id,
+               payment.provider AS payment_provider,
                payment.amount_minor AS payment_amount_minor,
                payment.currency::text AS payment_currency,
+               payment.failure_code AS payment_failure_code,
+               payment.failure_message AS payment_failure_message,
                CASE WHEN payment.paid_at IS NULL THEN NULL ELSE
                  to_char(payment.paid_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') END AS paid_at,
                to_char(order_record.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at
@@ -792,6 +890,8 @@ async fn load_order(pool: &PgPool, order_id: Uuid) -> Result<Option<Order>, sqlx
     .bind(order_id)
     .fetch_all(pool)
     .await?;
+    let attempts = load_attempts(pool, head.payment_id).await?;
+    let history = load_status_events(pool, head.payment_id).await?;
     let timeline = sqlx::query_as::<_, OrderEvent>(
         r#"
         SELECT event.id, event.event_type, event.title, event.detail,
@@ -840,6 +940,10 @@ async fn load_order(pool: &PgPool, order_id: Uuid) -> Result<Option<Order>, sqlx
             amount_minor: head.payment_amount_minor,
             currency: head.payment_currency,
             paid_at: head.paid_at,
+            failure_code: head.payment_failure_code,
+            failure_message: head.payment_failure_message,
+            attempts,
+            history,
         },
         timeline,
         created_at: head.created_at,

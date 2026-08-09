@@ -1,7 +1,8 @@
 use utoipa::{OpenApi, openapi::OpenApi as OpenApiDocument};
 
 use crate::{
-    auth, carts, catalog, customer_auth, customers, error, health, inventory, media, orders, staff,
+    auth, carts, catalog, customer_auth, customers, error, health, inventory, media, orders,
+    payments, staff,
 };
 
 #[derive(OpenApi)]
@@ -32,9 +33,13 @@ use crate::{
         carts::remove_item,
         carts::set_delivery,
         orders::create,
+        orders::customer_detail,
         orders::admin_list,
         orders::admin_detail,
         orders::record_manual_payment,
+        payments::options,
+        payments::start_checkout,
+        payments::stripe_webhook,
         catalog::admin_list,
         catalog::admin_detail,
         catalog::create,
@@ -88,6 +93,10 @@ use crate::{
         orders::OrderPayment,
         orders::OrderEvent,
         orders::OrderSummary,
+        payments::PaymentOptions,
+        payments::PaymentCheckout,
+        payments::PaymentAttempt,
+        payments::PaymentStatusEvent,
         catalog::Variant,
         catalog::Category,
         catalog::Product,
@@ -129,6 +138,7 @@ use crate::{
         ,(name = "cart", description = "Disposable server-priced checkout preparation")
         ,(name = "orders", description = "Idempotent cart conversion and order confirmation")
         ,(name = "admin orders", description = "Capability-protected order operations")
+        ,(name = "payments", description = "Server-owned payment initiation and verified provider events")
     )
 )]
 struct ApiDoc;
