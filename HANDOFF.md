@@ -1,6 +1,6 @@
 # Project handoff
 
-Last updated: 2026-08-05
+Last updated: 2026-08-09
 
 ## Goal
 
@@ -415,18 +415,51 @@ Cart and checkout preparation are implemented:
 - desktop/mobile browser coverage for empty carts, product addition, delivery
   capture, WCAG A/AA checks, and responsive behavior.
 
-Phase 5 is complete. The next vertical slice is Phase 6 order creation:
+Phase 5 is complete.
 
-- immutable order and order-line commercial snapshots;
-- explicit order, payment, and fulfillment states;
-- idempotent cart-to-order conversion;
-- development-only manual payment;
-- admin order list, detail, and timeline.
+## Phase 6 progress
+
+Order creation is implemented:
+
+- immutable product, variant, SKU, price, currency, customer-contact, and
+  delivery-address snapshots that remain stable when source records change;
+- database-enforced order, payment, and fulfillment states with consistent
+  non-negative totals and human-readable sequential order numbers;
+- idempotent cart-to-order conversion protected by the cart row and a unique
+  cart relationship, so retries return the original order;
+- checkout-time catalog, price, currency, delivery, and inventory revalidation;
+- atomic inventory reservation during order creation and inventory commitment
+  when payment is recorded, using the shared inventory service transaction;
+- pending manual-payment records and a development/test-only staff operation
+  that confirms the order and records an audited reason;
+- append-only order timeline events and immutable order lines;
+- capability-protected admin order list and detail APIs using `orders.read`,
+  with manual payment protected by `orders.fulfill`;
+- OpenAPI and generated TypeScript contracts for storefront and admin order
+  workflows;
+- an accessible storefront create-order action and confirmation state;
+- a responsive admin Orders workspace with customer/delivery snapshots, line
+  details, statuses, timeline, and manual-payment control;
+- live customer order counts in the existing customer detail workspace;
+- isolated PostgreSQL lifecycle coverage for snapshot immutability, retry
+  safety, inventory transitions, admin visibility, payment auditing, and
+  timeline events;
+- desktop/mobile storefront coverage for order confirmation and admin browser
+  coverage for order inspection and manual payment.
+
+Phase 6 is complete. The next vertical slice is Phase 7 Stripe payments:
+
+- a narrow payment-provider interface;
+- Stripe Checkout or PaymentIntent creation;
+- signed, idempotent, out-of-order webhook handling;
+- payment attempt and status history;
+- reservation release for failed or abandoned payments;
+- production payment confirmation driven only by verified provider events.
 
 The complete Rust workspace suite, API contract check, TypeScript checks,
-production builds, and 22-test desktop/mobile storefront and customer-account
-Playwright suite passed on 2026-08-05. The four-test PostgreSQL-backed admin
-Playwright suite is unchanged from its passing Phase 4 verification.
+production builds, 22-test desktop/mobile storefront/customer-account
+Playwright suite, and four-test PostgreSQL-backed admin Playwright suite passed
+on 2026-08-09.
 
 ## Environment notes
 
