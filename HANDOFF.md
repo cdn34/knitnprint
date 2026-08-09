@@ -447,25 +447,61 @@ Order creation is implemented:
 - desktop/mobile storefront coverage for order confirmation and admin browser
   coverage for order inspection and manual payment.
 
-Phase 6 is complete. The next vertical slice is Phase 7 Stripe payments:
+Phase 6 is complete.
 
-- a narrow payment-provider interface;
-- Stripe Checkout or PaymentIntent creation;
-- signed, idempotent, out-of-order webhook handling;
-- payment attempt and status history;
-- reservation release for failed or abandoned payments;
-- production payment confirmation driven only by verified provider events.
+## Phase 7 progress
 
-The complete Rust workspace suite, API contract check, TypeScript checks,
-production builds, 22-test desktop/mobile storefront/customer-account
-Playwright suite, and four-test PostgreSQL-backed admin Playwright suite passed
-on 2026-08-09.
+Stripe payments are implemented:
+
+- a narrow asynchronous payment-provider interface with a Stripe Checkout
+  adapter and stable provider idempotency keys;
+- validated all-or-nothing Stripe configuration, live keys and HTTPS required
+  in production, and a pinned `2026-02-25.clover` API version;
+- server-created 35-minute hosted Checkout sessions using authoritative order
+  totals, currency, contact email, and internal order/attempt metadata;
+- opaque cart-token ownership checks for payment initiation and customer order
+  retrieval, with no card data entering KnitPrint;
+- raw-body HMAC-SHA256 webhook verification, five-minute replay tolerance,
+  duplicate-event suppression, and safe terminal-state handling;
+- payment attempts and append-only provider status history exposed in typed
+  order contracts and the admin order workspace;
+- verified paid events as the only production path that confirms orders and
+  commits reserved inventory;
+- failed and expired events that cancel unpaid orders and transactionally
+  release inventory, while late failure events cannot regress a paid order;
+- bounded `FOR UPDATE SKIP LOCKED` abandoned-payment cleanup with a one-hour
+  delayed-webhook grace period, immutable payment/order/audit history, and
+  repeat-safe scheduling;
+- a storefront payment-options contract, Stripe redirect/resume flow, owned
+  return-page order loading, and bounded status polling for delayed webhooks;
+- preservation of the development-only audited manual-payment lifecycle;
+- generated OpenAPI/TypeScript support and PostgreSQL coverage for signed
+  success, duplicate delivery, out-of-order failure, expiration, cleanup,
+  inventory commitment/release, and manual-payment compatibility.
+
+Phase 7 is complete. The next vertical slice is Phase 8 fulfillment and
+notifications:
+
+- complete or line-level fulfillment;
+- carrier and tracking references;
+- fulfillment history and a paid-order operations queue;
+- confirmation and fulfillment emails;
+- retryable, idempotent background notification work.
+
+The complete Rust workspace suite, Clippy with warnings denied, API contract
+check, TypeScript checks, and production builds passed on 2026-08-09. The
+focused PostgreSQL Stripe/manual order lifecycle and existing storefront order
+browser flow also pass. No request was sent to the live Stripe API because no
+Stripe account credentials are committed or available locally.
 
 ## Environment notes
 
 - No deployment has been performed.
 - PostgreSQL and MinIO were verified with Docker Compose and left running for
   the next feature slice.
+- Production now requires `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, and an
+  HTTPS `STOREFRONT_BASE_URL`; configure the documented webhook event set and
+  schedule `npm run admin:cleanup-payments` before deployment.
 - Work is committed in focused changes; preserve the user's untracked
   `commands.md`.
 - Generated public logo assets are reproducible with `npm run assets:brand`;

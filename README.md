@@ -76,6 +76,25 @@ reconciled by the API. Delivery capture creates or updates the guest
 customer/address attached to that cart; authenticated carts reuse the
 registered customer identity. Adding an item does not reserve stock.
 
+Creating an order reserves stock. Development keeps the audited manual-payment
+path enabled. Hosted Stripe Checkout is enabled only when all of these values
+are present:
+
+```bash
+STRIPE_SECRET_KEY=sk_test_...
+STRIPE_WEBHOOK_SECRET=whsec_...
+STOREFRONT_BASE_URL=http://localhost:3000
+```
+
+Production requires an `sk_live_` key and an HTTPS storefront URL. Configure a
+Stripe webhook endpoint at `/api/payments/stripe/webhook` for
+`checkout.session.completed`, `checkout.session.async_payment_succeeded`,
+`checkout.session.async_payment_failed`, and `checkout.session.expired`, using
+API version `2026-02-25.clover`. The API verifies Stripe's signature against the
+untouched request body with a five-minute timestamp tolerance. Only a verified
+paid event confirms an order and commits inventory; failed or expired checkout
+releases the reservation.
+
 Registration sends a 24-hour email-verification link, and forgotten-password
 requests send a one-hour single-use reset link. Development and test processes
 keep these messages in an in-memory mailbox used by browser automation; no
@@ -173,6 +192,19 @@ row locks that are safe for concurrent schedulers. Set
 `CART_CLEANUP_BATCH_SIZE` from 1 to 1000 to change that bound. Customer and
 address retention remains governed independently by customer cleanup.
 
+Run abandoned-payment cleanup frequently (for example, every five minutes):
+
+```bash
+DATABASE_URL=postgres://knitprint:knitprint@localhost:5432/knitprint \
+npm run admin:cleanup-payments
+```
+
+Hosted Checkout sessions last 35 minutes. Cleanup adds a one-hour grace period
+for delayed webhooks, then claims at most 100 expired attempts with row locks,
+cancels the unpaid order, releases reserved inventory, and appends payment,
+order-timeline, and audit history. Set `PAYMENT_CLEANUP_BATCH` from 1 to 1000 to
+change the bound; repeated and concurrent runs are safe.
+
 ## API contract
 
 The Rust routes and response types are the source of truth for OpenAPI. Regenerate
@@ -217,10 +249,9 @@ DATABASE_URL=postgres://knitprint:knitprint@localhost:5432/knitprint \
 npx playwright test tests/e2e/account.spec.ts
 ```
 
-Checkout is not production-ready yet. Cart preparation is deliberately
-disposable state; order creation, payment, fulfillment, cancellation, and
-refund controls in the later phases are still required before real customer
-traffic. Production email additionally depends on a verified SES
+The payment foundation is implemented, but the store is not operationally
+ready for general traffic until fulfillment, cancellation, and refund phases
+are complete. Production email additionally depends on a verified SES
 identity, production sending access, and the runtime configuration described
 above. Configure an edge request limit as part of deployment even though login
 endpoints also enforce hashed account, IP, and global database limits.
