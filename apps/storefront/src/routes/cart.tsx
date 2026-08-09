@@ -1,4 +1,9 @@
-import type { Cart, GuestCustomerRequest, Order } from '@knitprint/api-client'
+import type {
+  Cart,
+  GuestCustomerRequest,
+  Order,
+  PaymentOptions,
+} from '@knitprint/api-client'
 import { createFileRoute } from '@tanstack/react-router'
 import {
   ArrowLeft,
@@ -33,13 +38,20 @@ function CartPage() {
   const [message, setMessage] = useState('')
   const [order, setOrder] = useState<Order | null>(null)
   const [submittingOrder, setSubmittingOrder] = useState(false)
+  const [paymentOptions, setPaymentOptions] = useState<PaymentOptions | null>(null)
 
   useEffect(() => {
     let active = true
-    cartApi
-      .cart()
-      .then((nextCart) => {
-        if (active) setCart(nextCart)
+    const orderId = new URLSearchParams(window.location.search).get('order_id')
+    Promise.all([
+      cartApi.paymentOptions(),
+      orderId ? cartApi.customerOrder(orderId) : cartApi.cart(),
+    ])
+      .then(([options, resource]) => {
+        if (!active) return
+        setPaymentOptions(options)
+        if (orderId) setOrder(resource as Order)
+        else setCart(resource as Cart)
       })
       .catch(() => {
         if (active) setMessage('Your cart is temporarily unavailable.')
@@ -51,6 +63,38 @@ function CartPage() {
       active = false
     }
   }, [])
+
+  useEffect(() => {
+    if (
+      !order ||
+      order.payment.provider !== 'stripe' ||
+      order.payment_status !== 'pending' ||
+      new URLSearchParams(window.location.search).get('payment') !== 'return'
+    ) {
+      return
+    }
+    let active = true
+    let checks = 0
+    let nextTimeout: number | undefined
+    const refresh = async () => {
+      try {
+        const nextOrder = await cartApi.customerOrder(order.id)
+        if (!active) return
+        setOrder(nextOrder)
+        checks += 1
+        if (nextOrder.payment_status === 'pending' && checks < 10) {
+          nextTimeout = window.setTimeout(refresh, 1500)
+        }
+      } catch {
+        // Keep the owned order visible while a delayed webhook is retried.
+      }
+    }
+    nextTimeout = window.setTimeout(refresh, 750)
+    return () => {
+      active = false
+      if (nextTimeout) window.clearTimeout(nextTimeout)
+    }
+  }, [order?.id, order?.payment.provider, order?.payment_status])
 
   async function updateQuantity(lineId: string, quantity: number) {
     setBusyLine(lineId)
@@ -116,12 +160,21 @@ function CartPage() {
     setSubmittingOrder(true)
     setMessage('')
     try {
-      setOrder(
-        await cartApi.createOrder(
-          { payment_method: 'manual' },
-          cartMutationKey(),
-        ),
+      if (!paymentOptions) return
+      const method = paymentOptions.stripe ? 'stripe' : 'manual'
+      const nextOrder = await cartApi.createOrder(
+        { payment_method: method },
+        cartMutationKey(),
       )
+      setOrder(nextOrder)
+      if (method === 'stripe') {
+        window.history.replaceState(
+          null,
+          '',
+          `/cart?payment=pending&order_id=${nextOrder.id}`,
+        )
+        await redirectToPayment(nextOrder.id)
+      }
     } catch {
       setMessage('Your order could not be created. Review the cart and try again.')
       try {
@@ -130,6 +183,18 @@ function CartPage() {
         // Preserve the actionable checkout error when reconciliation is unavailable.
       }
     } finally {
+      setSubmittingOrder(false)
+    }
+  }
+
+  async function redirectToPayment(orderId: string) {
+    setSubmittingOrder(true)
+    setMessage('Opening secure card checkout…')
+    try {
+      const checkout = await cartApi.startOrderPayment(orderId)
+      window.location.assign(checkout.checkout_url)
+    } catch {
+      setMessage('Secure card checkout is temporarily unavailable. Your order is saved; retry below.')
       setSubmittingOrder(false)
     }
   }
@@ -166,7 +231,13 @@ function CartPage() {
         {loading && <p className="cart-notice" role="status">Loading your cart…</p>}
         {!loading && !cart && <p className="cart-notice" role="alert">{message}</p>}
 
-        {order && <OrderConfirmation order={order} />}
+        {order && (
+          <OrderConfirmation
+            order={order}
+            busy={submittingOrder}
+            onResumePayment={redirectToPayment}
+          />
+        )}
 
         {!order && cart && cart.items.length === 0 && (
           <section className="cart-empty">
@@ -244,10 +315,14 @@ function CartPage() {
               <button
                 className="button button--primary"
                 type="button"
-                disabled={!cart.checkout_ready || submittingOrder}
+                disabled={!cart.checkout_ready || submittingOrder || !paymentOptions}
                 onClick={createOrder}
               >
-                {submittingOrder ? 'Creating order…' : 'Create order'}
+                {submittingOrder
+                  ? 'Opening checkout…'
+                  : paymentOptions?.stripe
+                    ? 'Pay securely'
+                    : 'Create order'}
               </button>
               <span className="cart-ready-state">
                 {cart.checkout_ready ? <CircleCheck aria-hidden="true" /> : <TriangleAlert aria-hidden="true" />}
@@ -258,21 +333,41 @@ function CartPage() {
             </aside>
           </div>
         )}
-        {message && cart && !order && <p className="cart-notice" role="status">{message}</p>}
+        {message && cart && <p className="cart-notice" role="status">{message}</p>}
       </main>
     </>
   )
 }
 
-function OrderConfirmation({ order }: Readonly<{ order: Order }>) {
+function OrderConfirmation({
+  order,
+  busy,
+  onResumePayment,
+}: Readonly<{
+  order: Order
+  busy: boolean
+  onResumePayment: (orderId: string) => Promise<void>
+}>) {
+  const stripePending =
+    order.payment.provider === 'stripe' && order.payment_status === 'pending'
+  const paid = order.payment_status === 'paid'
+  const thankCustomer = paid || order.payment.provider === 'manual'
   return (
     <section className="order-confirmation" aria-labelledby="order-confirmation-title">
       <div className="order-confirmation-mark"><ReceiptText aria-hidden="true" /></div>
       <p className="eyebrow">{order.order_number}</p>
-      <h2 id="order-confirmation-title">Thank you, {order.customer.first_name}.</h2>
+      <h2 id="order-confirmation-title">
+        {thankCustomer
+          ? `Thank you, ${order.customer.first_name}.`
+          : 'Your order is reserved.'}
+      </h2>
       <p>
-        Your pieces are reserved and the order is awaiting manual payment confirmation.
-        Keep the order number above for reference.
+        {paid
+          ? 'Payment is confirmed and the studio can prepare your pieces.'
+          : stripePending
+            ? 'Card payment has not been confirmed yet. Continue to secure checkout to complete the order.'
+            : order.payment.failure_message ?? 'The order is awaiting manual payment confirmation.'}
+        {' '}Keep the order number above for reference.
       </p>
       <dl className="order-confirmation-summary">
         <div><dt>Status</dt><dd>{order.order_status}</dd></div>
@@ -294,6 +389,16 @@ function OrderConfirmation({ order }: Readonly<{ order: Order }>) {
         <span>{order.shipping_address.postal_code} {order.shipping_address.city}</span>
         <span>{order.shipping_address.country_code}</span>
       </address>
+      {stripePending && (
+        <button
+          className="button button--primary"
+          type="button"
+          disabled={busy}
+          onClick={() => onResumePayment(order.id)}
+        >
+          {busy ? 'Opening checkout…' : 'Continue secure payment'}
+        </button>
+      )}
       <a className="button button--primary" href="/#shop">Continue shopping</a>
     </section>
   )
