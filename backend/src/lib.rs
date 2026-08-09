@@ -12,6 +12,7 @@ pub mod inventory;
 pub mod login_rate_limit;
 pub mod media;
 pub mod openapi;
+pub mod orders;
 pub mod staff;
 
 use axum::{
@@ -33,6 +34,7 @@ pub struct AppState {
     pub email: email::EmailService,
     pub trust_proxy_headers: bool,
     pub secure_cookies: bool,
+    pub manual_payments_enabled: bool,
 }
 
 pub fn app(state: AppState) -> Router {
@@ -108,6 +110,12 @@ pub fn app(state: AppState) -> Router {
         .route("/api/admin/inventory", get(inventory::list))
         .route("/api/admin/customers", get(customers::list))
         .route("/api/admin/customers/{customer_id}", get(customers::detail))
+        .route("/api/admin/orders", get(orders::admin_list))
+        .route("/api/admin/orders/{order_id}", get(orders::admin_detail))
+        .route(
+            "/api/admin/orders/{order_id}/manual-payment",
+            axum::routing::post(orders::record_manual_payment),
+        )
         .route(
             "/api/admin/inventory/{variant_id}/movements",
             get(inventory::movements),
@@ -134,6 +142,7 @@ pub fn app(state: AppState) -> Router {
             get(|| async { Json(openapi::document()) }),
         )
         .route("/api/products", get(catalog::public_list))
+        .route("/api/orders", axum::routing::post(orders::create))
         .route("/api/cart", get(carts::get))
         .route("/api/cart/items", axum::routing::post(carts::add_item))
         .route(

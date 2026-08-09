@@ -413,6 +413,15 @@ pub async fn detail(
         Ok(addresses) => addresses,
         Err(_) => return unavailable(),
     };
+    let order_count: i64 =
+        match sqlx::query_scalar("SELECT count(*) FROM orders WHERE customer_id = $1")
+            .bind(customer_id)
+            .fetch_one(&mut *transaction)
+            .await
+        {
+            Ok(count) => count,
+            Err(_) => return unavailable(),
+        };
     if audit(
         &mut transaction,
         Some(actor.id),
@@ -435,7 +444,7 @@ pub async fn detail(
         retention_expires_at: customer.retention_expires_at,
         created_at: customer.created_at,
         addresses,
-        order_count: 0,
+        order_count,
     })
     .into_response()
 }

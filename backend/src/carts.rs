@@ -1115,7 +1115,7 @@ fn cart_cookie(token: String, secure: bool) -> Cookie<'static> {
         .http_only(true)
         .secure(secure)
         .same_site(SameSite::Lax)
-        .path("/api/cart")
+        .path("/api")
         .max_age(Duration::days(CART_DAYS))
         .build()
 }

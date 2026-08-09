@@ -342,6 +342,22 @@ pub async fn reserve(
     transition(pool, variant_id, quantity, reason, StockTransition::Reserve).await
 }
 
+pub async fn reserve_in_transaction(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    variant_id: Uuid,
+    quantity: i64,
+    reason: &str,
+) -> Result<Availability, InventoryOperationError> {
+    transition_in_transaction(
+        transaction,
+        variant_id,
+        quantity,
+        reason,
+        StockTransition::Reserve,
+    )
+    .await
+}
+
 pub async fn release(
     pool: &PgPool,
     variant_id: Uuid,
@@ -360,8 +376,39 @@ pub async fn commit(
     transition(pool, variant_id, quantity, reason, StockTransition::Commit).await
 }
 
+pub async fn commit_in_transaction(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    variant_id: Uuid,
+    quantity: i64,
+    reason: &str,
+) -> Result<Availability, InventoryOperationError> {
+    transition_in_transaction(
+        transaction,
+        variant_id,
+        quantity,
+        reason,
+        StockTransition::Commit,
+    )
+    .await
+}
+
 async fn transition(
     pool: &PgPool,
+    variant_id: Uuid,
+    quantity: i64,
+    reason: &str,
+    operation: StockTransition,
+) -> Result<Availability, InventoryOperationError> {
+    let mut transaction = pool.begin().await?;
+    let availability =
+        transition_in_transaction(&mut transaction, variant_id, quantity, reason, operation)
+            .await?;
+    transaction.commit().await?;
+    Ok(availability)
+}
+
+async fn transition_in_transaction(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     variant_id: Uuid,
     quantity: i64,
     reason: &str,
@@ -371,8 +418,7 @@ async fn transition(
         return Err(InventoryOperationError::InvalidQuantity);
     }
     let reason = validate_reason(reason)?;
-    let mut transaction = pool.begin().await?;
-    let current = locked_quantities(&mut transaction, variant_id).await?;
+    let current = locked_quantities(transaction, variant_id).await?;
 
     let (available_quantity, reserved_quantity, committed_quantity, quantity_delta) =
         match operation {
@@ -428,10 +474,10 @@ async fn transition(
     .bind(available_quantity)
     .bind(reserved_quantity)
     .bind(committed_quantity)
-    .execute(&mut *transaction)
+    .execute(&mut **transaction)
     .await?;
     insert_movement(
-        &mut transaction,
+        transaction,
         variant_id,
         None,
         operation.movement_type(),
@@ -440,8 +486,6 @@ async fn transition(
         reason,
     )
     .await?;
-    transaction.commit().await?;
-
     Ok(Availability {
         variant_id,
         available_quantity,

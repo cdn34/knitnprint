@@ -50,6 +50,7 @@ async fn main() {
             email,
             trust_proxy_headers: config.trust_proxy_headers,
             secure_cookies: config.environment == Environment::Production,
+            manual_payments_enabled: config.environment != Environment::Production,
         })
         .into_make_service_with_connect_info::<SocketAddr>(),
     )
