@@ -125,7 +125,7 @@ test('shows an accessible persistent cart surface', async ({ page }) => {
   expect(results.violations).toEqual([])
 })
 
-test('adds an available product and captures cart delivery details', async ({
+test('adds an available product, captures delivery, and creates an order', async ({
   page,
 }) => {
   await page.goto('/')
@@ -153,4 +153,16 @@ test('adds an available product and captures cart delivery details', async ({
   await expect(page.locator('.cart-ready-state')).toContainText(
     'Cart and delivery details are ready.',
   )
+  await page.getByRole('button', { name: 'Create order' }).click()
+  await expect(page.getByRole('heading', { level: 1, name: 'Order received' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Thank you, Browser.' })).toBeVisible()
+  await expect(page.locator('.order-confirmation')).toContainText(/KP-\d{4}-\d{6}/)
+  await expect(page.locator('.order-confirmation')).toContainText(
+    'awaiting manual payment confirmation',
+  )
+
+  const results = await new AxeBuilder({ page })
+    .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+    .analyze()
+  expect(results.violations).toEqual([])
 })

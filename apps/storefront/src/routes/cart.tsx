@@ -1,9 +1,10 @@
-import type { Cart, GuestCustomerRequest } from '@knitprint/api-client'
+import type { Cart, GuestCustomerRequest, Order } from '@knitprint/api-client'
 import { createFileRoute } from '@tanstack/react-router'
 import {
   ArrowLeft,
   CircleCheck,
   PackageOpen,
+  ReceiptText,
   ShieldCheck,
   ShoppingBag,
   Trash2,
@@ -30,6 +31,8 @@ function CartPage() {
   const [loading, setLoading] = useState(true)
   const [busyLine, setBusyLine] = useState<string | null>(null)
   const [message, setMessage] = useState('')
+  const [order, setOrder] = useState<Order | null>(null)
+  const [submittingOrder, setSubmittingOrder] = useState(false)
 
   useEffect(() => {
     let active = true
@@ -109,6 +112,28 @@ function CartPage() {
     }
   }
 
+  async function createOrder() {
+    setSubmittingOrder(true)
+    setMessage('')
+    try {
+      setOrder(
+        await cartApi.createOrder(
+          { payment_method: 'manual' },
+          cartMutationKey(),
+        ),
+      )
+    } catch {
+      setMessage('Your order could not be created. Review the cart and try again.')
+      try {
+        setCart(await cartApi.cart())
+      } catch {
+        // Preserve the actionable checkout error when reconciliation is unavailable.
+      }
+    } finally {
+      setSubmittingOrder(false)
+    }
+  }
+
   const currency = cart?.currency ?? 'EUR'
 
   return (
@@ -134,14 +159,16 @@ function CartPage() {
       <main className="cart-page" id="main-content" tabIndex={-1}>
         <div className="cart-heading">
           <p className="eyebrow">Your selection</p>
-          <h1>Cart</h1>
-          {cart && <p>{cart.item_count} {cart.item_count === 1 ? 'piece' : 'pieces'}</p>}
+          <h1>{order ? 'Order received' : 'Cart'}</h1>
+          {!order && cart && <p>{cart.item_count} {cart.item_count === 1 ? 'piece' : 'pieces'}</p>}
         </div>
 
         {loading && <p className="cart-notice" role="status">Loading your cart…</p>}
         {!loading && !cart && <p className="cart-notice" role="alert">{message}</p>}
 
-        {cart && cart.items.length === 0 && (
+        {order && <OrderConfirmation order={order} />}
+
+        {!order && cart && cart.items.length === 0 && (
           <section className="cart-empty">
             <PackageOpen aria-hidden="true" />
             <h2>Your cart is waiting for its first piece.</h2>
@@ -150,7 +177,7 @@ function CartPage() {
           </section>
         )}
 
-        {cart && cart.items.length > 0 && (
+        {!order && cart && cart.items.length > 0 && (
           <div className="cart-layout">
             <div className="cart-main">
               {cart.issues.length > 0 && (
@@ -214,8 +241,13 @@ function CartPage() {
               <div><span>Subtotal</span><strong>{formatMoney(cart.subtotal_minor, currency)}</strong></div>
               <div><span>Shipping</span><span>Calculated with your order</span></div>
               <p>Taxes and final availability will be validated before an order is created.</p>
-              <button className="button button--primary" type="button" disabled>
-                Continue to order · coming next
+              <button
+                className="button button--primary"
+                type="button"
+                disabled={!cart.checkout_ready || submittingOrder}
+                onClick={createOrder}
+              >
+                {submittingOrder ? 'Creating order…' : 'Create order'}
               </button>
               <span className="cart-ready-state">
                 {cart.checkout_ready ? <CircleCheck aria-hidden="true" /> : <TriangleAlert aria-hidden="true" />}
@@ -226,9 +258,44 @@ function CartPage() {
             </aside>
           </div>
         )}
-        {message && cart && <p className="cart-notice" role="status">{message}</p>}
+        {message && cart && !order && <p className="cart-notice" role="status">{message}</p>}
       </main>
     </>
+  )
+}
+
+function OrderConfirmation({ order }: Readonly<{ order: Order }>) {
+  return (
+    <section className="order-confirmation" aria-labelledby="order-confirmation-title">
+      <div className="order-confirmation-mark"><ReceiptText aria-hidden="true" /></div>
+      <p className="eyebrow">{order.order_number}</p>
+      <h2 id="order-confirmation-title">Thank you, {order.customer.first_name}.</h2>
+      <p>
+        Your pieces are reserved and the order is awaiting manual payment confirmation.
+        Keep the order number above for reference.
+      </p>
+      <dl className="order-confirmation-summary">
+        <div><dt>Status</dt><dd>{order.order_status}</dd></div>
+        <div><dt>Payment</dt><dd>{order.payment_status}</dd></div>
+        <div><dt>Total</dt><dd>{formatMoney(order.total_minor, order.currency)}</dd></div>
+      </dl>
+      <div className="order-confirmation-lines">
+        {order.lines.map((line) => (
+          <div key={line.id}>
+            <span>{line.quantity} × {line.product_title} · {line.variant_title}</span>
+            <strong>{formatMoney(line.line_total_minor, line.currency)}</strong>
+          </div>
+        ))}
+      </div>
+      <address>
+        <strong>Deliver to {order.shipping_address.recipient_name}</strong>
+        <span>{order.shipping_address.line1}</span>
+        {order.shipping_address.line2 && <span>{order.shipping_address.line2}</span>}
+        <span>{order.shipping_address.postal_code} {order.shipping_address.city}</span>
+        <span>{order.shipping_address.country_code}</span>
+      </address>
+      <a className="button button--primary" href="/#shop">Continue shopping</a>
+    </section>
   )
 }
 
