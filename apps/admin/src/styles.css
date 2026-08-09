@@ -55,7 +55,7 @@ h1 { margin: .25rem 0 0; font: 500 2rem Georgia, serif; }
 .dashboard-stock-empty svg { width: 20px; }
 .dashboard-stock-empty strong { font-size: .72rem; }
 .dashboard-stock-empty small { color: #6e6864; font-size: .62rem; }
-.staff-section, .catalog-section, .inventory-section, .customers-section { margin-top: 2.5rem; scroll-margin-top: 1rem; }
+.staff-section, .catalog-section, .inventory-section, .customers-section, .orders-section { margin-top: 2.5rem; scroll-margin-top: 1rem; }
 .section-heading { display: flex; align-items: end; justify-content: space-between; margin-bottom: 1rem; }
 .section-heading p { margin: 0 0 .35rem; color: #765c47; font-size: .65rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
 .section-heading h2 { margin: 0; font: 500 1.8rem Georgia, serif; }
@@ -229,6 +229,48 @@ h1 { margin: .25rem 0 0; font: 500 2rem Georgia, serif; }
 .capability input { accent-color: #5f4652; }
 .staff-form-error { margin: .9rem 0 0; font-size: .68rem; }
 .create-staff-button { width: 100%; height: 42px; margin-top: 1rem; border: 0; border-radius: .45rem; color: white; background: #5f4652; font-size: .72rem; font-weight: 600; cursor: pointer; }
+.orders-layout { display: grid; grid-template-columns: minmax(440px, 1.15fr) minmax(340px, .85fr); gap: 1.2rem; align-items: start; }
+.order-list, .order-detail { min-width: 0; overflow: hidden; border: 1px solid #ded4cc; border-radius: .8rem; background: #fffdfc; }
+.order-list > button { width: 100%; padding: .9rem 1rem; display: grid; grid-template-columns: 1fr 1.1fr auto auto; align-items: center; gap: .8rem; border: 0; border-bottom: 1px solid #ede6e1; color: inherit; background: transparent; text-align: left; cursor: pointer; }
+.order-list > button:last-child { border-bottom: 0; }
+.order-list > button:hover, .order-list > button.selected { background: #f7f3ef; }
+.order-list > button.selected { box-shadow: inset 3px 0 #5f4652; }
+.order-list-number, .order-list-customer { min-width: 0; display: flex; flex-direction: column; gap: .2rem; }
+.order-list-number strong, .order-list-customer strong { overflow: hidden; font-size: .7rem; text-overflow: ellipsis; white-space: nowrap; }
+.order-list-number small, .order-list-customer small { overflow: hidden; color: #6e6864; font-size: .58rem; text-overflow: ellipsis; white-space: nowrap; }
+.order-state { padding: .25rem .45rem; border-radius: 2rem; color: #765c47; background: #eee7dd; font-size: .58rem; font-weight: 700; text-transform: capitalize; }
+.order-state.paid { color: #315b49; background: #dfece5; }
+.order-list > button > b { font-size: .68rem; white-space: nowrap; }
+.order-empty, .order-detail-empty { min-height: 220px; display: grid; place-content: center; justify-items: center; gap: .45rem; color: #6e6864; text-align: center; }
+.order-empty svg, .order-detail-empty svg { color: #8a6877; }
+.order-empty strong, .order-detail-empty strong { color: #2e2e2d; font: 500 1rem Georgia, serif; }
+.order-empty span, .order-detail-empty span { font-size: .65rem; }
+.order-detail { padding: 1.2rem; }
+.order-detail-heading { display: flex; justify-content: space-between; align-items: start; gap: 1rem; }
+.order-detail-heading p { margin: 0; color: #765c47; font-size: .58rem; font-weight: 700; text-transform: uppercase; }
+.order-detail-heading h3 { margin: .2rem 0; font: 500 1.4rem Georgia, serif; }
+.order-detail-heading span { color: #6e6864; font-size: .58rem; }
+.order-detail-heading > strong { font: 500 1.15rem Georgia, serif; }
+.order-status-grid { margin: 1rem 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: .5rem; }
+.order-status-grid div { padding: .7rem; display: grid; gap: .25rem; border-radius: .5rem; background: #f7f3ef; }
+.order-status-grid span { color: #6e6864; font-size: .55rem; text-transform: uppercase; }
+.order-status-grid b { font-size: .65rem; text-transform: capitalize; }
+.order-detail-section { margin-top: 1.2rem; padding-top: 1.1rem; border-top: 1px solid #ede6e1; }
+.order-detail-section h4 { margin: 0 0 .8rem; font-size: .7rem; }
+.order-line { padding: .55rem 0; display: flex; justify-content: space-between; gap: 1rem; }
+.order-line > span { min-width: 0; display: flex; flex-direction: column; gap: .2rem; }
+.order-line strong, .order-line b { font-size: .68rem; }
+.order-line small { color: #6e6864; font-size: .58rem; }
+.order-contact { display: grid; gap: .3rem; font-size: .65rem; }
+.order-contact h4 { margin-bottom: .5rem; }
+.order-contact a { color: #5f4652; text-decoration: underline; }
+.order-contact address { margin-top: .4rem; color: #6e6864; font-style: normal; line-height: 1.6; }
+.order-timeline { margin: 0; padding: 0; list-style: none; }
+.order-timeline li { display: grid; grid-template-columns: 12px 1fr; gap: .55rem; }
+.order-timeline li > span { width: 9px; height: 9px; margin-top: .2rem; border: 2px solid #8a6877; border-radius: 50%; background: #fffdfc; }
+.order-timeline li > div { padding-bottom: .9rem; display: flex; flex-direction: column; gap: .2rem; }
+.order-timeline strong { font-size: .65rem; }
+.order-timeline small, .order-timeline time { color: #6e6864; font-size: .57rem; }
 
 .auth-loading { min-height: 100vh; display: grid; place-content: center; justify-items: center; gap: .7rem; color: #6e6864; }
 .auth-loading svg, .spinner { animation: spin .8s linear infinite; }
@@ -277,7 +319,10 @@ h1 { margin: .25rem 0 0; font: 500 2rem Georgia, serif; }
   .dashboard-stock-list { grid-template-columns: 1fr; }
   .dashboard-stock-list article:nth-child(odd) { border-right: 0; }
   .staff-layout { grid-template-columns: 1fr; }
-  .catalog-layout, .product-preview, .catalog-editor, .inventory-layout, .customer-layout { grid-template-columns: 1fr; }
+  .catalog-layout, .product-preview, .catalog-editor, .inventory-layout, .customer-layout, .orders-layout { grid-template-columns: 1fr; }
+  .order-list > button { grid-template-columns: 1fr auto; }
+  .order-list-customer { grid-column: 1; }
+  .order-list > button > b { grid-column: 2; grid-row: 2; }
   .customer-contact dl { grid-template-columns: 1fr; }
   .customer-placeholder { min-height: 220px; }
   .inventory-toolbar { align-items: stretch; flex-direction: column; }

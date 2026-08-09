@@ -27,6 +27,7 @@ import {
   Mail,
   MapPin,
   Package,
+  ReceiptText,
   Phone,
   Plus,
   Search,
@@ -43,6 +44,8 @@ import {
   type CustomerSummary,
   type Product,
   type InventoryRecord,
+  type Order,
+  type OrderSummary,
   type StaffProfile,
   type StaffRecord,
 } from '@knitprint/api-client'
@@ -190,6 +193,9 @@ function LoginScreen({
 function AdminShell({ profile }: Readonly<{ profile: StaffProfile }>) {
   const availablePages = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    ...(profile.capabilities.includes('orders.read')
+      ? [{ id: 'orders', label: 'Orders', icon: ReceiptText }]
+      : []),
     ...(profile.capabilities.includes('catalog.read')
       ? [{ id: 'products', label: 'Products', icon: Package }]
       : []),
@@ -278,6 +284,8 @@ function AdminShell({ profile }: Readonly<{ profile: StaffProfile }>) {
             <h1>
               {page === 'dashboard'
                 ? `Good to see you, ${profile.display_name.split(' ')[0]}.`
+                : page === 'orders'
+                  ? 'Order operations.'
                 : page === 'products'
                   ? 'Product catalog.'
                   : page === 'inventory'
@@ -292,6 +300,11 @@ function AdminShell({ profile }: Readonly<{ profile: StaffProfile }>) {
           </a>
         </header>
         {page === 'dashboard' && <Dashboard profile={profile} />}
+        {page === 'orders' && profile.capabilities.includes('orders.read') && (
+          <OrderManagement
+            canRecordPayment={profile.capabilities.includes('orders.fulfill')}
+          />
+        )}
         {page === 'products' &&
           profile.capabilities.includes('catalog.read') && (
           <CatalogManagement
@@ -312,6 +325,163 @@ function AdminShell({ profile }: Readonly<{ profile: StaffProfile }>) {
         )}
       </main>
     </div>
+  )
+}
+
+const ordersKey = ['orders'] as const
+
+function orderDate(value: string) {
+  return new Intl.DateTimeFormat('en', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(value))
+}
+
+function OrderManagement({
+  canRecordPayment,
+}: Readonly<{ canRecordPayment: boolean }>) {
+  const client = useQueryClient()
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const orders = useQuery({ queryKey: ordersKey, queryFn: api.listOrders })
+  const detail = useQuery({
+    queryKey: ['order', selectedId],
+    queryFn: () => api.order(selectedId ?? ''),
+    enabled: Boolean(selectedId),
+  })
+  const payment = useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string }) =>
+      api.recordManualPayment(id, { reason }),
+    onSuccess: (order) => {
+      client.setQueryData(['order', order.id], order)
+      client.invalidateQueries({ queryKey: ordersKey })
+    },
+  })
+
+  function recordPayment(order: Order) {
+    const reason = window.prompt(
+      `Record manual payment for ${order.order_number}. Why was it accepted?`,
+    )
+    if (reason?.trim()) payment.mutate({ id: order.id, reason: reason.trim() })
+  }
+
+  return (
+    <section className="orders-section" id="orders" aria-labelledby="orders-heading">
+      <div className="section-heading">
+        <div>
+          <p>Phase 6 · Operations</p>
+          <h2 id="orders-heading">Orders</h2>
+        </div>
+        <span>{orders.data?.length ?? '—'} recent</span>
+      </div>
+      <div className="orders-layout">
+        <div className="order-list">
+          {orders.isPending && <p className="panel-message">Loading orders…</p>}
+          {orders.isError && <p className="panel-message error" role="alert">Orders could not be loaded.</p>}
+          {orders.data?.length === 0 && (
+            <div className="order-empty"><ReceiptText aria-hidden="true" /><strong>No orders yet</strong><span>Completed cart checkouts will appear here.</span></div>
+          )}
+          {orders.data?.map((order: OrderSummary) => (
+            <button
+              className={selectedId === order.id ? 'selected' : ''}
+              type="button"
+              key={order.id}
+              aria-pressed={selectedId === order.id}
+              onClick={() => setSelectedId(order.id)}
+            >
+              <span className="order-list-number"><strong>{order.order_number}</strong><small>{orderDate(order.created_at)}</small></span>
+              <span className="order-list-customer"><strong>{order.customer_name}</strong><small>{order.customer_email}</small></span>
+              <span className={`order-state ${order.payment_status}`}>{order.payment_status}</span>
+              <b>{formatMoney(order.total_minor, order.currency)}</b>
+            </button>
+          ))}
+        </div>
+        <OrderDetail
+          order={detail.data}
+          loading={detail.isPending && Boolean(selectedId)}
+          error={detail.isError}
+          canRecordPayment={canRecordPayment}
+          paymentPending={payment.isPending}
+          paymentError={payment.isError}
+          onRecordPayment={recordPayment}
+        />
+      </div>
+    </section>
+  )
+}
+
+function OrderDetail({
+  order,
+  loading,
+  error,
+  canRecordPayment,
+  paymentPending,
+  paymentError,
+  onRecordPayment,
+}: Readonly<{
+  order?: Order
+  loading: boolean
+  error: boolean
+  canRecordPayment: boolean
+  paymentPending: boolean
+  paymentError: boolean
+  onRecordPayment: (order: Order) => void
+}>) {
+  if (loading) return <aside className="order-detail"><p className="panel-message">Loading order…</p></aside>
+  if (error) return <aside className="order-detail"><p className="panel-message error" role="alert">The order could not be loaded.</p></aside>
+  if (!order) return <aside className="order-detail order-detail-empty"><ReceiptText aria-hidden="true" /><strong>Select an order</strong><span>Commercial snapshots and its timeline will appear here.</span></aside>
+  return (
+    <aside className="order-detail" aria-label={`Order ${order.order_number}`}>
+      <div className="order-detail-heading">
+        <div><p>Order</p><h3>{order.order_number}</h3><span>{orderDate(order.created_at)}</span></div>
+        <strong>{formatMoney(order.total_minor, order.currency)}</strong>
+      </div>
+      <div className="order-status-grid">
+        <div><span>Order</span><b>{order.order_status}</b></div>
+        <div><span>Payment</span><b>{order.payment_status}</b></div>
+        <div><span>Fulfillment</span><b>{order.fulfillment_status}</b></div>
+      </div>
+      {canRecordPayment && order.payment_status === 'pending' && (
+        <button className="primary-button" type="button" disabled={paymentPending} onClick={() => onRecordPayment(order)}>
+          {paymentPending ? 'Recording…' : 'Record manual payment'}
+        </button>
+      )}
+      {paymentError && <p className="panel-error" role="alert">The payment could not be recorded.</p>}
+      <section className="order-detail-section">
+        <h4>Items</h4>
+        {order.lines.map((line) => (
+          <div className="order-line" key={line.id}>
+            <span><strong>{line.product_title}</strong><small>{line.variant_title} · {line.sku} · Qty {line.quantity}</small></span>
+            <b>{formatMoney(line.line_total_minor, line.currency)}</b>
+          </div>
+        ))}
+      </section>
+      <section className="order-detail-section order-contact">
+        <h4>Customer & delivery</h4>
+        <strong>{order.customer.first_name} {order.customer.last_name}</strong>
+        <a href={`mailto:${order.customer.email}`}>{order.customer.email}</a>
+        <address>
+          {order.shipping_address.recipient_name}<br />
+          {order.shipping_address.line1}<br />
+          {order.shipping_address.line2 && <>{order.shipping_address.line2}<br /></>}
+          {order.shipping_address.postal_code} {order.shipping_address.city}<br />
+          {order.shipping_address.country_code}
+        </address>
+      </section>
+      <section className="order-detail-section">
+        <h4>Timeline</h4>
+        <ol className="order-timeline">
+          {order.timeline.map((event) => (
+            <li key={event.id}>
+              <span aria-hidden="true" />
+              <div><strong>{event.title}</strong><small>{event.detail}</small><time dateTime={event.created_at}>{orderDate(event.created_at)}{event.actor_display_name ? ` · ${event.actor_display_name}` : ''}</time></div>
+            </li>
+          ))}
+        </ol>
+      </section>
+    </aside>
   )
 }
 
