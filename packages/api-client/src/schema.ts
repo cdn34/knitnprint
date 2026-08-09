@@ -108,6 +108,10 @@ export interface CreateCategoryRequest {
   "slug": string
 }
 
+export interface CreateOrderRequest {
+  "payment_method": string
+}
+
 export interface CreateProductRequest {
   "description"?: string
   "search_keywords"?: string
@@ -278,11 +282,95 @@ export interface LoginRequest {
   "password": string
 }
 
+export interface ManualPaymentRequest {
+  "reason": string
+}
+
 export interface MediaRecord {
   "alt_text": string
   "id": string
   "position": number
   "product_id": string
+}
+
+export interface Order {
+  "created_at": string
+  "currency": string
+  "customer": OrderCustomer
+  "discount_minor": number
+  "fulfillment_status": string
+  "id": string
+  "lines": Array<OrderLine>
+  "order_number": string
+  "order_status": string
+  "payment": OrderPayment
+  "payment_status": string
+  "shipping_address": OrderAddress
+  "shipping_minor": number
+  "subtotal_minor": number
+  "tax_minor": number
+  "timeline": Array<OrderEvent>
+  "total_minor": number
+}
+
+export interface OrderAddress {
+  "city": string
+  "country_code": string
+  "line1": string
+  "line2": string
+  "phone": string
+  "postal_code": string
+  "recipient_name": string
+  "region": string
+}
+
+export interface OrderCustomer {
+  "email": string
+  "first_name": string
+  "last_name": string
+  "phone": string
+}
+
+export interface OrderEvent {
+  "actor_display_name"?: string | null
+  "created_at": string
+  "detail": string
+  "event_type": string
+  "id": string
+  "title": string
+}
+
+export interface OrderLine {
+  "currency": string
+  "id": string
+  "line_total_minor": number
+  "product_title": string
+  "quantity": number
+  "sku": string
+  "unit_price_minor": number
+  "variant_title": string
+}
+
+export interface OrderPayment {
+  "amount_minor": number
+  "currency": string
+  "paid_at"?: string | null
+  "provider": string
+  "status": string
+}
+
+export interface OrderSummary {
+  "created_at": string
+  "currency": string
+  "customer_email": string
+  "customer_name": string
+  "fulfillment_status": string
+  "id": string
+  "item_count": number
+  "order_number": string
+  "order_status": string
+  "payment_status": string
+  "total_minor": number
 }
 
 export interface Product {

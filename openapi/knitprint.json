@@ -1084,6 +1084,211 @@
         }
       }
     },
+    "/api/admin/orders": {
+      "get": {
+        "tags": [
+          "admin orders"
+        ],
+        "operationId": "admin_list",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/OrderSummary"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/orders/{order_id}": {
+      "get": {
+        "tags": [
+          "admin orders"
+        ],
+        "operationId": "admin_detail",
+        "parameters": [
+          {
+            "name": "order_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Order"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/orders/{order_id}/manual-payment": {
+      "post": {
+        "tags": [
+          "admin orders"
+        ],
+        "operationId": "record_manual_payment",
+        "parameters": [
+          {
+            "name": "order_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManualPaymentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Order"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/admin/products": {
       "get": {
         "tags": [
@@ -2231,6 +2436,86 @@
         }
       }
     },
+    "/api/orders": {
+      "post": {
+        "tags": [
+          "orders"
+        ],
+        "operationId": "create",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateOrderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Idempotent replay",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Order"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Order"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/products": {
       "get": {
         "tags": [
@@ -2747,6 +3032,17 @@
             "type": "string"
           },
           "slug": {
+            "type": "string"
+          }
+        }
+      },
+      "CreateOrderRequest": {
+        "type": "object",
+        "required": [
+          "payment_method"
+        ],
+        "properties": {
+          "payment_method": {
             "type": "string"
           }
         }
@@ -3347,6 +3643,17 @@
           }
         }
       },
+      "ManualPaymentRequest": {
+        "type": "object",
+        "required": [
+          "reason"
+        ],
+        "properties": {
+          "reason": {
+            "type": "string"
+          }
+        }
+      },
       "MediaRecord": {
         "type": "object",
         "required": [
@@ -3370,6 +3677,316 @@
           "product_id": {
             "type": "string",
             "format": "uuid"
+          }
+        }
+      },
+      "Order": {
+        "type": "object",
+        "required": [
+          "id",
+          "order_number",
+          "order_status",
+          "payment_status",
+          "fulfillment_status",
+          "currency",
+          "subtotal_minor",
+          "discount_minor",
+          "shipping_minor",
+          "tax_minor",
+          "total_minor",
+          "customer",
+          "shipping_address",
+          "lines",
+          "payment",
+          "timeline",
+          "created_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "customer": {
+            "$ref": "#/components/schemas/OrderCustomer"
+          },
+          "discount_minor": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "fulfillment_status": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OrderLine"
+            }
+          },
+          "order_number": {
+            "type": "string"
+          },
+          "order_status": {
+            "type": "string"
+          },
+          "payment": {
+            "$ref": "#/components/schemas/OrderPayment"
+          },
+          "payment_status": {
+            "type": "string"
+          },
+          "shipping_address": {
+            "$ref": "#/components/schemas/OrderAddress"
+          },
+          "shipping_minor": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "subtotal_minor": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "tax_minor": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "timeline": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OrderEvent"
+            }
+          },
+          "total_minor": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "OrderAddress": {
+        "type": "object",
+        "required": [
+          "recipient_name",
+          "line1",
+          "line2",
+          "city",
+          "region",
+          "postal_code",
+          "country_code",
+          "phone"
+        ],
+        "properties": {
+          "city": {
+            "type": "string"
+          },
+          "country_code": {
+            "type": "string"
+          },
+          "line1": {
+            "type": "string"
+          },
+          "line2": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string"
+          },
+          "postal_code": {
+            "type": "string"
+          },
+          "recipient_name": {
+            "type": "string"
+          },
+          "region": {
+            "type": "string"
+          }
+        }
+      },
+      "OrderCustomer": {
+        "type": "object",
+        "required": [
+          "email",
+          "first_name",
+          "last_name",
+          "phone"
+        ],
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "first_name": {
+            "type": "string"
+          },
+          "last_name": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string"
+          }
+        }
+      },
+      "OrderEvent": {
+        "type": "object",
+        "required": [
+          "id",
+          "event_type",
+          "title",
+          "detail",
+          "created_at"
+        ],
+        "properties": {
+          "actor_display_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "event_type": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "OrderLine": {
+        "type": "object",
+        "required": [
+          "id",
+          "product_title",
+          "variant_title",
+          "sku",
+          "quantity",
+          "unit_price_minor",
+          "line_total_minor",
+          "currency"
+        ],
+        "properties": {
+          "currency": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "line_total_minor": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "product_title": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "sku": {
+            "type": "string"
+          },
+          "unit_price_minor": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "variant_title": {
+            "type": "string"
+          }
+        }
+      },
+      "OrderPayment": {
+        "type": "object",
+        "required": [
+          "provider",
+          "status",
+          "amount_minor",
+          "currency"
+        ],
+        "properties": {
+          "amount_minor": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "paid_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "provider": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        }
+      },
+      "OrderSummary": {
+        "type": "object",
+        "required": [
+          "id",
+          "order_number",
+          "customer_name",
+          "customer_email",
+          "order_status",
+          "payment_status",
+          "fulfillment_status",
+          "item_count",
+          "total_minor",
+          "currency",
+          "created_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "customer_email": {
+            "type": "string"
+          },
+          "customer_name": {
+            "type": "string"
+          },
+          "fulfillment_status": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "item_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "order_number": {
+            "type": "string"
+          },
+          "order_status": {
+            "type": "string"
+          },
+          "payment_status": {
+            "type": "string"
+          },
+          "total_minor": {
+            "type": "integer",
+            "format": "int64"
           }
         }
       },
@@ -3651,6 +4268,14 @@
     {
       "name": "cart",
       "description": "Disposable server-priced checkout preparation"
+    },
+    {
+      "name": "orders",
+      "description": "Idempotent cart conversion and order confirmation"
+    },
+    {
+      "name": "admin orders",
+      "description": "Capability-protected order operations"
     }
   ]
 }

@@ -1,7 +1,7 @@
 use utoipa::{OpenApi, openapi::OpenApi as OpenApiDocument};
 
 use crate::{
-    auth, carts, catalog, customer_auth, customers, error, health, inventory, media, staff,
+    auth, carts, catalog, customer_auth, customers, error, health, inventory, media, orders, staff,
 };
 
 #[derive(OpenApi)]
@@ -31,6 +31,10 @@ use crate::{
         carts::update_item,
         carts::remove_item,
         carts::set_delivery,
+        orders::create,
+        orders::admin_list,
+        orders::admin_detail,
+        orders::record_manual_payment,
         catalog::admin_list,
         catalog::admin_detail,
         catalog::create,
@@ -75,6 +79,15 @@ use crate::{
         carts::CartIssue,
         carts::CartDelivery,
         carts::CartAddress,
+        orders::CreateOrderRequest,
+        orders::ManualPaymentRequest,
+        orders::Order,
+        orders::OrderCustomer,
+        orders::OrderAddress,
+        orders::OrderLine,
+        orders::OrderPayment,
+        orders::OrderEvent,
+        orders::OrderSummary,
         catalog::Variant,
         catalog::Category,
         catalog::Product,
@@ -114,6 +127,8 @@ use crate::{
         ,(name = "customers", description = "Guest customer contact capture")
         ,(name = "admin customers", description = "Privacy-aware customer inspection")
         ,(name = "cart", description = "Disposable server-priced checkout preparation")
+        ,(name = "orders", description = "Idempotent cart conversion and order confirmation")
+        ,(name = "admin orders", description = "Capability-protected order operations")
     )
 )]
 struct ApiDoc;
