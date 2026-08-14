@@ -11,6 +11,7 @@ export type {
   CartDelivery,
   CartIssue,
   CartItem,
+  CommercialSettings,
   CancelOrderRequest,
   AdjustInventoryRequest,
   Category,
@@ -69,8 +70,18 @@ export type {
   Refund,
   RefundLine,
   ResetPasswordRequest,
+  SelectShippingMethodRequest,
+  ShippingMethod,
+  ShippingMethodInput,
+  ShippingSelection,
+  ShippingZone,
+  ShippingZoneInput,
   StaffProfile,
   StaffRecord,
+  TaxRule,
+  TaxRuleInput,
+  TaxSelection,
+  UpdateCommercialSettingsRequest,
   Variant,
   UpdateCartItemRequest,
 } from './schema'
@@ -85,6 +96,7 @@ import type {
   AdjustInventoryRequest,
   Category,
   Cart,
+  CommercialSettings,
   CancelOrderRequest,
   CompleteUploadRequest,
   CreateAccountAddressRequest,
@@ -122,8 +134,10 @@ import type {
   PaymentOptions,
   Product,
   ResetPasswordRequest,
+  SelectShippingMethodRequest,
   StaffProfile,
   StaffRecord,
+  UpdateCommercialSettingsRequest,
   UpdateCartItemRequest,
 } from './schema'
 
@@ -300,6 +314,18 @@ export function createApiClient(options: ApiClientOptions = {}) {
         method: 'DELETE',
         headers: { 'idempotency-key': idempotencyKey },
       }),
+    selectCartShippingMethod: (
+      input: SelectShippingMethodRequest,
+      idempotencyKey: string,
+    ) =>
+      send<Cart>('/api/cart/shipping-method', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'idempotency-key': idempotencyKey,
+        },
+        body: JSON.stringify(input),
+      }),
     setCartDelivery: (input: GuestCustomerRequest, idempotencyKey: string) =>
       send<Cart>('/api/cart/delivery', {
         method: 'POST',
@@ -338,6 +364,13 @@ export function createApiClient(options: ApiClientOptions = {}) {
       input: ChangeDiscountStatusRequest,
     ) =>
       send<Discount>(`/api/admin/discounts/${discountId}/status`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(input),
+      }),
+    settings: () => send<CommercialSettings>('/api/admin/settings'),
+    updateSettings: (input: UpdateCommercialSettingsRequest) =>
+      send<CommercialSettings>('/api/admin/settings', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(input),

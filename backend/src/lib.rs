@@ -18,6 +18,7 @@ pub mod notifications;
 pub mod openapi;
 pub mod orders;
 pub mod payments;
+pub mod settings;
 pub mod staff;
 
 use axum::{
@@ -125,6 +126,10 @@ pub fn app(state: AppState) -> Router {
             "/api/admin/discounts/{discount_id}/status",
             axum::routing::post(discounts::change_status),
         )
+        .route(
+            "/api/admin/settings",
+            get(settings::get).post(settings::update),
+        )
         .route("/api/admin/orders/{order_id}", get(orders::admin_detail))
         .route(
             "/api/admin/orders/{order_id}/manual-payment",
@@ -184,6 +189,10 @@ pub fn app(state: AppState) -> Router {
         .route(
             "/api/cart/discount",
             axum::routing::post(carts::apply_discount).delete(carts::remove_discount),
+        )
+        .route(
+            "/api/cart/shipping-method",
+            axum::routing::post(carts::select_shipping_method),
         )
         .route(
             "/api/cart/items/{line_id}",

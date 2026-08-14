@@ -123,6 +123,14 @@ impl Default for EmailService {
 }
 
 impl EmailService {
+    pub fn status(&self) -> &'static str {
+        match &self.delivery {
+            Delivery::Development(_) => "development_mailbox",
+            Delivery::Ses { .. } => "ses_configured",
+            Delivery::Disabled => "unavailable",
+        }
+    }
+
     pub async fn from_env(environment: Environment) -> Result<Self, String> {
         let base_url =
             env::var("STOREFRONT_BASE_URL").unwrap_or_else(|_| "http://127.0.0.1:3000".into());

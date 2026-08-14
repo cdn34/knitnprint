@@ -26,6 +26,10 @@ use crate::{
         NotificationStatus, enqueue_order_confirmation, load_for_order as load_notifications,
     },
     payments::{PaymentAttempt, PaymentStatusEvent, load_attempts, load_status_events},
+    settings::{
+        OrderShipping, OrderTax, PricingError, evaluate_in_transaction as evaluate_commercial,
+        load_order_shipping, load_order_tax, record_order_snapshots,
+    },
 };
 
 const CART_COOKIE: &str = "knitprint_cart";
@@ -54,7 +58,9 @@ pub struct Order {
     pub discount_minor: i64,
     pub discount: Option<OrderDiscount>,
     pub shipping_minor: i64,
+    pub shipping: OrderShipping,
     pub tax_minor: i64,
+    pub tax: OrderTax,
     pub total_minor: i64,
     pub customer: OrderCustomer,
     pub shipping_address: OrderAddress,
@@ -147,6 +153,7 @@ struct CheckoutCart {
     customer_id: Option<Uuid>,
     shipping_address_id: Option<Uuid>,
     discount_id: Option<Uuid>,
+    shipping_method_id: Option<Uuid>,
     expired: bool,
 }
 
@@ -482,6 +489,7 @@ async fn create_order(
     let cart = sqlx::query_as::<_, CheckoutCart>(
         r#"
         SELECT id, status, currency::text AS currency, customer_id, shipping_address_id, discount_id,
+               shipping_method_id,
                expires_at <= now() AS expired
         FROM carts WHERE token_hash = $1
         FOR UPDATE
@@ -605,8 +613,27 @@ async fn create_order(
     let discount_minor = evaluated_discount
         .as_ref()
         .map_or(0, |discount| discount.amount_minor);
+    let merchandise_minor = subtotal_minor
+        .checked_sub(discount_minor)
+        .ok_or(CreateError::Changed)?;
+    let commercial_pricing = evaluate_commercial(
+        &mut transaction,
+        currency,
+        &delivery.country_code,
+        cart.shipping_method_id,
+        merchandise_minor,
+    )
+    .await
+    .map_err(|error| match error {
+        PricingError::Unavailable => CreateError::Changed,
+        PricingError::Database(_) => CreateError::Database,
+    })?;
+    let shipping_minor = commercial_pricing.shipping.amount_minor;
+    let tax_minor = commercial_pricing.tax.amount_minor;
     let total_minor = subtotal_minor
         .checked_sub(discount_minor)
+        .and_then(|total| total.checked_add(shipping_minor))
+        .and_then(|total| total.checked_add(tax_minor))
         .ok_or(CreateError::Changed)?;
 
     let order_id = Uuid::now_v7();
@@ -614,13 +641,13 @@ async fn create_order(
         r#"
         INSERT INTO orders (
             id, order_number, cart_id, customer_id, checkout_idempotency_hash,
-            currency, subtotal_minor, discount_minor, total_minor, customer_email,
+            currency, subtotal_minor, discount_minor, shipping_minor, tax_minor, total_minor, customer_email,
             customer_first_name, customer_last_name, customer_phone,
             shipping_recipient_name, shipping_line1, shipping_line2, shipping_city,
             shipping_region, shipping_postal_code, shipping_country_code, shipping_phone
         ) VALUES (
             $1, 'KP-' || to_char(now(), 'YYYY') || '-' || lpad(nextval('order_number_sequence')::text, 6, '0'),
-            $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20
+            $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22
         ) RETURNING order_number
         "#,
     )
@@ -631,6 +658,8 @@ async fn create_order(
     .bind(currency)
     .bind(subtotal_minor)
     .bind(discount_minor)
+    .bind(shipping_minor)
+    .bind(tax_minor)
     .bind(total_minor)
     .bind(&delivery.email)
     .bind(&delivery.first_name)
@@ -653,6 +682,9 @@ async fn create_order(
             .await
             .map_err(|_| CreateError::Database)?;
     }
+    record_order_snapshots(&mut transaction, order_id, &commercial_pricing)
+        .await
+        .map_err(|_| CreateError::Database)?;
 
     for (position, line) in lines.iter().enumerate() {
         sqlx::query(
@@ -969,6 +1001,8 @@ pub(crate) async fn load_order(
     .await?;
     let fulfillments = load_fulfillments(pool, order_id).await?;
     let notifications = load_notifications(pool, order_id).await?;
+    let shipping = load_order_shipping(pool, order_id).await?;
+    let tax = load_order_tax(pool, order_id).await?;
     let timeline = sqlx::query_as::<_, OrderEvent>(
         r#"
         SELECT event.id, event.event_type, event.title, event.detail,
@@ -993,7 +1027,9 @@ pub(crate) async fn load_order(
         discount_minor: head.discount_minor,
         discount,
         shipping_minor: head.shipping_minor,
+        shipping,
         tax_minor: head.tax_minor,
+        tax,
         total_minor: head.total_minor,
         customer: OrderCustomer {
             email: head.customer_email,

@@ -21,6 +21,7 @@ use crate::{
         find_by_code_in_transaction, normalize_code,
     },
     error::ErrorBody,
+    settings::{PricingError, ShippingSelection, TaxSelection, evaluate as evaluate_commercial},
 };
 
 const CART_COOKIE: &str = "knitprint_cart";
@@ -42,6 +43,11 @@ pub struct ApplyDiscountRequest {
     pub code: String,
 }
 
+#[derive(Deserialize, Serialize, ToSchema)]
+pub struct SelectShippingMethodRequest {
+    pub shipping_method_id: Uuid,
+}
+
 #[derive(Serialize, ToSchema)]
 pub struct Cart {
     pub id: Uuid,
@@ -51,6 +57,11 @@ pub struct Cart {
     pub subtotal_minor: i64,
     pub discount: Option<AppliedDiscount>,
     pub discount_minor: i64,
+    pub shipping_methods: Vec<ShippingSelection>,
+    pub shipping: Option<ShippingSelection>,
+    pub shipping_minor: i64,
+    pub tax: Option<TaxSelection>,
+    pub tax_minor: i64,
     pub total_minor: i64,
     pub checkout_ready: bool,
     pub issues: Vec<CartIssue>,
@@ -110,6 +121,7 @@ struct CartRow {
     currency: Option<String>,
     customer_id: Option<Uuid>,
     discount_id: Option<Uuid>,
+    shipping_method_id: Option<Uuid>,
     expires_at: String,
 }
 
@@ -738,6 +750,83 @@ pub async fn remove_discount(
     cart_response(&pool, session).await
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/cart/shipping-method",
+    tag = "cart",
+    params(("Idempotency-Key" = String, Header)),
+    request_body = SelectShippingMethodRequest,
+    responses(
+        (status = 200, body = Cart),
+        (status = 409, body = ErrorBody),
+        (status = 422, body = ErrorBody),
+        (status = 503, body = ErrorBody)
+    )
+)]
+pub async fn select_shipping_method(
+    State(state): State<AppState>,
+    jar: CookieJar,
+    headers: HeaderMap,
+    Json(input): Json<SelectShippingMethodRequest>,
+) -> Response {
+    let Some(idempotency_hash) = idempotency_hash(&headers) else {
+        return invalid_idempotency_key();
+    };
+    let Some(pool) = state.database else {
+        return unavailable();
+    };
+    let session = match resolve_cart(&pool, jar, state.secure_cookies).await {
+        Ok(session) => session,
+        Err(_) => return unavailable(),
+    };
+    let mut tx = match pool.begin().await {
+        Ok(tx) => tx,
+        Err(_) => return unavailable(),
+    };
+    let signature = format!("shipping-method:{}", input.shipping_method_id);
+    match claim_mutation(&mut tx, session.id, &idempotency_hash, &signature).await {
+        Ok(MutationClaim::Replay) => {
+            if tx.commit().await.is_err() {
+                return unavailable();
+            }
+            return cart_response(&pool, session).await;
+        }
+        Ok(MutationClaim::Conflict) => return idempotency_conflict(),
+        Ok(MutationClaim::New) => {}
+        Err(_) => return unavailable(),
+    }
+    let eligible: bool = match sqlx::query_scalar(
+        r#"SELECT EXISTS (
+        SELECT 1 FROM carts cart
+        JOIN customer_addresses address ON address.id=cart.shipping_address_id
+        JOIN shipping_methods method ON method.id=$2 AND method.active
+        JOIN shipping_zones zone ON zone.id=method.shipping_zone_id AND zone.active
+        WHERE cart.id=$1 AND cart.status='active' AND method.currency=cart.currency
+          AND (cardinality(zone.country_codes)=0 OR address.country_code::text=ANY(zone.country_codes))
+        )"#,
+    )
+    .bind(session.id)
+    .bind(input.shipping_method_id)
+    .fetch_one(&mut *tx)
+    .await
+    {
+        Ok(eligible) => eligible,
+        Err(_) => return unavailable(),
+    };
+    if !eligible {
+        return error(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "shipping_method_unavailable",
+            "Choose an available shipping method for this delivery address.",
+        );
+    }
+    if sqlx::query("UPDATE carts SET shipping_method_id=$2,updated_at=now(),expires_at=now()+interval '30 days' WHERE id=$1")
+        .bind(session.id).bind(input.shipping_method_id).execute(&mut *tx).await.is_err()
+        || tx.commit().await.is_err()
+    { return unavailable() }
+    cart_response(&pool, session).await
+}
+
 async fn resolve_cart(
     pool: &PgPool,
     jar: CookieJar,
@@ -814,7 +903,7 @@ async fn load_cart(pool: &PgPool, cart_id: Uuid) -> Result<Cart, sqlx::Error> {
     .await?;
     let cart = sqlx::query_as::<_, CartRow>(
         r#"
-        SELECT currency::text AS currency, customer_id, discount_id,
+        SELECT currency::text AS currency, customer_id, discount_id, shipping_method_id,
                to_char(expires_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS expires_at
         FROM carts WHERE id = $1 AND status = 'active'
         "#,
@@ -937,8 +1026,42 @@ async fn load_cart(pool: &PgPool, cart_id: Uuid) -> Result<Cart, sqlx::Error> {
             Err(EvaluationError::Database(error)) => return Err(error),
         }
     }
-    let total_minor = subtotal_minor.saturating_sub(discount_minor);
-    let checkout_ready = !items.is_empty() && issues.is_empty() && delivery.is_some();
+    let merchandise_minor = subtotal_minor.saturating_sub(discount_minor);
+    let mut shipping_methods = Vec::new();
+    let mut shipping = None;
+    let mut shipping_minor = 0;
+    let mut tax = None;
+    let mut tax_minor = 0;
+    if let (Some(delivery), Some(currency)) = (&delivery, cart.currency.as_deref()) {
+        match evaluate_commercial(
+            pool,
+            currency,
+            &delivery.address.country_code,
+            cart.shipping_method_id,
+            merchandise_minor,
+        )
+        .await
+        {
+            Ok(pricing) => {
+                shipping_methods = pricing.shipping_methods;
+                shipping_minor = pricing.shipping.amount_minor;
+                tax_minor = pricing.tax.amount_minor;
+                shipping = Some(pricing.shipping);
+                tax = Some(pricing.tax);
+            }
+            Err(PricingError::Unavailable) => issues.push(CartIssue {
+                code: "commercial_pricing_unavailable".into(),
+                line_id: None,
+                message: "Shipping or tax is not configured for this delivery address.".into(),
+            }),
+            Err(PricingError::Database(error)) => return Err(error),
+        }
+    }
+    let total_minor = merchandise_minor
+        .saturating_add(shipping_minor)
+        .saturating_add(tax_minor);
+    let checkout_ready =
+        !items.is_empty() && issues.is_empty() && delivery.is_some() && shipping.is_some();
     Ok(Cart {
         id: cart_id,
         currency: cart.currency,
@@ -947,6 +1070,11 @@ async fn load_cart(pool: &PgPool, cart_id: Uuid) -> Result<Cart, sqlx::Error> {
         subtotal_minor,
         discount,
         discount_minor,
+        shipping_methods,
+        shipping,
+        shipping_minor,
+        tax,
+        tax_minor,
         total_minor,
         checkout_ready,
         issues,
@@ -1008,7 +1136,7 @@ async fn reset_empty_currency(
     cart_id: Uuid,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
-        "UPDATE carts SET currency = NULL, discount_id = NULL WHERE id = $1 AND NOT EXISTS (SELECT 1 FROM cart_lines WHERE cart_id = $1)",
+        "UPDATE carts SET currency = NULL, discount_id = NULL, shipping_method_id = NULL WHERE id = $1 AND NOT EXISTS (SELECT 1 FROM cart_lines WHERE cart_id = $1)",
     )
     .bind(cart_id)
     .execute(&mut **transaction)

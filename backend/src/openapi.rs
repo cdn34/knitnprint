@@ -2,7 +2,7 @@ use utoipa::{OpenApi, openapi::OpenApi as OpenApiDocument};
 
 use crate::{
     auth, cancellations, carts, catalog, customer_auth, customers, discounts, error, fulfillment,
-    health, inventory, media, notifications, orders, payments, staff,
+    health, inventory, media, notifications, orders, payments, settings, staff,
 };
 
 #[derive(OpenApi)]
@@ -34,6 +34,7 @@ use crate::{
         carts::set_delivery,
         carts::apply_discount,
         carts::remove_discount,
+        carts::select_shipping_method,
         orders::create,
         orders::customer_detail,
         orders::admin_list,
@@ -45,6 +46,8 @@ use crate::{
         discounts::list,
         discounts::create,
         discounts::change_status,
+        settings::get,
+        settings::update,
         payments::options,
         payments::start_checkout,
         payments::stripe_webhook,
@@ -88,6 +91,7 @@ use crate::{
         carts::AddCartItemRequest,
         carts::UpdateCartItemRequest,
         carts::ApplyDiscountRequest,
+        carts::SelectShippingMethodRequest,
         carts::Cart,
         carts::CartItem,
         carts::CartIssue,
@@ -117,6 +121,20 @@ use crate::{
         discounts::ChangeDiscountStatusRequest,
         discounts::AppliedDiscount,
         discounts::OrderDiscount,
+        settings::CommercialSettings,
+        settings::ShippingZone,
+        settings::ShippingMethod,
+        settings::TaxRule,
+        settings::IntegrationHealth,
+        settings::SettingsHistoryRecord,
+        settings::UpdateCommercialSettingsRequest,
+        settings::ShippingZoneInput,
+        settings::ShippingMethodInput,
+        settings::TaxRuleInput,
+        settings::ShippingSelection,
+        settings::TaxSelection,
+        settings::OrderShipping,
+        settings::OrderTax,
         notifications::NotificationStatus,
         payments::PaymentOptions,
         payments::PaymentCheckout,
@@ -165,6 +183,7 @@ use crate::{
         ,(name = "admin orders", description = "Capability-protected order operations")
         ,(name = "payments", description = "Server-owned payment initiation and verified provider events")
         ,(name = "admin discounts", description = "Capability-protected promotion management")
+        ,(name = "admin settings", description = "Capability-protected commercial settings and integration status")
     )
 )]
 struct ApiDoc;

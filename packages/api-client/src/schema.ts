@@ -45,7 +45,12 @@ export interface Cart {
   "issues": Array<CartIssue>
   "item_count": number
   "items": Array<CartItem>
+  "shipping"?: null | ShippingSelection
+  "shipping_methods": Array<ShippingSelection>
+  "shipping_minor": number
   "subtotal_minor": number
+  "tax"?: null | TaxSelection
+  "tax_minor": number
   "total_minor": number
 }
 
@@ -106,6 +111,18 @@ export interface ChangeDiscountStatusRequest {
 
 export interface ChangeProductStatusRequest {
   "status": string
+}
+
+export interface CommercialSettings {
+  "currency": string
+  "history": Array<SettingsHistoryRecord>
+  "integrations": IntegrationHealth
+  "shipping_zones": Array<ShippingZone>
+  "store_name": string
+  "support_email": string
+  "tax_enabled": boolean
+  "tax_rules": Array<TaxRule>
+  "updated_at": string
 }
 
 export interface CompleteUploadRequest {
@@ -350,6 +367,13 @@ export interface InitiateUploadResponse {
   "upload_url": string
 }
 
+export interface IntegrationHealth {
+  "database": string
+  "email": string
+  "media_storage": string
+  "payments": string
+}
+
 export interface InventoryMovement {
   "actor_display_name"?: string | null
   "created_at": string
@@ -417,9 +441,11 @@ export interface Order {
   "payment": OrderPayment
   "payment_status": string
   "refunds": Array<Refund>
+  "shipping": OrderShipping
   "shipping_address": OrderAddress
   "shipping_minor": number
   "subtotal_minor": number
+  "tax": OrderTax
   "tax_minor": number
   "timeline": Array<OrderEvent>
   "total_minor": number
@@ -492,6 +518,14 @@ export interface OrderPayment {
   "status": string
 }
 
+export interface OrderShipping {
+  "amount_minor": number
+  "country_code": string
+  "currency": string
+  "method_name": string
+  "zone_name": string
+}
+
 export interface OrderSummary {
   "created_at": string
   "currency": string
@@ -504,6 +538,15 @@ export interface OrderSummary {
   "order_status": string
   "payment_status": string
   "total_minor": number
+}
+
+export interface OrderTax {
+  "amount_minor": number
+  "behavior": string
+  "country_code": string
+  "rate_basis_points": number
+  "rule_name": string
+  "taxable_amount_minor": number
 }
 
 export interface PaymentAttempt {
@@ -592,6 +635,54 @@ export interface ResetPasswordRequest {
   "token": string
 }
 
+export interface SelectShippingMethodRequest {
+  "shipping_method_id": string
+}
+
+export interface SettingsHistoryRecord {
+  "actor_display_name"?: string | null
+  "created_at": string
+  "id": string
+  "reason": string
+}
+
+export interface ShippingMethod {
+  "active": boolean
+  "currency": string
+  "flat_rate_minor": number
+  "id": string
+  "name": string
+}
+
+export interface ShippingMethodInput {
+  "active": boolean
+  "flat_rate_minor": number
+  "name": string
+}
+
+export interface ShippingSelection {
+  "amount_minor": number
+  "currency": string
+  "id": string
+  "method_name": string
+  "zone_name": string
+}
+
+export interface ShippingZone {
+  "active": boolean
+  "country_codes": Array<string>
+  "id": string
+  "methods": Array<ShippingMethod>
+  "name": string
+}
+
+export interface ShippingZoneInput {
+  "active": boolean
+  "country_codes": Array<string>
+  "methods": Array<ShippingMethodInput>
+  "name": string
+}
+
 export interface StaffProfile {
   "capabilities": Array<string>
   "display_name": string
@@ -609,8 +700,41 @@ export interface StaffRecord {
   "role": string
 }
 
+export interface TaxRule {
+  "active": boolean
+  "country_codes": Array<string>
+  "id": string
+  "name": string
+  "rate_basis_points": number
+}
+
+export interface TaxRuleInput {
+  "active": boolean
+  "country_codes": Array<string>
+  "name": string
+  "rate_basis_points": number
+}
+
+export interface TaxSelection {
+  "amount_minor": number
+  "behavior": string
+  "rate_basis_points": number
+  "rule_name": string
+  "taxable_amount_minor": number
+}
+
 export interface UpdateCartItemRequest {
   "quantity": number
+}
+
+export interface UpdateCommercialSettingsRequest {
+  "currency": string
+  "reason": string
+  "shipping_zones": Array<ShippingZoneInput>
+  "store_name": string
+  "support_email": string
+  "tax_enabled": boolean
+  "tax_rules": Array<TaxRuleInput>
 }
 
 export interface Variant {
