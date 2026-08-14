@@ -1,8 +1,8 @@
 use utoipa::{OpenApi, openapi::OpenApi as OpenApiDocument};
 
 use crate::{
-    auth, carts, catalog, customer_auth, customers, error, health, inventory, media, orders,
-    payments, staff,
+    auth, carts, catalog, customer_auth, customers, error, fulfillment, health, inventory, media,
+    notifications, orders, payments, staff,
 };
 
 #[derive(OpenApi)]
@@ -37,6 +37,7 @@ use crate::{
         orders::admin_list,
         orders::admin_detail,
         orders::record_manual_payment,
+        fulfillment::create,
         payments::options,
         payments::start_checkout,
         payments::stripe_webhook,
@@ -93,6 +94,11 @@ use crate::{
         orders::OrderPayment,
         orders::OrderEvent,
         orders::OrderSummary,
+        fulfillment::CreateFulfillmentRequest,
+        fulfillment::CreateFulfillmentLineRequest,
+        fulfillment::Fulfillment,
+        fulfillment::FulfillmentLine,
+        notifications::NotificationStatus,
         payments::PaymentOptions,
         payments::PaymentCheckout,
         payments::PaymentAttempt,

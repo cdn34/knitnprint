@@ -7,10 +7,12 @@ pub mod customer_retention;
 pub mod customers;
 pub mod email;
 pub mod error;
+pub mod fulfillment;
 pub mod health;
 pub mod inventory;
 pub mod login_rate_limit;
 pub mod media;
+pub mod notifications;
 pub mod openapi;
 pub mod orders;
 pub mod payments;
@@ -117,6 +119,10 @@ pub fn app(state: AppState) -> Router {
         .route(
             "/api/admin/orders/{order_id}/manual-payment",
             axum::routing::post(orders::record_manual_payment),
+        )
+        .route(
+            "/api/admin/orders/{order_id}/fulfillments",
+            axum::routing::post(fulfillment::create),
         )
         .route(
             "/api/admin/inventory/{variant_id}/movements",

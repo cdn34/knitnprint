@@ -22,6 +22,7 @@ use crate::{
     config::Environment,
     error::ErrorBody,
     inventory::{commit_in_transaction, release_in_transaction},
+    notifications::enqueue_order_confirmation,
 };
 
 const CART_COOKIE: &str = "knitprint_cart";
@@ -757,6 +758,7 @@ async fn apply_webhook(
                     "Stripe confirmed the payment and reserved stock was committed.",
                 )
                 .await?;
+                enqueue_order_confirmation(&mut transaction, order_id).await?;
                 audit_webhook(
                     &mut transaction,
                     order_id,

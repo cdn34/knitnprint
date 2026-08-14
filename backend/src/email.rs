@@ -18,6 +18,39 @@ pub enum AccountEmailKind {
     PasswordReset,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OrderEmailKind {
+    Confirmation,
+    Fulfillment,
+}
+
+impl OrderEmailKind {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Confirmation => "order_confirmation",
+            Self::Fulfillment => "fulfillment_created",
+        }
+    }
+
+    const fn subject(self) -> &'static str {
+        match self {
+            Self::Confirmation => "Your KnitPrint order is confirmed",
+            Self::Fulfillment => "Your KnitPrint order is on its way",
+        }
+    }
+}
+
+pub struct OrderEmail<'a> {
+    pub to: &'a str,
+    pub first_name: &'a str,
+    pub kind: OrderEmailKind,
+    pub order_number: &'a str,
+    pub total: &'a str,
+    pub carrier: &'a str,
+    pub tracking_number: &'a str,
+    pub tracking_url: &'a str,
+}
+
 impl AccountEmailKind {
     pub fn as_str(self) -> &'static str {
         match self {
@@ -199,6 +232,86 @@ impl EmailService {
         }
     }
 
+    pub async fn send_order_notification(&self, email: OrderEmail<'_>) -> Result<(), String> {
+        let order_url = format!("{}/cart", self.storefront_base_url);
+        let action_url = if email.tracking_url.is_empty() {
+            order_url
+        } else {
+            email.tracking_url.to_owned()
+        };
+        match &self.delivery {
+            Delivery::Development(mailbox) => {
+                mailbox.write().await.push(DevelopmentEmail {
+                    to: email.to.into(),
+                    kind: email.kind.as_str().into(),
+                    subject: email.kind.subject().into(),
+                    action_url,
+                });
+                Ok(())
+            }
+            Delivery::Ses {
+                client,
+                from,
+                configuration_set,
+            } => {
+                let safe_name = escape_html(email.first_name);
+                let safe_order = escape_html(email.order_number);
+                let safe_total = escape_html(email.total);
+                let (text, html) = match email.kind {
+                    OrderEmailKind::Confirmation => (
+                        format!(
+                            "Hello {},\n\nYour KnitPrint order {} is confirmed. Total: {}.\n\nWe will email you again when it ships.\n",
+                            email.first_name, email.order_number, email.total
+                        ),
+                        format!(
+                            "<p>Hello {safe_name},</p><p>Your KnitPrint order <strong>{safe_order}</strong> is confirmed.</p><p>Total: {safe_total}</p><p>We will email you again when it ships.</p>"
+                        ),
+                    ),
+                    OrderEmailKind::Fulfillment => {
+                        let tracking_text = if email.tracking_number.is_empty() {
+                            String::new()
+                        } else {
+                            format!(
+                                " Carrier: {}. Tracking: {}.",
+                                email.carrier, email.tracking_number
+                            )
+                        };
+                        let tracking_html = if email.tracking_number.is_empty() {
+                            String::new()
+                        } else {
+                            format!(
+                                "<p>{}: <a href=\"{}\">{}</a></p>",
+                                escape_html(email.carrier),
+                                escape_html(&action_url),
+                                escape_html(email.tracking_number)
+                            )
+                        };
+                        (
+                            format!(
+                                "Hello {},\n\nYour KnitPrint order {} has shipped.{}\n",
+                                email.first_name, email.order_number, tracking_text
+                            ),
+                            format!(
+                                "<p>Hello {safe_name},</p><p>Your KnitPrint order <strong>{safe_order}</strong> has shipped.</p>{tracking_html}"
+                            ),
+                        )
+                    }
+                };
+                send_ses(
+                    client,
+                    from,
+                    configuration_set.as_deref(),
+                    email.to,
+                    email.kind.subject(),
+                    text,
+                    html,
+                )
+                .await
+            }
+            Delivery::Disabled => Err("email delivery is not configured".into()),
+        }
+    }
+
     async fn latest_development_email(&self, to: &str, kind: &str) -> Option<DevelopmentEmail> {
         let Delivery::Development(mailbox) = &self.delivery else {
             return None;
@@ -211,6 +324,53 @@ impl EmailService {
             .find(|email| email.to.eq_ignore_ascii_case(to) && email.kind == kind)
             .cloned()
     }
+}
+
+async fn send_ses(
+    client: &Client,
+    from: &str,
+    configuration_set: Option<&str>,
+    to: &str,
+    subject_value: &str,
+    text_value: String,
+    html_value: String,
+) -> Result<(), String> {
+    let subject = Content::builder()
+        .data(subject_value)
+        .charset("UTF-8")
+        .build()
+        .map_err(|error| format!("email subject is invalid: {error}"))?;
+    let text = Content::builder()
+        .data(text_value)
+        .charset("UTF-8")
+        .build()
+        .map_err(|error| format!("email text is invalid: {error}"))?;
+    let html = Content::builder()
+        .data(html_value)
+        .charset("UTF-8")
+        .build()
+        .map_err(|error| format!("email HTML is invalid: {error}"))?;
+    let content = EmailContent::builder()
+        .simple(
+            Message::builder()
+                .subject(subject)
+                .body(Body::builder().text(text).html(html).build())
+                .build(),
+        )
+        .build();
+    let mut request = client
+        .send_email()
+        .from_email_address(from)
+        .destination(Destination::builder().to_addresses(to).build())
+        .content(content);
+    if let Some(configuration_set) = configuration_set {
+        request = request.configuration_set_name(configuration_set);
+    }
+    request
+        .send()
+        .await
+        .map_err(|error| format!("SES send failed: {error}"))?;
+    Ok(())
 }
 
 #[derive(Deserialize)]

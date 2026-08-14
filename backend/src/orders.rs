@@ -15,7 +15,11 @@ use crate::{
     AppState,
     auth::{AuthenticatedStaff, require_capability},
     error::ErrorBody,
+    fulfillment::{Fulfillment, load_for_order as load_fulfillments},
     inventory::{InventoryOperationError, commit_in_transaction, reserve_in_transaction},
+    notifications::{
+        NotificationStatus, enqueue_order_confirmation, load_for_order as load_notifications,
+    },
     payments::{PaymentAttempt, PaymentStatusEvent, load_attempts, load_status_events},
 };
 
@@ -50,6 +54,8 @@ pub struct Order {
     pub shipping_address: OrderAddress,
     pub lines: Vec<OrderLine>,
     pub payment: OrderPayment,
+    pub fulfillments: Vec<Fulfillment>,
+    pub notifications: Vec<NotificationStatus>,
     pub timeline: Vec<OrderEvent>,
     pub created_at: String,
 }
@@ -81,6 +87,7 @@ pub struct OrderLine {
     pub variant_title: String,
     pub sku: String,
     pub quantity: i32,
+    pub fulfilled_quantity: i64,
     pub unit_price_minor: i64,
     pub line_total_minor: i64,
     pub currency: String,
@@ -735,6 +742,9 @@ async fn pay_order(
         return Err(PaymentError::NotFound);
     };
     if order_status == "confirmed" && payment_status == "paid" {
+        enqueue_order_confirmation(&mut transaction, order_id)
+            .await
+            .map_err(|_| PaymentError::Database)?;
         transaction
             .commit()
             .await
@@ -813,6 +823,9 @@ async fn pay_order(
     .execute(&mut *transaction)
     .await
     .map_err(|_| PaymentError::Database)?;
+    enqueue_order_confirmation(&mut transaction, order_id)
+        .await
+        .map_err(|_| PaymentError::Database)?;
     transaction
         .commit()
         .await
@@ -848,7 +861,10 @@ async fn insert_event(
     Ok(())
 }
 
-async fn load_order(pool: &PgPool, order_id: Uuid) -> Result<Option<Order>, sqlx::Error> {
+pub(crate) async fn load_order(
+    pool: &PgPool,
+    order_id: Uuid,
+) -> Result<Option<Order>, sqlx::Error> {
     let Some(head) = sqlx::query_as::<_, OrderHead>(
         r#"
         SELECT order_record.id, order_record.order_number, order_record.order_status,
@@ -882,9 +898,10 @@ async fn load_order(pool: &PgPool, order_id: Uuid) -> Result<Option<Order>, sqlx
     };
     let lines = sqlx::query_as::<_, OrderLine>(
         r#"
-        SELECT id, product_title, variant_title, sku, quantity, unit_price_minor,
-               line_total_minor, currency::text AS currency
-        FROM order_lines WHERE order_id = $1 ORDER BY position, id
+        SELECT line.id, line.product_title, line.variant_title, line.sku, line.quantity,
+               COALESCE((SELECT sum(fulfilled.quantity)::bigint FROM fulfillment_lines fulfilled WHERE fulfilled.order_line_id = line.id), 0) AS fulfilled_quantity,
+               line.unit_price_minor, line.line_total_minor, line.currency::text AS currency
+        FROM order_lines line WHERE line.order_id = $1 ORDER BY line.position, line.id
         "#,
     )
     .bind(order_id)
@@ -892,6 +909,8 @@ async fn load_order(pool: &PgPool, order_id: Uuid) -> Result<Option<Order>, sqlx
     .await?;
     let attempts = load_attempts(pool, head.payment_id).await?;
     let history = load_status_events(pool, head.payment_id).await?;
+    let fulfillments = load_fulfillments(pool, order_id).await?;
+    let notifications = load_notifications(pool, order_id).await?;
     let timeline = sqlx::query_as::<_, OrderEvent>(
         r#"
         SELECT event.id, event.event_type, event.title, event.detail,
@@ -945,6 +964,8 @@ async fn load_order(pool: &PgPool, order_id: Uuid) -> Result<Option<Order>, sqlx
             attempts,
             history,
         },
+        fulfillments,
+        notifications,
         timeline,
         created_at: head.created_at,
     }))
