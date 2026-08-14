@@ -345,6 +345,7 @@ function OrderManagement({
 }: Readonly<{ canRecordPayment: boolean }>) {
   const client = useQueryClient()
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [queueOnly, setQueueOnly] = useState(false)
   const orders = useQuery({ queryKey: ordersKey, queryFn: api.listOrders })
   const detail = useQuery({
     queryKey: ['order', selectedId],
@@ -359,6 +360,19 @@ function OrderManagement({
       client.invalidateQueries({ queryKey: ordersKey })
     },
   })
+  const fulfillment = useMutation({
+    mutationFn: ({
+      id,
+      input,
+    }: {
+      id: string
+      input: Parameters<typeof api.createFulfillment>[1]
+    }) => api.createFulfillment(id, input, crypto.randomUUID()),
+    onSuccess: (order) => {
+      client.setQueryData(['order', order.id], order)
+      client.invalidateQueries({ queryKey: ordersKey })
+    },
+  })
 
   function recordPayment(order: Order) {
     const reason = window.prompt(
@@ -367,23 +381,59 @@ function OrderManagement({
     if (reason?.trim()) payment.mutate({ id: order.id, reason: reason.trim() })
   }
 
+  function fulfillOrder(event: FormEvent<HTMLFormElement>, order: Order) {
+    event.preventDefault()
+    const form = new FormData(event.currentTarget)
+    const lines = order.lines
+      .map((line) => ({
+        order_line_id: line.id,
+        quantity: Number(form.get(`quantity-${line.id}`) ?? 0),
+      }))
+      .filter((line) => line.quantity > 0)
+    fulfillment.mutate({
+      id: order.id,
+      input: {
+        carrier: String(form.get('carrier') ?? ''),
+        tracking_number: String(form.get('tracking_number') ?? ''),
+        tracking_url: String(form.get('tracking_url') ?? ''),
+        reason: String(form.get('reason') ?? ''),
+        lines,
+      },
+    })
+  }
+
+  const visibleOrders = useMemo(
+    () =>
+      queueOnly
+        ? orders.data?.filter(
+            (order) =>
+              order.payment_status === 'paid' &&
+              order.fulfillment_status !== 'fulfilled',
+          )
+        : orders.data,
+    [orders.data, queueOnly],
+  )
+
   return (
     <section className="orders-section" id="orders" aria-labelledby="orders-heading">
       <div className="section-heading">
         <div>
-          <p>Phase 7 · Payments</p>
+          <p>Phase 8 · Fulfillment</p>
           <h2 id="orders-heading">Orders</h2>
         </div>
-        <span>{orders.data?.length ?? '—'} recent</span>
+        <div className="order-queue-controls" aria-label="Order queue">
+          <button type="button" aria-pressed={queueOnly} onClick={() => setQueueOnly(true)}>Needs fulfillment</button>
+          <button type="button" aria-pressed={!queueOnly} onClick={() => setQueueOnly(false)}>All orders</button>
+        </div>
       </div>
       <div className="orders-layout">
         <div className="order-list">
           {orders.isPending && <p className="panel-message">Loading orders…</p>}
           {orders.isError && <p className="panel-message error" role="alert">Orders could not be loaded.</p>}
-          {orders.data?.length === 0 && (
-            <div className="order-empty"><ReceiptText aria-hidden="true" /><strong>No orders yet</strong><span>Completed cart checkouts will appear here.</span></div>
+          {visibleOrders?.length === 0 && (
+            <div className="order-empty"><ReceiptText aria-hidden="true" /><strong>{queueOnly ? 'Fulfillment queue is clear' : 'No orders yet'}</strong><span>{queueOnly ? 'Paid orders awaiting shipment will appear here.' : 'Completed cart checkouts will appear here.'}</span></div>
           )}
-          {orders.data?.map((order: OrderSummary) => (
+          {visibleOrders?.map((order: OrderSummary) => (
             <button
               className={selectedId === order.id ? 'selected' : ''}
               type="button"
@@ -406,6 +456,9 @@ function OrderManagement({
           paymentPending={payment.isPending}
           paymentError={payment.isError}
           onRecordPayment={recordPayment}
+          fulfillmentPending={fulfillment.isPending}
+          fulfillmentError={fulfillment.isError}
+          onFulfill={fulfillOrder}
         />
       </div>
     </section>
@@ -420,6 +473,9 @@ function OrderDetail({
   paymentPending,
   paymentError,
   onRecordPayment,
+  fulfillmentPending,
+  fulfillmentError,
+  onFulfill,
 }: Readonly<{
   order?: Order
   loading: boolean
@@ -428,6 +484,9 @@ function OrderDetail({
   paymentPending: boolean
   paymentError: boolean
   onRecordPayment: (order: Order) => void
+  fulfillmentPending: boolean
+  fulfillmentError: boolean
+  onFulfill: (event: FormEvent<HTMLFormElement>, order: Order) => void
 }>) {
   if (loading) return <aside className="order-detail"><p className="panel-message">Loading order…</p></aside>
   if (error) return <aside className="order-detail"><p className="panel-message error" role="alert">The order could not be loaded.</p></aside>
@@ -482,11 +541,62 @@ function OrderDetail({
         <h4>Items</h4>
         {order.lines.map((line) => (
           <div className="order-line" key={line.id}>
-            <span><strong>{line.product_title}</strong><small>{line.variant_title} · {line.sku} · Qty {line.quantity}</small></span>
+            <span><strong>{line.product_title}</strong><small>{line.variant_title} · {line.sku} · Qty {line.quantity} · Shipped {line.fulfilled_quantity}</small></span>
             <b>{formatMoney(line.line_total_minor, line.currency)}</b>
           </div>
         ))}
       </section>
+      {canRecordPayment && order.payment_status === 'paid' && order.fulfillment_status !== 'fulfilled' && (
+        <form className="fulfillment-form order-detail-section" onSubmit={(event) => onFulfill(event, order)}>
+          <h4>Create fulfillment</h4>
+          <p>Select quantities for this shipment. Tracking is optional.</p>
+          {order.lines.map((line) => {
+            const remaining = line.quantity - line.fulfilled_quantity
+            return remaining > 0 ? (
+              <label key={line.id}>
+                <span>{line.product_title} · {line.variant_title}</span>
+                <input name={`quantity-${line.id}`} type="number" min="0" max={remaining} defaultValue={remaining} aria-label={`${line.product_title} quantity to ship`} />
+              </label>
+            ) : null
+          })}
+          <label>Carrier<input name="carrier" maxLength={100} placeholder="CTT" /></label>
+          <label>Tracking number<input name="tracking_number" maxLength={200} /></label>
+          <label>Tracking URL<input name="tracking_url" type="url" placeholder="https://…" /></label>
+          <label>Internal reason<textarea name="reason" minLength={3} maxLength={500} required defaultValue="Packed and dispatched" /></label>
+          <button className="primary-button" disabled={fulfillmentPending}>
+            {fulfillmentPending ? 'Creating shipment…' : 'Create shipment'}
+          </button>
+          {fulfillmentError && <p className="panel-error" role="alert">The shipment could not be created. Check remaining quantities and tracking details.</p>}
+        </form>
+      )}
+      {order.fulfillments.length > 0 && (
+        <section className="order-detail-section">
+          <h4>Fulfillment history</h4>
+          {order.fulfillments.map((fulfillment) => (
+            <article className="fulfillment-record" key={fulfillment.id}>
+              <strong>{fulfillment.carrier || 'Shipment recorded'}</strong>
+              <time dateTime={fulfillment.created_at}>{orderDate(fulfillment.created_at)}</time>
+              {fulfillment.tracking_number && (
+                fulfillment.tracking_url
+                  ? <a href={fulfillment.tracking_url} target="_blank" rel="noreferrer">{fulfillment.tracking_number}</a>
+                  : <span>{fulfillment.tracking_number}</span>
+              )}
+              <small>{fulfillment.lines.map((line) => `${line.quantity} × ${line.product_title}`).join(', ')}</small>
+            </article>
+          ))}
+        </section>
+      )}
+      {order.notifications.length > 0 && (
+        <section className="order-detail-section">
+          <h4>Customer notifications</h4>
+          {order.notifications.map((notification) => (
+            <div className="order-line" key={notification.id}>
+              <span><strong>{notification.kind.replaceAll('_', ' ')}</strong><small>{notification.last_error ?? `Created ${orderDate(notification.created_at)}`}</small></span>
+              <b>{notification.status}</b>
+            </div>
+          ))}
+        </section>
+      )}
       <section className="order-detail-section order-contact">
         <h4>Customer & delivery</h4>
         <strong>{order.customer.first_name} {order.customer.last_name}</strong>

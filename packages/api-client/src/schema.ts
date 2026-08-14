@@ -108,6 +108,19 @@ export interface CreateCategoryRequest {
   "slug": string
 }
 
+export interface CreateFulfillmentLineRequest {
+  "order_line_id": string
+  "quantity": number
+}
+
+export interface CreateFulfillmentRequest {
+  "carrier": string
+  "lines": Array<CreateFulfillmentLineRequest>
+  "reason": string
+  "tracking_number": string
+  "tracking_url": string
+}
+
 export interface CreateOrderRequest {
   "payment_method": string
 }
@@ -222,6 +235,25 @@ export interface ForgotPasswordRequest {
   "email": string
 }
 
+export interface Fulfillment {
+  "actor_display_name"?: string | null
+  "carrier": string
+  "created_at": string
+  "id": string
+  "lines": Array<FulfillmentLine>
+  "reason": string
+  "tracking_number": string
+  "tracking_url": string
+}
+
+export interface FulfillmentLine {
+  "order_line_id": string
+  "product_title": string
+  "quantity": number
+  "sku": string
+  "variant_title": string
+}
+
 export interface GuestCustomerReceipt {
   "address_id": string
   "customer_id": string
@@ -293,14 +325,26 @@ export interface MediaRecord {
   "product_id": string
 }
 
+export interface NotificationStatus {
+  "attempt_count": number
+  "created_at": string
+  "id": string
+  "kind": string
+  "last_error"?: string | null
+  "sent_at"?: string | null
+  "status": string
+}
+
 export interface Order {
   "created_at": string
   "currency": string
   "customer": OrderCustomer
   "discount_minor": number
   "fulfillment_status": string
+  "fulfillments": Array<Fulfillment>
   "id": string
   "lines": Array<OrderLine>
+  "notifications": Array<NotificationStatus>
   "order_number": string
   "order_status": string
   "payment": OrderPayment
@@ -342,6 +386,7 @@ export interface OrderEvent {
 
 export interface OrderLine {
   "currency": string
+  "fulfilled_quantity": number
   "id": string
   "line_total_minor": number
   "product_title": string

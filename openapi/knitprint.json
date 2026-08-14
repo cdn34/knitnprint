@@ -1198,6 +1198,125 @@
         }
       }
     },
+    "/api/admin/orders/{order_id}/fulfillments": {
+      "post": {
+        "tags": [
+          "admin orders"
+        ],
+        "operationId": "create",
+        "parameters": [
+          {
+            "name": "order_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateFulfillmentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Idempotent replay",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Order"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Order"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/admin/orders/{order_id}/manual-payment": {
       "post": {
         "tags": [
@@ -3211,6 +3330,53 @@
           }
         }
       },
+      "CreateFulfillmentLineRequest": {
+        "type": "object",
+        "required": [
+          "order_line_id",
+          "quantity"
+        ],
+        "properties": {
+          "order_line_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "quantity": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "CreateFulfillmentRequest": {
+        "type": "object",
+        "required": [
+          "carrier",
+          "tracking_number",
+          "tracking_url",
+          "reason",
+          "lines"
+        ],
+        "properties": {
+          "carrier": {
+            "type": "string"
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CreateFulfillmentLineRequest"
+            }
+          },
+          "reason": {
+            "type": "string"
+          },
+          "tracking_number": {
+            "type": "string"
+          },
+          "tracking_url": {
+            "type": "string"
+          }
+        }
+      },
       "CreateOrderRequest": {
         "type": "object",
         "required": [
@@ -3601,6 +3767,80 @@
           }
         }
       },
+      "Fulfillment": {
+        "type": "object",
+        "required": [
+          "id",
+          "carrier",
+          "tracking_number",
+          "tracking_url",
+          "reason",
+          "lines",
+          "created_at"
+        ],
+        "properties": {
+          "actor_display_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "carrier": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FulfillmentLine"
+            }
+          },
+          "reason": {
+            "type": "string"
+          },
+          "tracking_number": {
+            "type": "string"
+          },
+          "tracking_url": {
+            "type": "string"
+          }
+        }
+      },
+      "FulfillmentLine": {
+        "type": "object",
+        "required": [
+          "order_line_id",
+          "product_title",
+          "variant_title",
+          "sku",
+          "quantity"
+        ],
+        "properties": {
+          "order_line_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "product_title": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "sku": {
+            "type": "string"
+          },
+          "variant_title": {
+            "type": "string"
+          }
+        }
+      },
       "GuestCustomerReceipt": {
         "type": "object",
         "required": [
@@ -3855,6 +4095,47 @@
           }
         }
       },
+      "NotificationStatus": {
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "status",
+          "attempt_count",
+          "created_at"
+        ],
+        "properties": {
+          "attempt_count": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "last_error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sent_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          }
+        }
+      },
       "Order": {
         "type": "object",
         "required": [
@@ -3873,6 +4154,8 @@
           "shipping_address",
           "lines",
           "payment",
+          "fulfillments",
+          "notifications",
           "timeline",
           "created_at"
         ],
@@ -3893,6 +4176,12 @@
           "fulfillment_status": {
             "type": "string"
           },
+          "fulfillments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Fulfillment"
+            }
+          },
           "id": {
             "type": "string",
             "format": "uuid"
@@ -3901,6 +4190,12 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/OrderLine"
+            }
+          },
+          "notifications": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NotificationStatus"
             }
           },
           "order_number": {
@@ -4046,6 +4341,7 @@
           "variant_title",
           "sku",
           "quantity",
+          "fulfilled_quantity",
           "unit_price_minor",
           "line_total_minor",
           "currency"
@@ -4053,6 +4349,10 @@
         "properties": {
           "currency": {
             "type": "string"
+          },
+          "fulfilled_quantity": {
+            "type": "integer",
+            "format": "int64"
           },
           "id": {
             "type": "string",

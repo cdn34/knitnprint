@@ -12,6 +12,8 @@ export type {
   Category,
   CompleteUploadRequest,
   CreateAccountAddressRequest,
+  CreateFulfillmentLineRequest,
+  CreateFulfillmentRequest,
   CreateOrderRequest,
   CreateProductRequest,
   CreateCategoryRequest,
@@ -31,12 +33,15 @@ export type {
   GuestCustomerReceipt,
   GuestCustomerRequest,
   ForgotPasswordRequest,
+  Fulfillment,
+  FulfillmentLine,
   InitiateUploadRequest,
   InitiateUploadResponse,
   InventoryMovement,
   InventoryRecord,
   LoginRequest,
   MediaRecord,
+  NotificationStatus,
   ManualPaymentRequest,
   Order,
   OrderAddress,
@@ -68,6 +73,7 @@ import type {
   Cart,
   CompleteUploadRequest,
   CreateAccountAddressRequest,
+  CreateFulfillmentRequest,
   CreateOrderRequest,
   CreateProductRequest,
   CreateCategoryRequest,
@@ -294,6 +300,19 @@ export function createApiClient(options: ApiClientOptions = {}) {
       send<Order>(`/api/admin/orders/${orderId}/manual-payment`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(input),
+      }),
+    createFulfillment: (
+      orderId: string,
+      input: CreateFulfillmentRequest,
+      idempotencyKey: string,
+    ) =>
+      send<Order>(`/api/admin/orders/${orderId}/fulfillments`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'idempotency-key': idempotencyKey,
+        },
         body: JSON.stringify(input),
       }),
     listAdminProducts: (query: { q?: string; status?: string } = {}) =>
