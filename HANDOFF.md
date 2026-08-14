@@ -512,18 +512,45 @@ Fulfillment and transactional notifications are implemented:
 - browser coverage for finding a paid order, creating its shipment, and seeing
   its tracking, timeline, and notification status.
 
-Phase 8 is complete. The next vertical slice is Phase 9 cancellation and
-refunds:
+Phase 8 is complete.
 
-- cancellation before fulfillment;
-- complete and partial refunds with Stripe integration;
-- explicit restocking decisions;
-- staff reasons, internal notes, audit records, and order timeline events;
-- idempotent operations that preserve payment, order, and inventory state.
+## Phase 9 progress
+
+Cancellation and refunds are implemented:
+
+- capability-protected cancellation of unpaid, unfulfilled orders with Stripe
+  Checkout expiration when an external session exists;
+- atomic release of reserved inventory and explicit cancelled order/payment
+  states;
+- server-priced partial and full refunds based on immutable order-line
+  quantities and the remaining paid balance;
+- Stripe Refund API integration using stable provider idempotency keys and the
+  payment-intent reference captured from verified Checkout webhooks;
+- signed `refund.created`, `refund.updated`, and `refund.failed` webhook
+  handling for asynchronous provider outcomes;
+- development/test manual refunds without a live provider call;
+- explicit per-refund restocking decisions and a committed-to-available
+  inventory transition with immutable movement history;
+- row-locked eligibility and quantity checks, one in-flight refund per order,
+  payload-bound idempotent replay, and conflicting-key rejection;
+- immutable cancellation, refund, refund-line, payment-history, audit, and
+  order-timeline records with staff reasons and private internal notes;
+- server-reported cancellation/refund eligibility and remaining refundable
+  balance in the order contract;
+- typed OpenAPI/TypeScript client methods and responsive admin cancellation,
+  refund, restocking, and refund-history controls;
+- PostgreSQL lifecycle coverage for authorization, cancellation, partial then
+  full manual refunds, Stripe adapter refunds, exact replay, conflict handling,
+  auditing, state transitions, and inventory restocking;
+- a real admin/storefront browser journey through payment, fulfillment, full
+  refund, refund history, private notes, restocking, and mobile overflow.
+
+Phase 9 is complete. The next vertical slice is Phase 10 discounts.
 
 The complete Rust workspace suite, Clippy with warnings denied, API contract
 check, TypeScript checks, production builds, focused PostgreSQL order lifecycle,
-and full admin/storefront fulfillment browser journey passed on 2026-08-14. No
+and full admin/storefront fulfillment/refund browser journey passed on
+2026-08-14. No
 request was sent to live Stripe or SES services because production credentials
 are not committed or available locally.
 
@@ -537,7 +564,7 @@ are not committed or available locally.
   schedule `npm run admin:cleanup-payments` before deployment. Schedule
   `npm run admin:deliver-notifications` frequently enough for the required
   delivery latency and alert on terminally failed jobs.
-- Phase 8 changes are currently uncommitted; preserve the user's untracked
+- Phase 9 changes are currently uncommitted; preserve the user's untracked
   `commands.md` when splitting them into focused commits.
 - Generated public logo assets are reproducible with `npm run assets:brand`;
   the source at `images/logo.png` remains authoritative and untouched.

@@ -89,11 +89,18 @@ STOREFRONT_BASE_URL=http://localhost:3000
 Production requires an `sk_live_` key and an HTTPS storefront URL. Configure a
 Stripe webhook endpoint at `/api/payments/stripe/webhook` for
 `checkout.session.completed`, `checkout.session.async_payment_succeeded`,
-`checkout.session.async_payment_failed`, and `checkout.session.expired`, using
-API version `2026-02-25.clover`. The API verifies Stripe's signature against the
+`checkout.session.async_payment_failed`, `checkout.session.expired`,
+`refund.created`, `refund.updated`, and `refund.failed`, using API version
+`2026-02-25.clover`. The API verifies Stripe's signature against the
 untouched request body with a five-minute timestamp tolerance. Only a verified
 paid event confirms an order and commits inventory; failed or expired checkout
 releases the reservation.
+
+Staff with `orders.refund` can cancel an unpaid, unfulfilled order or create a
+server-priced partial/full refund from the admin order detail. Every operation
+requires an idempotency key and reason; refunds also record an explicit
+restocking decision and support private internal notes. Stripe refunds use the verified payment-intent reference;
+manual refunds remain available only in development/test.
 
 Registration sends a 24-hour email-verification link, and forgotten-password
 requests send a one-hour single-use reset link. Development and test processes
@@ -265,9 +272,9 @@ DATABASE_URL=postgres://knitprint:knitprint@localhost:5432/knitprint \
 npx playwright test tests/e2e/account.spec.ts
 ```
 
-The payment foundation is implemented, but the store is not operationally
-ready for general traffic until fulfillment, cancellation, and refund phases
-are complete. Production email additionally depends on a verified SES
+The planned payment, fulfillment, cancellation, and refund foundations are
+implemented. Production readiness still requires the dedicated security and
+operational hardening milestone. Production email additionally depends on a verified SES
 identity, production sending access, and the runtime configuration described
 above. Configure an edge request limit as part of deployment even though login
 endpoints also enforce hashed account, IP, and global database limits.
