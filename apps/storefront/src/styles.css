@@ -550,6 +550,14 @@ main:focus { outline: none; }
 .cart-summary h2, .cart-delivery h2, .cart-issues h2 { margin: 0; font: 500 1.8rem var(--display); }
 .cart-summary > div { padding: .9rem 0; display: flex; justify-content: space-between; gap: 1rem; border-bottom: 1px solid var(--border); font-size: .75rem; }
 .cart-summary > div span:last-child { color: var(--ink-muted); text-align: right; }
+.cart-summary > .cart-discount-line strong { color: #315b49; }
+.cart-summary > .cart-total { border-bottom: 0; font-size: .85rem; }
+.cart-discount-form { margin-top: .8rem; display: grid; gap: .4rem; }
+.cart-discount-form label { color: var(--ink); font-size: .68rem; font-weight: 700; }
+.cart-discount-form div { display: grid; grid-template-columns: minmax(0, 1fr) auto; }
+.cart-discount-form input { min-width: 0; padding: .65rem .7rem; border: 1px solid var(--border); border-radius: .5rem 0 0 .5rem; color: var(--ink); background: white; font: inherit; text-transform: uppercase; }
+.cart-discount-form button { padding: .65rem .8rem; border: 1px solid var(--knit-dark); border-radius: 0 .5rem .5rem 0; color: white; background: var(--knit-dark); font: inherit; font-size: .68rem; font-weight: 700; }
+.cart-discount-remove { margin-top: .65rem; }
 .cart-summary > p { margin: 1.2rem 0; color: var(--ink-muted); font-size: .7rem; line-height: 1.6; }
 .cart-summary .button { width: 100%; border: 0; }
 .cart-summary .button:disabled { opacity: .65; }

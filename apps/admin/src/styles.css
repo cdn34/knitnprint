@@ -273,6 +273,18 @@ h1 { margin: .25rem 0 0; font: 500 2rem Georgia, serif; }
 .refund-mode legend { padding: 0 .25rem; color: #6e6864; font-size: .6rem; }
 .refund-mode label, .fulfillment-form .check-row { display: flex; grid-template-columns: none; align-items: center; gap: .4rem; color: #2e2e2d; }
 .refund-mode input, .fulfillment-form .check-row input { width: auto; }
+.discounts-layout { display: grid; grid-template-columns: minmax(260px, .8fr) minmax(0, 1.2fr); gap: 1rem; }
+.discount-form, .discount-list { min-width: 0; padding: 1.1rem; border: 1px solid #ded4cc; border-radius: .8rem; background: #fffdfc; }
+.discount-form { display: grid; align-content: start; gap: .7rem; }
+.discount-form h3 { margin: 0 0 .25rem; font: 500 1.15rem Georgia, serif; }
+.discount-form label { min-width: 0; display: grid; gap: .3rem; color: #6e6864; font-size: .62rem; }
+.discount-form input, .discount-form select, .discount-form textarea { width: 100%; min-width: 0; padding: .55rem .65rem; border: 1px solid #cfc4bc; border-radius: .4rem; color: #2e2e2d; background: white; font: inherit; }
+.discount-field-row { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem; }
+.discount-list { display: grid; align-content: start; gap: .7rem; }
+.discount-record { display: grid; gap: .35rem; padding: .9rem; border: 1px solid #ede6e1; border-radius: .65rem; }
+.discount-record > div { display: flex; justify-content: space-between; align-items: center; gap: .7rem; }
+.discount-record p, .discount-record small { margin: 0; color: #6e6864; font-size: .64rem; }
+.discount-record button { justify-self: start; margin-top: .2rem; padding: .4rem .65rem; border: 1px solid #765c47; border-radius: .4rem; color: #765c47; background: white; font: inherit; font-size: .62rem; font-weight: 700; }
 .fulfillment-record { margin-bottom: .55rem; padding: .7rem; display: grid; grid-template-columns: 1fr auto; gap: .25rem .8rem; border-radius: .5rem; background: #f7f3ef; font-size: .62rem; }
 .fulfillment-record time, .fulfillment-record small { color: #6e6864; font-size: .56rem; }
 .fulfillment-record a { color: #5f4652; text-decoration: underline; }
@@ -339,7 +351,8 @@ h1 { margin: .25rem 0 0; font: 500 2rem Georgia, serif; }
   .dashboard-stock-list { grid-template-columns: 1fr; }
   .dashboard-stock-list article:nth-child(odd) { border-right: 0; }
   .staff-layout { grid-template-columns: 1fr; }
-  .catalog-layout, .product-preview, .catalog-editor, .inventory-layout, .customer-layout, .orders-layout { grid-template-columns: 1fr; }
+  .catalog-layout, .product-preview, .catalog-editor, .inventory-layout, .customer-layout, .orders-layout, .discounts-layout { grid-template-columns: 1fr; }
+  .discount-field-row { grid-template-columns: 1fr; }
   .order-list > button { grid-template-columns: 1fr auto; }
   .order-list-customer { grid-column: 1; }
   .order-list > button > b { grid-column: 2; grid-row: 2; }

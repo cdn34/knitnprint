@@ -39,6 +39,7 @@ function CartPage() {
   const [order, setOrder] = useState<Order | null>(null)
   const [submittingOrder, setSubmittingOrder] = useState(false)
   const [paymentOptions, setPaymentOptions] = useState<PaymentOptions | null>(null)
+  const [discountBusy, setDiscountBusy] = useState(false)
 
   useEffect(() => {
     let active = true
@@ -153,6 +154,35 @@ function CartPage() {
       setMessage('Delivery details saved.')
     } catch {
       setMessage('Check each required delivery field and try again.')
+    }
+  }
+
+  async function applyDiscount(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setDiscountBusy(true)
+    setMessage('')
+    const code = String(new FormData(event.currentTarget).get('discount_code') ?? '')
+    try {
+      setCart(await cartApi.applyCartDiscount({ code }, cartMutationKey()))
+      setMessage('Discount applied.')
+      event.currentTarget.reset()
+    } catch {
+      setMessage('That discount cannot be applied to this cart.')
+    } finally {
+      setDiscountBusy(false)
+    }
+  }
+
+  async function removeDiscount() {
+    setDiscountBusy(true)
+    setMessage('')
+    try {
+      setCart(await cartApi.removeCartDiscount(cartMutationKey()))
+      setMessage('Discount removed.')
+    } catch {
+      setMessage('The discount could not be removed. Please try again.')
+    } finally {
+      setDiscountBusy(false)
     }
   }
 
@@ -310,7 +340,22 @@ function CartPage() {
             <aside className="cart-summary" aria-labelledby="cart-summary-title">
               <h2 id="cart-summary-title">Summary</h2>
               <div><span>Subtotal</span><strong>{formatMoney(cart.subtotal_minor, currency)}</strong></div>
+              {cart.discount && (
+                <div className="cart-discount-line">
+                  <span>{cart.discount.code}</span>
+                  <strong>−{formatMoney(cart.discount_minor, currency)}</strong>
+                </div>
+              )}
               <div><span>Shipping</span><span>Calculated with your order</span></div>
+              <div className="cart-total"><span>Total</span><strong>{formatMoney(cart.total_minor, currency)}</strong></div>
+              {cart.discount ? (
+                <button className="text-button cart-discount-remove" type="button" disabled={discountBusy} onClick={removeDiscount}>Remove discount</button>
+              ) : (
+                <form className="cart-discount-form" onSubmit={applyDiscount}>
+                  <label htmlFor="discount-code">Discount code</label>
+                  <div><input id="discount-code" name="discount_code" minLength={3} maxLength={32} required autoCapitalize="characters" /><button type="submit" disabled={discountBusy}>{discountBusy ? 'Applying…' : 'Apply'}</button></div>
+                </form>
+              )}
               <p>Taxes and final availability will be validated before an order is created.</p>
               <button
                 className="button button--primary"
@@ -372,6 +417,7 @@ function OrderConfirmation({
       <dl className="order-confirmation-summary">
         <div><dt>Status</dt><dd>{order.order_status}</dd></div>
         <div><dt>Payment</dt><dd>{order.payment_status}</dd></div>
+        {order.discount && <div><dt>Discount ({order.discount.code})</dt><dd>−{formatMoney(order.discount_minor, order.currency)}</dd></div>}
         <div><dt>Total</dt><dd>{formatMoney(order.total_minor, order.currency)}</dd></div>
       </dl>
       <div className="order-confirmation-lines">

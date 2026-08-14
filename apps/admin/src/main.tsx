@@ -17,6 +17,7 @@ import {
   Eye,
   ImageUp,
   Archive,
+  BadgePercent,
   CircleCheck,
   Boxes,
   History,
@@ -42,6 +43,7 @@ import {
   createApiClient,
   type CustomerDetail,
   type CustomerSummary,
+  type Discount,
   type Product,
   type InventoryRecord,
   type Order,
@@ -205,6 +207,9 @@ function AdminShell({ profile }: Readonly<{ profile: StaffProfile }>) {
     ...(profile.capabilities.includes('customers.read')
       ? [{ id: 'customers', label: 'Customers', icon: UsersRound }]
       : []),
+    ...(profile.capabilities.includes('discounts.manage')
+      ? [{ id: 'discounts', label: 'Discounts', icon: BadgePercent }]
+      : []),
     ...(profile.capabilities.includes('staff.manage')
       ? [{ id: 'staff', label: 'Staff', icon: ShieldCheck }]
       : []),
@@ -292,6 +297,8 @@ function AdminShell({ profile }: Readonly<{ profile: StaffProfile }>) {
                     ? 'Inventory control.'
                     : page === 'customers'
                       ? 'Customer directory.'
+                      : page === 'discounts'
+                        ? 'Discount codes.'
                       : 'Staff access.'}
             </h1>
           </div>
@@ -320,6 +327,10 @@ function AdminShell({ profile }: Readonly<{ profile: StaffProfile }>) {
         {page === 'customers' &&
           profile.capabilities.includes('customers.read') && (
             <CustomerManagement />
+          )}
+        {page === 'discounts' &&
+          profile.capabilities.includes('discounts.manage') && (
+            <DiscountManagement />
           )}
         {page === 'staff' && profile.capabilities.includes('staff.manage') && (
           <StaffManagement currentStaffId={profile.id} />
@@ -577,6 +588,11 @@ function OrderDetail({
         <div><span>Payment</span><b>{order.payment_status}</b></div>
         <div><span>Fulfillment</span><b>{order.fulfillment_status}</b></div>
       </div>
+      {order.discount && (
+        <p className="panel-message">
+          Discount {order.discount.code}: −{formatMoney(order.discount.amount_minor, order.discount.currency)}
+        </p>
+      )}
       {canRecordPayment && order.payment.provider === 'manual' && order.payment_status === 'pending' && (
         <button className="primary-button" type="button" disabled={paymentPending} onClick={() => onRecordPayment(order)}>
           {paymentPending ? 'Recording…' : 'Record manual payment'}
@@ -743,6 +759,108 @@ function OrderDetail({
         </ol>
       </section>
     </aside>
+  )
+}
+
+const discountsKey = ['discounts'] as const
+
+function DiscountManagement() {
+  const client = useQueryClient()
+  const [kind, setKind] = useState<'percentage' | 'fixed'>('percentage')
+  const discounts = useQuery({ queryKey: discountsKey, queryFn: api.listDiscounts })
+  const createDiscount = useMutation({
+    mutationFn: api.createDiscount,
+    onSuccess: (discount) => {
+      client.setQueryData<Discount[]>(discountsKey, (current = []) => [discount, ...current])
+    },
+  })
+  const status = useMutation({
+    mutationFn: ({ id, enabled, reason }: { id: string; enabled: boolean; reason: string }) =>
+      api.changeDiscountStatus(id, { enabled, reason }),
+    onSuccess: (discount) => {
+      client.setQueryData<Discount[]>(discountsKey, (current = []) =>
+        current.map((item) => item.id === discount.id ? discount : item),
+      )
+    },
+  })
+
+  function optionalDate(value: FormDataEntryValue | null) {
+    const text = String(value ?? '').trim()
+    return text ? new Date(text).toISOString() : null
+  }
+
+  function optionalPositive(value: FormDataEntryValue | null) {
+    const number = Number(value ?? 0)
+    return number > 0 ? number : null
+  }
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const form = new FormData(event.currentTarget)
+    const enteredValue = Number(form.get('discount-value') ?? 0)
+    createDiscount.mutate({
+      code: String(form.get('discount-code') ?? ''),
+      kind,
+      value: Math.round(enteredValue * 100),
+      currency: String(form.get('discount-currency') ?? 'EUR'),
+      minimum_order_minor: Math.round(Number(form.get('discount-minimum') ?? 0) * 100),
+      starts_at: optionalDate(form.get('discount-starts')),
+      ends_at: optionalDate(form.get('discount-ends')),
+      usage_limit: optionalPositive(form.get('discount-usage-limit')),
+      per_customer_limit: optionalPositive(form.get('discount-customer-limit')),
+      reason: String(form.get('discount-reason') ?? ''),
+    })
+  }
+
+  function toggle(discount: Discount) {
+    const enabled = discount.status !== 'active'
+    const reason = window.prompt(
+      `${enabled ? 'Enable' : 'Disable'} ${discount.code}. Why is this changing?`,
+    )
+    if (reason?.trim()) status.mutate({ id: discount.id, enabled, reason: reason.trim() })
+  }
+
+  return (
+    <section className="discounts-section" aria-labelledby="discounts-heading">
+      <div className="section-heading">
+        <div><p>Phase 10 · Pricing</p><h2 id="discounts-heading">Discounts</h2></div>
+      </div>
+      <div className="discounts-layout">
+        <form className="discount-form" onSubmit={submit}>
+          <h3>Create discount code</h3>
+          <label>Code<input name="discount-code" minLength={3} maxLength={32} required placeholder="WELCOME10" /></label>
+          <label>Type<select name="discount-kind" value={kind} onChange={(event) => setKind(event.target.value as 'percentage' | 'fixed')}><option value="percentage">Percentage</option><option value="fixed">Fixed amount</option></select></label>
+          <label>{kind === 'percentage' ? 'Percentage' : 'Amount'}<input name="discount-value" type="number" min="0.01" max={kind === 'percentage' ? '100' : undefined} step="0.01" required /></label>
+          <label>Currency<input name="discount-currency" pattern="[A-Za-z]{3}" defaultValue="EUR" required /></label>
+          <label>Minimum order amount<input name="discount-minimum" type="number" min="0" step="0.01" defaultValue="0" /></label>
+          <div className="discount-field-row">
+            <label>Starts<input name="discount-starts" type="datetime-local" /></label>
+            <label>Ends<input name="discount-ends" type="datetime-local" /></label>
+          </div>
+          <div className="discount-field-row">
+            <label>Global usage limit<input name="discount-usage-limit" type="number" min="1" /></label>
+            <label>Per-customer limit<input name="discount-customer-limit" type="number" min="1" /></label>
+          </div>
+          <label>Audit reason<textarea name="discount-reason" minLength={3} maxLength={500} required defaultValue="New storefront promotion" /></label>
+          <button className="primary-button" disabled={createDiscount.isPending}>{createDiscount.isPending ? 'Creating…' : 'Create discount'}</button>
+          {createDiscount.isError && <p className="panel-error" role="alert">The discount could not be created. Check the code, dates, value, and limits.</p>}
+        </form>
+        <div className="discount-list">
+          {discounts.isPending && <p className="panel-message">Loading discounts…</p>}
+          {discounts.isError && <p className="panel-error" role="alert">Discounts could not be loaded.</p>}
+          {discounts.data?.length === 0 && <div className="order-empty"><BadgePercent aria-hidden="true" /><strong>No discount codes yet</strong><span>Create a bounded promotion when the store needs one.</span></div>}
+          {discounts.data?.map((discount) => (
+            <article key={discount.id} className="discount-record">
+              <div><strong>{discount.code}</strong><span className={`order-state ${discount.status}`}>{discount.status}</span></div>
+              <p>{discount.kind === 'percentage' ? `${discount.value / 100}% off` : `${formatMoney(discount.value, discount.currency)} off`} · minimum {formatMoney(discount.minimum_order_minor, discount.currency)}</p>
+              <small>{discount.usage_count}{discount.usage_limit ? ` / ${discount.usage_limit}` : ''} uses{discount.per_customer_limit ? ` · ${discount.per_customer_limit} per customer` : ''}</small>
+              {(discount.starts_at || discount.ends_at) && <small>{discount.starts_at ? `Starts ${orderDate(discount.starts_at)}` : 'Active immediately'} · {discount.ends_at ? `Ends ${orderDate(discount.ends_at)}` : 'No end date'}</small>}
+              <button type="button" disabled={status.isPending} onClick={() => toggle(discount)}>{discount.status === 'active' ? 'Disable' : 'Enable'}</button>
+            </article>
+          ))}
+        </div>
+      </div>
+    </section>
   )
 }
 
@@ -1756,6 +1874,7 @@ const assignableCapabilities = [
   ['orders.read', 'View orders'],
   ['orders.fulfill', 'Fulfill orders'],
   ['orders.refund', 'Refund orders'],
+  ['discounts.manage', 'Manage discounts'],
   ['customers.read', 'View customers'],
   ['inventory.adjust', 'Adjust inventory'],
   ['media.upload', 'Upload media'],
