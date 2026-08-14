@@ -577,14 +577,51 @@ Discounts are implemented:
   lowercase form, verifies the server-priced total, and sees its snapshot on
   the resulting order.
 
-Phase 10 is complete. The next vertical slice is Phase 11 shipping, taxes, and
-settings.
+Phase 10 is complete.
+
+## Phase 11 progress
+
+Commercial settings, shipping, and tax pricing are implemented:
+
+- a singleton non-secret store identity with store name, support email,
+  currency, and an explicit destination-tax enablement switch;
+- capability-protected transactional settings replacement with normalized
+  country codes, non-overlapping active destination groups, bounded flat rates
+  and tax basis points, required staff reasons, immutable settings history, and
+  global audit records;
+- ordered shipping zones with an explicit-country-first worldwide fallback,
+  multiple active flat-rate methods per zone, and customer method selection;
+- a jurisdiction-neutral exclusive tax engine that is disabled by default and
+  requires a matching configured destination rule when enabled, without
+  seeding or claiming any production statutory rate;
+- deterministic server pricing in the planned order: base merchandise,
+  discount, shipping, destination tax, and final total;
+- checkout locking of the settings singleton and selected commercial rows so a
+  concurrent settings change cannot produce a mixed rule set;
+- immutable order shipping and tax snapshots containing source identifiers,
+  display names, destination, currency, taxable base, rate, behavior, and
+  amounts, including migration backfill for pre-Phase-11 orders;
+- storefront shipping choices and complete subtotal/discount/shipping/tax/total
+  presentation in the cart and order confirmation;
+- a responsive admin Settings workspace for store identity, zones, methods,
+  tax rules, integration configuration status, and recent actor-attributed
+  history, without accepting or exposing runtime secrets;
+- generated OpenAPI and TypeScript contracts for settings and cart shipping
+  selection;
+- PostgreSQL coverage proving calculation, authorization, audit history, and
+  snapshot stability after settings replacement;
+- a real admin/storefront browser journey that configures standard and express
+  shipping plus a test-only destination rate, selects the express method, and
+  verifies the resulting order totals and snapshots.
+
+Phase 11 is complete. The next vertical slice is Phase 12 operational dashboard.
 
 The complete Rust workspace suite, Clippy with warnings denied, API contract
-check, TypeScript checks, production builds, focused PostgreSQL discount/order
-lifecycle, and full admin/storefront discount, fulfillment, and refund browser
-journey passed on 2026-08-14. No request was sent to live Stripe or SES services
-because production credentials are not committed or available locally.
+check, TypeScript checks, production builds, focused PostgreSQL commercial
+settings/discount/order lifecycle, and the full admin/storefront settings,
+discount, fulfillment, and refund browser journey passed on 2026-08-14. No
+request was sent to live Stripe or SES services because production credentials
+are not committed or available locally.
 
 ## Environment notes
 
@@ -597,5 +634,8 @@ because production credentials are not committed or available locally.
   `npm run admin:deliver-notifications` frequently enough for the required
   delivery latency and alert on terminally failed jobs.
 - Preserve the user's untracked `commands.md` during future work.
+- Tax calculation remains disabled in the seed configuration. Production tax
+  rules must be confirmed for every served jurisdiction before enablement; the
+  implementation deliberately does not encode legal or statutory assumptions.
 - Generated public logo assets are reproducible with `npm run assets:brand`;
   the source at `images/logo.png` remains authoritative and untouched.

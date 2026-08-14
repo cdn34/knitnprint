@@ -87,6 +87,24 @@ and inspect codes in the admin Discounts workspace; every change requires an
 audit reason. Usage is counted when an order is created and is not restored by
 later cancellation or refund.
 
+Staff with `settings.manage` can maintain the non-secret store identity,
+currency, flat-rate shipping zones and methods, and destination tax rules in
+the admin Settings workspace. Explicit country zones take precedence over the
+single worldwide fallback. The server applies discounts before shipping, then
+calculates exclusive tax on discounted merchandise plus shipping. Cart totals
+are estimates from the same server calculator used at checkout; the selected
+shipping method, destination rule, tax base, rate, and amounts are stored as
+immutable order snapshots.
+
+Tax calculation is disabled by default and no production rate is seeded. When
+enabled, checkout requires a matching active destination rule; use an explicit
+zero-percent rule where that behavior is intentional. Confirm registration,
+place-of-supply, product classification, shipping-taxability, rounding,
+invoicing, and rate requirements with a qualified adviser for every served
+jurisdiction before enabling production tax collection. The Settings page also
+reports whether database, media, email, and payment integrations are configured,
+but never accepts or displays their credentials.
+
 Creating an order reserves stock. Development keeps the audited manual-payment
 path enabled. Hosted Stripe Checkout is enabled only when all of these values
 are present:
