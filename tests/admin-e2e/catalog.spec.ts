@@ -4,7 +4,7 @@ const ownerEmail = process.env.E2E_OWNER_EMAIL ?? 'owner@knitprint.local'
 const ownerPassword =
   process.env.E2E_OWNER_PASSWORD ?? 'local-development-passphrase'
 
-test('lets an owner create, preview, search, and publish a product', async ({
+test('lets an owner manage commercial settings and complete an order journey', async ({
   page,
 }) => {
   const unique = `${Date.now()}-${test.info().retry}`
@@ -19,6 +19,59 @@ test('lets an owner create, preview, search, and publish a product', async ({
   await page.getByLabel('Email address').fill(ownerEmail)
   await page.getByLabel('Password').fill(ownerPassword)
   await page.getByRole('button', { name: 'Sign in' }).click()
+  await expect(page.getByRole('link', { name: 'Settings' })).toBeVisible()
+  const resetSettings = await page.request.post('/api/admin/settings', {
+    data: {
+      store_name: 'KnitPrint',
+      support_email: 'hello@knitprint.local',
+      currency: 'EUR',
+      tax_enabled: false,
+      shipping_zones: [{
+        name: 'Worldwide',
+        country_codes: [],
+        active: true,
+        methods: [{ name: 'Standard shipping', flat_rate_minor: 0, active: true }],
+      }],
+      tax_rules: [],
+      reason: 'Reset browser commercial configuration',
+    },
+  })
+  expect(resetSettings.ok()).toBeTruthy()
+
+  await page.getByRole('link', { name: 'Settings' }).click()
+  const settings = page.getByRole('region', { name: 'Settings' })
+  const shippingCard = settings.locator('.settings-card').filter({ hasText: 'Shipping zones' })
+  const zoneForm = shippingCard.locator('form').filter({ hasText: 'Add shipping zone' })
+  await zoneForm.getByLabel('Zone name').fill('Portugal')
+  await zoneForm.getByLabel('Countries').fill('PT')
+  await zoneForm.getByLabel('Initial method name').fill('Standard tracked')
+  await zoneForm.getByLabel('Flat rate (EUR)').fill('6.00')
+  await zoneForm.getByLabel('Audit reason').fill('Configure Portugal browser shipping')
+  await zoneForm.getByRole('button', { name: 'Add zone' }).click()
+  await expect(shippingCard).toContainText('Standard tracked · €6.00')
+
+  const methodForm = shippingCard.locator('form').filter({ hasText: 'Add shipping method' })
+  await methodForm.getByLabel('Shipping zone').selectOption({ label: 'Portugal' })
+  await methodForm.getByLabel('Additional method name').fill('Express tracked')
+  await methodForm.getByLabel('Flat rate (EUR)').fill('12.00')
+  await methodForm.getByLabel('Audit reason').fill('Add browser express shipping')
+  await methodForm.getByRole('button', { name: 'Add method' }).click()
+  await expect(shippingCard).toContainText('Express tracked · €12.00')
+
+  const taxCard = settings.locator('.settings-card').filter({ hasText: 'Tax rules' })
+  await taxCard.getByLabel('Rule name').fill('Portugal browser tax')
+  await taxCard.getByLabel('Countries').fill('PT')
+  await taxCard.getByLabel('Rate (%)').fill('23')
+  await taxCard.getByLabel('Audit reason').fill('Configure confirmed browser tax fixture')
+  await taxCard.getByRole('button', { name: 'Add tax rule' }).click()
+  await expect(taxCard).toContainText('Portugal browser tax')
+
+  const identityCard = settings.locator('.settings-card').filter({ hasText: 'Store identity' })
+  await identityCard.getByLabel('Enable destination tax calculation').check()
+  await identityCard.getByLabel('Audit reason').fill('Enable destination tax for browser verification')
+  await identityCard.getByRole('button', { name: 'Save store settings' }).click()
+  await expect(settings).toContainText(/stripe configured|manual development/)
+
   await page.getByRole('link', { name: 'Discounts' }).click()
   const discounts = page.getByRole('region', { name: 'Discounts' })
   await discounts.getByLabel('Code').fill(discountCode)
@@ -256,10 +309,15 @@ test('lets an owner create, preview, search, and publish a product', async ({
   await page.getByLabel('City').fill('Lisbon')
   await page.getByLabel('Postal code').fill('1000-008')
   await page.getByRole('button', { name: 'Save delivery details' }).click()
+  await page
+    .getByLabel('Shipping method')
+    .selectOption({ label: 'Express tracked · €12.00' })
   await page.getByLabel('Discount code').fill(discountCode.toLowerCase())
   await page.getByRole('button', { name: 'Apply', exact: true }).click()
   await expect(page.locator('.cart-summary')).toContainText(discountCode)
-  await expect(page.locator('.cart-summary')).toContainText('€43.20')
+  await expect(page.locator('.cart-summary')).toContainText('Express tracked')
+  await expect(page.locator('.cart-summary')).toContainText('Tax · 23%')
+  await expect(page.locator('.cart-summary')).toContainText('€67.89')
   await page.getByRole('button', { name: 'Create order' }).click()
   const orderNumber = (await page.locator('.order-confirmation .eyebrow').textContent())?.trim()
   expect(orderNumber).toMatch(/KP-\d{4}-\d{6}/)
@@ -272,6 +330,8 @@ test('lets an owner create, preview, search, and publish a product', async ({
   await expect(page.getByLabel(`Order ${orderNumber}`)).toContainText(oatSku)
   await expect(page.getByLabel(`Order ${orderNumber}`)).toContainText('Order Browser')
   await expect(page.getByLabel(`Order ${orderNumber}`)).toContainText(`Discount ${discountCode}`)
+  await expect(page.getByLabel(`Order ${orderNumber}`)).toContainText('Express tracked')
+  await expect(page.getByLabel(`Order ${orderNumber}`)).toContainText('Tax (23%)')
   page.once('dialog', async (dialog) => {
     await dialog.accept('Browser development payment')
   })

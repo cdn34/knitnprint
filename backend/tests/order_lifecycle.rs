@@ -84,6 +84,47 @@ async fn checkout_snapshots_reserves_and_manual_payment_are_idempotent() {
         ..AppState::default()
     });
     let owner_cookie = login(&router).await;
+    let configured = request(
+        &router,
+        "POST",
+        "/api/admin/settings",
+        Some(&owner_cookie),
+        Some(json!({
+            "store_name": "KnitPrint Test Studio",
+            "support_email": "support@example.com",
+            "currency": "eur",
+            "tax_enabled": true,
+            "shipping_zones": [{
+                "name": "Portugal",
+                "country_codes": ["pt"],
+                "active": true,
+                "methods": [
+                    { "name": "Standard tracked", "flat_rate_minor": 500, "active": true },
+                    { "name": "Express tracked", "flat_rate_minor": 900, "active": true }
+                ]
+            }],
+            "tax_rules": [{
+                "name": "Test destination tax",
+                "country_codes": ["pt"],
+                "rate_basis_points": 2300,
+                "active": true
+            }],
+            "reason": "Configure deterministic order lifecycle pricing"
+        })),
+        None,
+    )
+    .await;
+    assert_eq!(configured.status(), StatusCode::OK);
+    let configured_body = response_json(configured).await;
+    assert_eq!(configured_body["currency"], "EUR");
+    assert_eq!(
+        configured_body["integrations"]["email"],
+        "development_mailbox"
+    );
+    assert_eq!(
+        configured_body["integrations"]["payments"],
+        "manual_development"
+    );
     let discount = request(
         &router,
         "POST",
@@ -132,6 +173,32 @@ async fn checkout_snapshots_reserves_and_manual_payment_are_idempotent() {
     )
     .await;
     assert_eq!(delivered.status(), StatusCode::OK);
+    let delivered_body = response_json(delivered).await;
+    assert_eq!(
+        delivered_body["shipping_methods"].as_array().unwrap().len(),
+        2
+    );
+    assert_eq!(
+        delivered_body["shipping"]["method_name"],
+        "Standard tracked"
+    );
+    let express_method_id = delivered_body["shipping_methods"][1]["id"]
+        .as_str()
+        .unwrap();
+    let selected_shipping = request(
+        &router,
+        "POST",
+        "/api/cart/shipping-method",
+        Some(&cart_cookie),
+        Some(json!({ "shipping_method_id": express_method_id })),
+        Some("order-shipping-method-0001"),
+    )
+    .await;
+    assert_eq!(selected_shipping.status(), StatusCode::OK);
+    assert_eq!(
+        response_json(selected_shipping).await["shipping"]["method_name"],
+        "Express tracked"
+    );
     let discounted = request(
         &router,
         "POST",
@@ -145,7 +212,9 @@ async fn checkout_snapshots_reserves_and_manual_payment_are_idempotent() {
     let discounted_body = response_json(discounted).await;
     assert_eq!(discounted_body["subtotal_minor"], 6400);
     assert_eq!(discounted_body["discount_minor"], 640);
-    assert_eq!(discounted_body["total_minor"], 5760);
+    assert_eq!(discounted_body["shipping_minor"], 900);
+    assert_eq!(discounted_body["tax_minor"], 1531);
+    assert_eq!(discounted_body["total_minor"], 8191);
     assert_eq!(discounted_body["discount"]["code"], "ORDER10");
 
     let created = request(
@@ -167,7 +236,11 @@ async fn checkout_snapshots_reserves_and_manual_payment_are_idempotent() {
     assert_eq!(created_body["payment_status"], "pending");
     assert_eq!(created_body["subtotal_minor"], 6400);
     assert_eq!(created_body["discount_minor"], 640);
-    assert_eq!(created_body["total_minor"], 5760);
+    assert_eq!(created_body["shipping_minor"], 900);
+    assert_eq!(created_body["shipping"]["method_name"], "Express tracked");
+    assert_eq!(created_body["tax_minor"], 1531);
+    assert_eq!(created_body["tax"]["rate_basis_points"], 2300);
+    assert_eq!(created_body["total_minor"], 8191);
     assert_eq!(created_body["discount"]["code"], "ORDER10");
     assert_eq!(created_body["lines"][0]["product_title"], "Order Loom");
     assert_eq!(created_body["shipping_address"]["line1"], "9 Thread Street");
@@ -209,6 +282,30 @@ async fn checkout_snapshots_reserves_and_manual_payment_are_idempotent() {
         .await
         .unwrap();
 
+    let reconfigured = request(
+        &router,
+        "POST",
+        "/api/admin/settings",
+        Some(&owner_cookie),
+        Some(json!({
+            "store_name": "KnitPrint Test Studio",
+            "support_email": "support@example.com",
+            "currency": "EUR",
+            "tax_enabled": false,
+            "shipping_zones": [{
+                "name": "Worldwide",
+                "country_codes": [],
+                "active": true,
+                "methods": [{ "name": "Free shipping", "flat_rate_minor": 0, "active": true }]
+            }],
+            "tax_rules": [],
+            "reason": "Verify historical commercial snapshots remain stable"
+        })),
+        None,
+    )
+    .await;
+    assert_eq!(reconfigured.status(), StatusCode::OK);
+
     let disabled = request(
         &router,
         "POST",
@@ -244,6 +341,16 @@ async fn checkout_snapshots_reserves_and_manual_payment_are_idempotent() {
     assert_eq!(detail_body["lines"][0]["unit_price_minor"], 3200);
     assert_eq!(detail_body["discount"]["code"], "ORDER10");
     assert_eq!(detail_body["discount"]["amount_minor"], 640);
+    assert_eq!(detail_body["shipping"]["method_name"], "Express tracked");
+    assert_eq!(detail_body["shipping_minor"], 900);
+    assert_eq!(detail_body["tax"]["rule_name"], "Test destination tax");
+    assert_eq!(detail_body["tax_minor"], 1531);
+    assert_eq!(detail_body["total_minor"], 8191);
+    let settings_history_count: i64 = sqlx::query_scalar("SELECT count(*) FROM settings_history")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(settings_history_count, 2);
     let usage_count: i64 =
         sqlx::query_scalar("SELECT count(*) FROM discount_usages WHERE order_id = $1")
             .bind(Uuid::parse_str(order_id).unwrap())
@@ -298,6 +405,19 @@ async fn checkout_snapshots_reserves_and_manual_payment_are_idempotent() {
             &router,
             "GET",
             "/api/admin/discounts",
+            Some(&reader_cookie),
+            None,
+            None,
+        )
+        .await
+        .status(),
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        request(
+            &router,
+            "GET",
+            "/api/admin/settings",
             Some(&reader_cookie),
             None,
             None,
@@ -483,7 +603,7 @@ async fn checkout_snapshots_reserves_and_manual_payment_are_idempotent() {
     assert_eq!(partial_refund.status(), StatusCode::OK);
     let partial_refund_body = response_json(partial_refund).await;
     assert_eq!(partial_refund_body["payment_status"], "partially_refunded");
-    assert_eq!(partial_refund_body["operations"]["refundable_minor"], 2560);
+    assert_eq!(partial_refund_body["operations"]["refundable_minor"], 4991);
     assert_eq!(partial_refund_body["refunds"][0]["amount_minor"], 3200);
     assert_eq!(partial_refund_body["refunds"][0]["restock"], true);
 
