@@ -558,6 +558,8 @@ main:focus { outline: none; }
 .cart-discount-form input { min-width: 0; padding: .65rem .7rem; border: 1px solid var(--border); border-radius: .5rem 0 0 .5rem; color: var(--ink); background: white; font: inherit; text-transform: uppercase; }
 .cart-discount-form button { padding: .65rem .8rem; border: 1px solid var(--knit-dark); border-radius: 0 .5rem .5rem 0; color: white; background: var(--knit-dark); font: inherit; font-size: .68rem; font-weight: 700; }
 .cart-discount-remove { margin-top: .65rem; }
+.cart-shipping-select { margin-top: .9rem; display: grid; gap: .4rem; color: var(--ink); font-size: .68rem; font-weight: 700; }
+.cart-shipping-select select { width: 100%; min-height: 42px; padding: .55rem .65rem; border: 1px solid var(--border); border-radius: .5rem; color: var(--ink); background: white; font: inherit; }
 .cart-summary > p { margin: 1.2rem 0; color: var(--ink-muted); font-size: .7rem; line-height: 1.6; }
 .cart-summary .button { width: 100%; border: 0; }
 .cart-summary .button:disabled { opacity: .65; }

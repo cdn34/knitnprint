@@ -34,6 +34,7 @@ import {
   Search,
   Send,
   ShieldCheck,
+  SlidersHorizontal,
   TriangleAlert,
   UsersRound,
   UserRoundX,
@@ -43,6 +44,7 @@ import {
   createApiClient,
   type CustomerDetail,
   type CustomerSummary,
+  type CommercialSettings,
   type Discount,
   type Product,
   type InventoryRecord,
@@ -210,6 +212,9 @@ function AdminShell({ profile }: Readonly<{ profile: StaffProfile }>) {
     ...(profile.capabilities.includes('discounts.manage')
       ? [{ id: 'discounts', label: 'Discounts', icon: BadgePercent }]
       : []),
+    ...(profile.capabilities.includes('settings.manage')
+      ? [{ id: 'settings', label: 'Settings', icon: SlidersHorizontal }]
+      : []),
     ...(profile.capabilities.includes('staff.manage')
       ? [{ id: 'staff', label: 'Staff', icon: ShieldCheck }]
       : []),
@@ -299,7 +304,9 @@ function AdminShell({ profile }: Readonly<{ profile: StaffProfile }>) {
                       ? 'Customer directory.'
                       : page === 'discounts'
                         ? 'Discount codes.'
-                      : 'Staff access.'}
+                        : page === 'settings'
+                          ? 'Store settings.'
+                          : 'Staff access.'}
             </h1>
           </div>
           <a className="storefront-link" href="http://localhost:3000">
@@ -331,6 +338,10 @@ function AdminShell({ profile }: Readonly<{ profile: StaffProfile }>) {
         {page === 'discounts' &&
           profile.capabilities.includes('discounts.manage') && (
             <DiscountManagement />
+          )}
+        {page === 'settings' &&
+          profile.capabilities.includes('settings.manage') && (
+            <SettingsManagement />
           )}
         {page === 'staff' && profile.capabilities.includes('staff.manage') && (
           <StaffManagement currentStaffId={profile.id} />
@@ -593,6 +604,11 @@ function OrderDetail({
           Discount {order.discount.code}: −{formatMoney(order.discount.amount_minor, order.discount.currency)}
         </p>
       )}
+      <div className="order-commercial-summary">
+        <span>Subtotal <b>{formatMoney(order.subtotal_minor, order.currency)}</b></span>
+        <span>{order.shipping.method_name} <b>{formatMoney(order.shipping_minor, order.currency)}</b></span>
+        <span>Tax ({order.tax.rate_basis_points / 100}%) <b>{formatMoney(order.tax_minor, order.currency)}</b></span>
+      </div>
       {canRecordPayment && order.payment.provider === 'manual' && order.payment_status === 'pending' && (
         <button className="primary-button" type="button" disabled={paymentPending} onClick={() => onRecordPayment(order)}>
           {paymentPending ? 'Recording…' : 'Record manual payment'}
@@ -860,6 +876,276 @@ function DiscountManagement() {
           ))}
         </div>
       </div>
+    </section>
+  )
+}
+
+const settingsKey = ['commercial-settings'] as const
+
+function settingsInput(settings: CommercialSettings) {
+  return {
+    store_name: settings.store_name,
+    support_email: settings.support_email,
+    currency: settings.currency,
+    tax_enabled: settings.tax_enabled,
+    shipping_zones: settings.shipping_zones.map((zone) => ({
+      name: zone.name,
+      country_codes: zone.country_codes,
+      active: zone.active,
+      methods: zone.methods.map((method) => ({
+        name: method.name,
+        flat_rate_minor: method.flat_rate_minor,
+        active: method.active,
+      })),
+    })),
+    tax_rules: settings.tax_rules.map((rule) => ({
+      name: rule.name,
+      country_codes: rule.country_codes,
+      rate_basis_points: rule.rate_basis_points,
+      active: rule.active,
+    })),
+  }
+}
+
+function countryList(value: FormDataEntryValue | null) {
+  return String(value ?? '')
+    .split(',')
+    .map((country) => country.trim().toUpperCase())
+    .filter(Boolean)
+}
+
+function SettingsManagement() {
+  const client = useQueryClient()
+  const settings = useQuery({ queryKey: settingsKey, queryFn: api.settings })
+  const updateSettings = useMutation({
+    mutationFn: api.updateSettings,
+    onSuccess: (next) => client.setQueryData(settingsKey, next),
+  })
+
+  function update(
+    changes: Partial<ReturnType<typeof settingsInput>>,
+    reason: string,
+  ) {
+    if (!settings.data) return
+    updateSettings.mutate({
+      ...settingsInput(settings.data),
+      ...changes,
+      reason,
+    })
+  }
+
+  function saveIdentity(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const form = new FormData(event.currentTarget)
+    update(
+      {
+        store_name: String(form.get('store-name') ?? ''),
+        support_email: String(form.get('support-email') ?? ''),
+        currency: String(form.get('store-currency') ?? ''),
+        tax_enabled: form.get('tax-enabled') === 'on',
+      },
+      String(form.get('settings-reason') ?? ''),
+    )
+  }
+
+  function addZone(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!settings.data) return
+    const form = new FormData(event.currentTarget)
+    const current = settingsInput(settings.data)
+    update(
+      {
+        shipping_zones: [
+          ...current.shipping_zones,
+          {
+            name: String(form.get('zone-name') ?? ''),
+            country_codes: countryList(form.get('zone-countries')),
+            active: true,
+            methods: [{
+              name: String(form.get('method-name') ?? ''),
+              flat_rate_minor: Math.round(Number(form.get('shipping-rate') ?? 0) * 100),
+              active: true,
+            }],
+          },
+        ],
+      },
+      String(form.get('zone-reason') ?? ''),
+    )
+  }
+
+  function removeZone(index: number, name: string) {
+    if (!settings.data || settings.data.shipping_zones.length <= 1) return
+    const reason = window.prompt(`Remove shipping zone ${name}. Why is this changing?`)
+    if (!reason?.trim()) return
+    const current = settingsInput(settings.data)
+    update(
+      { shipping_zones: current.shipping_zones.filter((_, position) => position !== index) },
+      reason.trim(),
+    )
+  }
+
+  function addShippingMethod(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!settings.data) return
+    const form = new FormData(event.currentTarget)
+    const zoneId = String(form.get('shipping-method-zone') ?? '')
+    const zoneIndex = settings.data.shipping_zones.findIndex((zone) => zone.id === zoneId)
+    if (zoneIndex < 0) return
+    const current = settingsInput(settings.data)
+    current.shipping_zones[zoneIndex].methods.push({
+      name: String(form.get('shipping-method-name') ?? ''),
+      flat_rate_minor: Math.round(Number(form.get('shipping-method-rate') ?? 0) * 100),
+      active: true,
+    })
+    update(
+      { shipping_zones: current.shipping_zones },
+      String(form.get('shipping-method-reason') ?? ''),
+    )
+  }
+
+  function removeShippingMethod(zoneIndex: number, methodIndex: number, name: string) {
+    if (!settings.data || settings.data.shipping_zones[zoneIndex].methods.length <= 1) return
+    const reason = window.prompt(`Remove shipping method ${name}. Why is this changing?`)
+    if (!reason?.trim()) return
+    const current = settingsInput(settings.data)
+    current.shipping_zones[zoneIndex].methods = current.shipping_zones[zoneIndex].methods.filter(
+      (_, position) => position !== methodIndex,
+    )
+    update({ shipping_zones: current.shipping_zones }, reason.trim())
+  }
+
+  function addTaxRule(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!settings.data) return
+    const form = new FormData(event.currentTarget)
+    const current = settingsInput(settings.data)
+    update(
+      {
+        tax_rules: [
+          ...current.tax_rules,
+          {
+            name: String(form.get('tax-name') ?? ''),
+            country_codes: countryList(form.get('tax-countries')),
+            rate_basis_points: Math.round(Number(form.get('tax-rate') ?? 0) * 100),
+            active: true,
+          },
+        ],
+      },
+      String(form.get('tax-reason') ?? ''),
+    )
+  }
+
+  function removeTaxRule(index: number, name: string) {
+    if (!settings.data) return
+    const reason = window.prompt(`Remove tax rule ${name}. Why is this changing?`)
+    if (!reason?.trim()) return
+    const current = settingsInput(settings.data)
+    update(
+      { tax_rules: current.tax_rules.filter((_, position) => position !== index) },
+      reason.trim(),
+    )
+  }
+
+  return (
+    <section className="settings-section" aria-labelledby="settings-heading">
+      <div className="section-heading">
+        <div><p>Phase 11 · Commercial configuration</p><h2 id="settings-heading">Settings</h2></div>
+      </div>
+      {settings.isPending && <p className="panel-message">Loading commercial settings…</p>}
+      {settings.isError && <p className="panel-error" role="alert">Settings could not be loaded.</p>}
+      {settings.data && (
+        <div className="settings-layout">
+          <div className="settings-column">
+            <form className="settings-card" key={settings.data.updated_at} onSubmit={saveIdentity}>
+              <h3>Store identity</h3>
+              <label>Store name<input name="store-name" defaultValue={settings.data.store_name} minLength={2} maxLength={100} required /></label>
+              <label>Support email<input name="support-email" type="email" defaultValue={settings.data.support_email} required /></label>
+              <label>Store currency<input name="store-currency" defaultValue={settings.data.currency} pattern="[A-Za-z]{3}" required /></label>
+              <label className="check-row"><input name="tax-enabled" type="checkbox" defaultChecked={settings.data.tax_enabled} /> Enable destination tax calculation</label>
+              <label>Audit reason<textarea name="settings-reason" minLength={3} maxLength={500} defaultValue="Update store identity and pricing behavior" required /></label>
+              <button className="primary-button" disabled={updateSettings.isPending}>Save store settings</button>
+            </form>
+
+            <div className="settings-card">
+              <h3>Shipping zones</h3>
+              {settings.data.shipping_zones.map((zone, index) => (
+                <article className="settings-record" key={zone.id}>
+                  <div><strong>{zone.name}</strong><span>{zone.country_codes.length ? zone.country_codes.join(', ') : 'Worldwide fallback'}</span></div>
+                  {zone.methods.map((method, methodIndex) => (
+                    <div className="settings-method-row" key={method.id}>
+                      <small>{method.name} · {formatMoney(method.flat_rate_minor, method.currency)}</small>
+                      <button type="button" disabled={zone.methods.length <= 1 || updateSettings.isPending} onClick={() => removeShippingMethod(index, methodIndex, method.name)}>Remove method</button>
+                    </div>
+                  ))}
+                  <button type="button" disabled={settings.data.shipping_zones.length <= 1 || updateSettings.isPending} onClick={() => removeZone(index, zone.name)}>Remove zone</button>
+                </article>
+              ))}
+              <form className="settings-inline-form" onSubmit={addZone}>
+                <h4>Add shipping zone</h4>
+                <label>Zone name<input name="zone-name" required placeholder="Portugal" /></label>
+                <label>Countries<input name="zone-countries" placeholder="PT, ES" /><small>Comma-separated ISO codes. Leave empty only for one worldwide fallback.</small></label>
+                <label>Initial method name<input name="method-name" required placeholder="Standard tracked" /></label>
+                <label>Flat rate ({settings.data.currency})<input name="shipping-rate" type="number" min="0" step="0.01" defaultValue="0" required /></label>
+                <label>Audit reason<textarea name="zone-reason" minLength={3} maxLength={500} defaultValue="Add a shipping destination and method" required /></label>
+                <button disabled={updateSettings.isPending}>Add zone</button>
+              </form>
+              <form className="settings-inline-form" onSubmit={addShippingMethod}>
+                <h4>Add shipping method</h4>
+                <label>Shipping zone<select name="shipping-method-zone" required>{settings.data.shipping_zones.map((zone) => <option value={zone.id} key={zone.id}>{zone.name}</option>)}</select></label>
+                <label>Additional method name<input name="shipping-method-name" required placeholder="Express tracked" /></label>
+                <label>Flat rate ({settings.data.currency})<input name="shipping-method-rate" type="number" min="0" step="0.01" required /></label>
+                <label>Audit reason<textarea name="shipping-method-reason" minLength={3} maxLength={500} defaultValue="Add a shipping service level" required /></label>
+                <button disabled={updateSettings.isPending}>Add method</button>
+              </form>
+            </div>
+          </div>
+
+          <div className="settings-column">
+            <div className="settings-card">
+              <h3>Tax rules</h3>
+              <p className="settings-note">Rates are exclusive and apply to discounted merchandise plus shipping. Configure them only after confirming the store’s tax obligations.</p>
+              {settings.data.tax_rules.length === 0 && <p className="panel-message">No destination tax rules configured.</p>}
+              {settings.data.tax_rules.map((rule, index) => (
+                <article className="settings-record" key={rule.id}>
+                  <div><strong>{rule.name}</strong><span>{rule.rate_basis_points / 100}%</span></div>
+                  <small>{rule.country_codes.length ? rule.country_codes.join(', ') : 'Worldwide fallback'}</small>
+                  <button type="button" disabled={updateSettings.isPending} onClick={() => removeTaxRule(index, rule.name)}>Remove rule</button>
+                </article>
+              ))}
+              <form className="settings-inline-form" onSubmit={addTaxRule}>
+                <h4>Add destination tax rule</h4>
+                <label>Rule name<input name="tax-name" required placeholder="Portugal standard rate" /></label>
+                <label>Countries<input name="tax-countries" placeholder="PT" required /></label>
+                <label>Rate (%)<input name="tax-rate" type="number" min="0" max="100" step="0.01" required /></label>
+                <label>Audit reason<textarea name="tax-reason" minLength={3} maxLength={500} defaultValue="Add a confirmed destination tax rate" required /></label>
+                <button disabled={updateSettings.isPending}>Add tax rule</button>
+              </form>
+            </div>
+
+            <div className="settings-card">
+              <h3>Integration health</h3>
+              <div className="integration-grid">
+                {Object.entries(settings.data.integrations).map(([name, status]) => (
+                  <div key={name}><span>{name.replaceAll('_', ' ')}</span><strong>{status.replaceAll('_', ' ')}</strong></div>
+                ))}
+              </div>
+              <p className="settings-note">This page reports configuration state only. Credentials and secrets remain in the runtime environment.</p>
+            </div>
+
+            <div className="settings-card">
+              <h3>Recent settings history</h3>
+              {settings.data.history.length === 0 && <p className="panel-message">No settings changes recorded yet.</p>}
+              {settings.data.history.map((record) => (
+                <article className="settings-history" key={record.id}>
+                  <strong>{record.reason}</strong>
+                  <small>{orderDate(record.created_at)}{record.actor_display_name ? ` · ${record.actor_display_name}` : ''}</small>
+                </article>
+              ))}
+            </div>
+          </div>
+          {updateSettings.isError && <p className="panel-error" role="alert">Settings were not changed. Check country overlaps, values, and the audit reason.</p>}
+        </div>
+      )}
     </section>
   )
 }

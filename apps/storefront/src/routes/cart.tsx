@@ -40,6 +40,7 @@ function CartPage() {
   const [submittingOrder, setSubmittingOrder] = useState(false)
   const [paymentOptions, setPaymentOptions] = useState<PaymentOptions | null>(null)
   const [discountBusy, setDiscountBusy] = useState(false)
+  const [shippingBusy, setShippingBusy] = useState(false)
 
   useEffect(() => {
     let active = true
@@ -183,6 +184,24 @@ function CartPage() {
       setMessage('The discount could not be removed. Please try again.')
     } finally {
       setDiscountBusy(false)
+    }
+  }
+
+  async function selectShippingMethod(shippingMethodId: string) {
+    setShippingBusy(true)
+    setMessage('')
+    try {
+      setCart(
+        await cartApi.selectCartShippingMethod(
+          { shipping_method_id: shippingMethodId },
+          cartMutationKey(),
+        ),
+      )
+      setMessage('Shipping method updated.')
+    } catch {
+      setMessage('That shipping method is no longer available.')
+    } finally {
+      setShippingBusy(false)
     }
   }
 
@@ -346,8 +365,31 @@ function CartPage() {
                   <strong>−{formatMoney(cart.discount_minor, currency)}</strong>
                 </div>
               )}
-              <div><span>Shipping</span><span>Calculated with your order</span></div>
+              {cart.shipping ? (
+                <div><span>Shipping · {cart.shipping.method_name}</span><strong>{formatMoney(cart.shipping_minor, currency)}</strong></div>
+              ) : (
+                <div><span>Shipping</span><span>Add delivery details</span></div>
+              )}
+              {cart.tax && (
+                <div><span>Tax · {cart.tax.rate_basis_points / 100}%</span><strong>{formatMoney(cart.tax_minor, currency)}</strong></div>
+              )}
               <div className="cart-total"><span>Total</span><strong>{formatMoney(cart.total_minor, currency)}</strong></div>
+              {cart.shipping_methods.length > 1 && cart.shipping && (
+                <label className="cart-shipping-select">
+                  Shipping method
+                  <select
+                    value={cart.shipping.id}
+                    disabled={shippingBusy}
+                    onChange={(event) => selectShippingMethod(event.target.value)}
+                  >
+                    {cart.shipping_methods.map((method) => (
+                      <option value={method.id} key={method.id}>
+                        {method.method_name} · {formatMoney(method.amount_minor, method.currency)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
               {cart.discount ? (
                 <button className="text-button cart-discount-remove" type="button" disabled={discountBusy} onClick={removeDiscount}>Remove discount</button>
               ) : (
@@ -356,7 +398,7 @@ function CartPage() {
                   <div><input id="discount-code" name="discount_code" minLength={3} maxLength={32} required autoCapitalize="characters" /><button type="submit" disabled={discountBusy}>{discountBusy ? 'Applying…' : 'Apply'}</button></div>
                 </form>
               )}
-              <p>Taxes and final availability will be validated before an order is created.</p>
+              <p>Shipping, tax, prices, and final availability are recalculated by the server before the order is created.</p>
               <button
                 className="button button--primary"
                 type="button"
@@ -417,7 +459,10 @@ function OrderConfirmation({
       <dl className="order-confirmation-summary">
         <div><dt>Status</dt><dd>{order.order_status}</dd></div>
         <div><dt>Payment</dt><dd>{order.payment_status}</dd></div>
+        <div><dt>Subtotal</dt><dd>{formatMoney(order.subtotal_minor, order.currency)}</dd></div>
         {order.discount && <div><dt>Discount ({order.discount.code})</dt><dd>−{formatMoney(order.discount_minor, order.currency)}</dd></div>}
+        <div><dt>Shipping ({order.shipping.method_name})</dt><dd>{formatMoney(order.shipping_minor, order.currency)}</dd></div>
+        <div><dt>Tax ({order.tax.rate_basis_points / 100}%)</dt><dd>{formatMoney(order.tax_minor, order.currency)}</dd></div>
         <div><dt>Total</dt><dd>{formatMoney(order.total_minor, order.currency)}</dd></div>
       </dl>
       <div className="order-confirmation-lines">
