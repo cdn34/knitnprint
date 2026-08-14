@@ -1198,6 +1198,115 @@
         }
       }
     },
+    "/api/admin/orders/{order_id}/cancel": {
+      "post": {
+        "tags": [
+          "admin orders"
+        ],
+        "operationId": "cancel",
+        "parameters": [
+          {
+            "name": "order_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CancelOrderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Order"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/admin/orders/{order_id}/fulfillments": {
       "post": {
         "tags": [
@@ -1396,6 +1505,125 @@
             }
           },
           "422": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/orders/{order_id}/refunds": {
+      "post": {
+        "tags": [
+          "admin orders"
+        ],
+        "operationId": "refund",
+        "parameters": [
+          {
+            "name": "order_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRefundRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Order"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Order"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
             "description": "",
             "content": {
               "application/json": {
@@ -2996,6 +3224,20 @@
           }
         }
       },
+      "CancelOrderRequest": {
+        "type": "object",
+        "required": [
+          "reason"
+        ],
+        "properties": {
+          "internal_note": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      },
       "Cart": {
         "type": "object",
         "required": [
@@ -3413,6 +3655,51 @@
             "items": {
               "$ref": "#/components/schemas/CreateVariantRequest"
             }
+          }
+        }
+      },
+      "CreateRefundLineRequest": {
+        "type": "object",
+        "required": [
+          "order_line_id",
+          "quantity"
+        ],
+        "properties": {
+          "order_line_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "quantity": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "CreateRefundRequest": {
+        "type": "object",
+        "required": [
+          "mode",
+          "restock",
+          "reason"
+        ],
+        "properties": {
+          "internal_note": {
+            "type": "string"
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CreateRefundLineRequest"
+            }
+          },
+          "mode": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "restock": {
+            "type": "boolean"
           }
         }
       },
@@ -4154,6 +4441,8 @@
           "shipping_address",
           "lines",
           "payment",
+          "refunds",
+          "operations",
           "fulfillments",
           "notifications",
           "timeline",
@@ -4198,6 +4487,9 @@
               "$ref": "#/components/schemas/NotificationStatus"
             }
           },
+          "operations": {
+            "$ref": "#/components/schemas/OrderOperations"
+          },
           "order_number": {
             "type": "string"
           },
@@ -4209,6 +4501,12 @@
           },
           "payment_status": {
             "type": "string"
+          },
+          "refunds": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Refund"
+            }
           },
           "shipping_address": {
             "$ref": "#/components/schemas/OrderAddress"
@@ -4378,6 +4676,38 @@
           },
           "variant_title": {
             "type": "string"
+          }
+        }
+      },
+      "OrderOperations": {
+        "type": "object",
+        "required": [
+          "can_cancel",
+          "can_refund",
+          "refundable_minor"
+        ],
+        "properties": {
+          "can_cancel": {
+            "type": "boolean"
+          },
+          "can_refund": {
+            "type": "boolean"
+          },
+          "cancel_unavailable_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "refund_unavailable_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "refundable_minor": {
+            "type": "integer",
+            "format": "int64"
           }
         }
       },
@@ -4691,6 +5021,128 @@
             "type": "string"
           },
           "url": {
+            "type": "string"
+          }
+        }
+      },
+      "Refund": {
+        "type": "object",
+        "required": [
+          "id",
+          "provider",
+          "status",
+          "mode",
+          "amount_minor",
+          "currency",
+          "restock",
+          "reason",
+          "created_at",
+          "lines"
+        ],
+        "properties": {
+          "actor_display_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "amount_minor": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "completed_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "failure_code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "failure_message": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "internal_note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RefundLine"
+            }
+          },
+          "mode": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "provider_refund_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "restock": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string"
+          }
+        }
+      },
+      "RefundLine": {
+        "type": "object",
+        "required": [
+          "order_line_id",
+          "product_title",
+          "variant_title",
+          "sku",
+          "quantity",
+          "amount_minor"
+        ],
+        "properties": {
+          "amount_minor": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "order_line_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "product_title": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "sku": {
+            "type": "string"
+          },
+          "variant_title": {
             "type": "string"
           }
         }

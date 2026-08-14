@@ -14,6 +14,7 @@ use uuid::Uuid;
 use crate::{
     AppState,
     auth::{AuthenticatedStaff, require_capability},
+    cancellations::{OrderOperations, Refund, load_operations, load_refunds},
     error::ErrorBody,
     fulfillment::{Fulfillment, load_for_order as load_fulfillments},
     inventory::{InventoryOperationError, commit_in_transaction, reserve_in_transaction},
@@ -54,6 +55,8 @@ pub struct Order {
     pub shipping_address: OrderAddress,
     pub lines: Vec<OrderLine>,
     pub payment: OrderPayment,
+    pub refunds: Vec<Refund>,
+    pub operations: OrderOperations,
     pub fulfillments: Vec<Fulfillment>,
     pub notifications: Vec<NotificationStatus>,
     pub timeline: Vec<OrderEvent>,
@@ -312,7 +315,12 @@ pub async fn customer_detail(
     .await;
     match owned {
         Ok(true) => match load_order(&pool, order_id).await {
-            Ok(Some(order)) => no_store(Json(order).into_response()),
+            Ok(Some(mut order)) => {
+                for refund in &mut order.refunds {
+                    refund.internal_note = None;
+                }
+                no_store(Json(order).into_response())
+            }
             Ok(None) => not_found(),
             Err(_) => unavailable(),
         },
@@ -909,6 +917,16 @@ pub(crate) async fn load_order(
     .await?;
     let attempts = load_attempts(pool, head.payment_id).await?;
     let history = load_status_events(pool, head.payment_id).await?;
+    let refunds = load_refunds(pool, order_id).await?;
+    let operations = load_operations(
+        pool,
+        order_id,
+        &head.order_status,
+        &head.payment_status,
+        &head.fulfillment_status,
+        head.payment_amount_minor,
+    )
+    .await?;
     let fulfillments = load_fulfillments(pool, order_id).await?;
     let notifications = load_notifications(pool, order_id).await?;
     let timeline = sqlx::query_as::<_, OrderEvent>(
@@ -964,6 +982,8 @@ pub(crate) async fn load_order(
             attempts,
             history,
         },
+        refunds,
+        operations,
         fulfillments,
         notifications,
         timeline,

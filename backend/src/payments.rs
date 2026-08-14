@@ -33,6 +33,10 @@ const STRIPE_API_VERSION: &str = "2026-02-25.clover";
 
 pub type ProviderFuture<'a> =
     Pin<Box<dyn Future<Output = Result<ProviderCheckout, PaymentProviderError>> + Send + 'a>>;
+pub type ProviderCancelFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<(), PaymentProviderError>> + Send + 'a>>;
+pub type ProviderRefundFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<ProviderRefund, PaymentProviderError>> + Send + 'a>>;
 
 #[derive(Clone, Debug)]
 pub struct ProviderCheckoutRequest {
@@ -51,12 +55,35 @@ pub struct ProviderCheckout {
     pub expires_at: i64,
 }
 
+#[derive(Clone, Debug)]
+pub struct ProviderRefundRequest {
+    pub refund_id: Uuid,
+    pub order_id: Uuid,
+    pub provider_charge_id: String,
+    pub amount_minor: i64,
+    pub reason: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct ProviderRefund {
+    pub provider_refund_id: String,
+    pub status: String,
+}
+
 #[derive(Debug, Error)]
 #[error("payment provider request failed")]
 pub struct PaymentProviderError;
 
 pub trait PaymentProvider: Send + Sync {
     fn create_checkout(&self, request: ProviderCheckoutRequest) -> ProviderFuture<'_>;
+
+    fn cancel_checkout(&self, _provider_payment_id: String) -> ProviderCancelFuture<'_> {
+        Box::pin(async { Err(PaymentProviderError) })
+    }
+
+    fn refund(&self, _request: ProviderRefundRequest) -> ProviderRefundFuture<'_> {
+        Box::pin(async { Err(PaymentProviderError) })
+    }
 }
 
 #[derive(Clone, Default)]
@@ -162,6 +189,10 @@ impl PaymentService {
     pub fn enabled(&self) -> bool {
         self.provider.is_some()
     }
+
+    pub(crate) fn provider(&self) -> Option<Arc<dyn PaymentProvider>> {
+        self.provider.clone()
+    }
 }
 
 struct StripeProvider {
@@ -175,6 +206,12 @@ struct StripeCheckoutResponse {
     id: String,
     url: Option<String>,
     expires_at: i64,
+}
+
+#[derive(Deserialize)]
+struct StripeRefundResponse {
+    id: String,
+    status: Option<String>,
 }
 
 impl PaymentProvider for StripeProvider {
@@ -239,6 +276,64 @@ impl PaymentProvider for StripeProvider {
                 provider_payment_id: checkout.id,
                 checkout_url,
                 expires_at: checkout.expires_at,
+            })
+        })
+    }
+
+    fn cancel_checkout(&self, provider_payment_id: String) -> ProviderCancelFuture<'_> {
+        Box::pin(async move {
+            let response = self
+                .client
+                .post(format!(
+                    "https://api.stripe.com/v1/checkout/sessions/{provider_payment_id}/expire"
+                ))
+                .basic_auth(self.secret_key.as_ref(), Some(""))
+                .header("Stripe-Version", STRIPE_API_VERSION)
+                .send()
+                .await
+                .map_err(|_| PaymentProviderError)?;
+            if response.status().is_success() {
+                Ok(())
+            } else {
+                Err(PaymentProviderError)
+            }
+        })
+    }
+
+    fn refund(&self, request: ProviderRefundRequest) -> ProviderRefundFuture<'_> {
+        Box::pin(async move {
+            let amount = request.amount_minor.to_string();
+            let order_id = request.order_id.to_string();
+            let refund_id = request.refund_id.to_string();
+            let form = [
+                ("payment_intent", request.provider_charge_id),
+                ("amount", amount),
+                ("reason", "requested_by_customer".to_owned()),
+                ("metadata[order_id]", order_id),
+                ("metadata[refund_id]", refund_id),
+                ("metadata[staff_reason]", request.reason),
+            ];
+            let response = self
+                .client
+                .post("https://api.stripe.com/v1/refunds")
+                .basic_auth(self.secret_key.as_ref(), Some(""))
+                .header("Stripe-Version", STRIPE_API_VERSION)
+                .header(
+                    "Idempotency-Key",
+                    format!("knitprint-refund-{}", request.refund_id),
+                )
+                .form(&form)
+                .send()
+                .await
+                .map_err(|_| PaymentProviderError)?;
+            if !response.status().is_success() {
+                return Err(PaymentProviderError);
+            }
+            let refund: StripeRefundResponse =
+                response.json().await.map_err(|_| PaymentProviderError)?;
+            Ok(ProviderRefund {
+                provider_refund_id: refund.id,
+                status: refund.status.unwrap_or_else(|| "pending".to_owned()),
             })
         })
     }
@@ -548,6 +643,8 @@ struct StripeCheckoutObject {
     id: String,
     object: String,
     payment_status: Option<String>,
+    payment_intent: Option<String>,
+    status: Option<String>,
     metadata: HashMap<String, String>,
 }
 
@@ -595,6 +692,41 @@ pub async fn stripe_webhook(
     let Ok(event) = serde_json::from_slice::<StripeEvent>(&body) else {
         return invalid_webhook();
     };
+    let Some(pool) = state.database else {
+        return payments_unavailable();
+    };
+    if event.data.object.object == "refund" {
+        if !matches!(
+            event.event_type.as_str(),
+            "refund.created" | "refund.updated" | "refund.failed"
+        ) {
+            return StatusCode::OK.into_response();
+        }
+        let Some(refund_id) = event
+            .data
+            .object
+            .metadata
+            .get("refund_id")
+            .and_then(|value| Uuid::parse_str(value).ok())
+        else {
+            return invalid_webhook();
+        };
+        let Some(status) = event.data.object.status.as_deref() else {
+            return invalid_webhook();
+        };
+        return match crate::cancellations::finalize_refund(
+            &pool,
+            refund_id,
+            &event.data.object.id,
+            status,
+            Some(&event.id),
+        )
+        .await
+        {
+            Ok(()) => StatusCode::OK.into_response(),
+            Err(_) => payments_unavailable(),
+        };
+    }
     if event.data.object.object != "checkout.session" {
         return StatusCode::OK.into_response();
     }
@@ -623,9 +755,6 @@ pub async fn stripe_webhook(
     else {
         return invalid_webhook();
     };
-    let Some(pool) = state.database else {
-        return payments_unavailable();
-    };
     let payload_hash: [u8; 32] = Sha256::digest(&body).into();
     match apply_webhook(
         &pool,
@@ -634,6 +763,7 @@ pub async fn stripe_webhook(
         &event.data.object.id,
         order_id,
         transition,
+        event.data.object.payment_intent.as_deref(),
         payload_hash,
     )
     .await
@@ -653,6 +783,7 @@ struct WebhookRecord {
     order_number: String,
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn apply_webhook(
     pool: &PgPool,
     event_id: &str,
@@ -660,6 +791,7 @@ async fn apply_webhook(
     provider_payment_id: &str,
     order_id: Uuid,
     transition: WebhookTransition,
+    provider_charge_id: Option<&str>,
     payload_hash: [u8; 32],
 ) -> Result<(), sqlx::Error> {
     let mut transaction = pool.begin().await?;
@@ -746,6 +878,13 @@ async fn apply_webhook(
                     .bind(record.payment_id)
                     .execute(&mut *transaction)
                     .await?;
+                if let Some(provider_charge_id) = provider_charge_id {
+                    sqlx::query("UPDATE order_payments SET provider_charge_id = $2 WHERE id = $1")
+                        .bind(record.payment_id)
+                        .bind(provider_charge_id)
+                        .execute(&mut *transaction)
+                        .await?;
+                }
                 sqlx::query("UPDATE orders SET order_status = 'confirmed', payment_status = 'paid', updated_at = now() WHERE id = $1")
                     .bind(order_id)
                     .execute(&mut *transaction)

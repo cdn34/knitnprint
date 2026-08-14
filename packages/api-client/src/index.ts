@@ -8,12 +8,15 @@ export type {
   CartDelivery,
   CartIssue,
   CartItem,
+  CancelOrderRequest,
   AdjustInventoryRequest,
   Category,
   CompleteUploadRequest,
   CreateAccountAddressRequest,
   CreateFulfillmentLineRequest,
   CreateFulfillmentRequest,
+  CreateRefundLineRequest,
+  CreateRefundRequest,
   CreateOrderRequest,
   CreateProductRequest,
   CreateCategoryRequest,
@@ -49,6 +52,7 @@ export type {
   OrderEvent,
   OrderLine,
   OrderPayment,
+  OrderOperations,
   OrderSummary,
   PaymentAttempt,
   PaymentCheckout,
@@ -56,6 +60,8 @@ export type {
   PaymentStatusEvent,
   Product,
   ProductMedia,
+  Refund,
+  RefundLine,
   ResetPasswordRequest,
   StaffProfile,
   StaffRecord,
@@ -71,9 +77,11 @@ import type {
   AdjustInventoryRequest,
   Category,
   Cart,
+  CancelOrderRequest,
   CompleteUploadRequest,
   CreateAccountAddressRequest,
   CreateFulfillmentRequest,
+  CreateRefundRequest,
   CreateOrderRequest,
   CreateProductRequest,
   CreateCategoryRequest,
@@ -308,6 +316,32 @@ export function createApiClient(options: ApiClientOptions = {}) {
       idempotencyKey: string,
     ) =>
       send<Order>(`/api/admin/orders/${orderId}/fulfillments`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'idempotency-key': idempotencyKey,
+        },
+        body: JSON.stringify(input),
+      }),
+    cancelOrder: (
+      orderId: string,
+      input: CancelOrderRequest,
+      idempotencyKey: string,
+    ) =>
+      send<Order>(`/api/admin/orders/${orderId}/cancel`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'idempotency-key': idempotencyKey,
+        },
+        body: JSON.stringify(input),
+      }),
+    createRefund: (
+      orderId: string,
+      input: CreateRefundRequest,
+      idempotencyKey: string,
+    ) =>
+      send<Order>(`/api/admin/orders/${orderId}/refunds`, {
         method: 'POST',
         headers: {
           'content-type': 'application/json',

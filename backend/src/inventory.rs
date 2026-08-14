@@ -75,6 +75,7 @@ enum StockTransition {
     Reserve,
     Release,
     Commit,
+    Restock,
 }
 
 impl StockTransition {
@@ -83,6 +84,7 @@ impl StockTransition {
             Self::Reserve => "reservation",
             Self::Release => "release",
             Self::Commit => "commitment",
+            Self::Restock => "restock",
         }
     }
 }
@@ -408,6 +410,22 @@ pub async fn commit_in_transaction(
     .await
 }
 
+pub async fn restock_in_transaction(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    variant_id: Uuid,
+    quantity: i64,
+    reason: &str,
+) -> Result<Availability, InventoryOperationError> {
+    transition_in_transaction(
+        transaction,
+        variant_id,
+        quantity,
+        reason,
+        StockTransition::Restock,
+    )
+    .await
+}
+
 async fn transition(
     pool: &PgPool,
     variant_id: Uuid,
@@ -473,6 +491,18 @@ async fn transition_in_transaction(
                     .checked_add(quantity)
                     .ok_or(InventoryOperationError::QuantityOverflow)?;
                 (current.available_quantity, reserved, committed, -quantity)
+            }
+            StockTransition::Restock => {
+                let committed = current
+                    .committed_quantity
+                    .checked_sub(quantity)
+                    .filter(|value| *value >= 0)
+                    .ok_or(InventoryOperationError::InsufficientAvailable)?;
+                let available = current
+                    .available_quantity
+                    .checked_add(quantity)
+                    .ok_or(InventoryOperationError::QuantityOverflow)?;
+                (available, current.reserved_quantity, committed, quantity)
             }
         };
 

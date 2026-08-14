@@ -19,6 +19,11 @@ export interface AssignCategoriesRequest {
   "category_ids": Array<string>
 }
 
+export interface CancelOrderRequest {
+  "internal_note"?: string
+  "reason": string
+}
+
 export interface Cart {
   "checkout_ready": boolean
   "currency"?: string | null
@@ -131,6 +136,19 @@ export interface CreateProductRequest {
   "slug": string
   "title": string
   "variants": Array<CreateVariantRequest>
+}
+
+export interface CreateRefundLineRequest {
+  "order_line_id": string
+  "quantity": number
+}
+
+export interface CreateRefundRequest {
+  "internal_note"?: string
+  "lines"?: Array<CreateRefundLineRequest>
+  "mode": string
+  "reason": string
+  "restock": boolean
 }
 
 export interface CreateStaffRequest {
@@ -345,10 +363,12 @@ export interface Order {
   "id": string
   "lines": Array<OrderLine>
   "notifications": Array<NotificationStatus>
+  "operations": OrderOperations
   "order_number": string
   "order_status": string
   "payment": OrderPayment
   "payment_status": string
+  "refunds": Array<Refund>
   "shipping_address": OrderAddress
   "shipping_minor": number
   "subtotal_minor": number
@@ -394,6 +414,14 @@ export interface OrderLine {
   "sku": string
   "unit_price_minor": number
   "variant_title": string
+}
+
+export interface OrderOperations {
+  "can_cancel": boolean
+  "can_refund": boolean
+  "cancel_unavailable_reason"?: string | null
+  "refund_unavailable_reason"?: string | null
+  "refundable_minor": number
 }
 
 export interface OrderPayment {
@@ -473,6 +501,34 @@ export interface ProductMedia {
   "position": number
   "thumbnail_url": string
   "url": string
+}
+
+export interface Refund {
+  "actor_display_name"?: string | null
+  "amount_minor": number
+  "completed_at"?: string | null
+  "created_at": string
+  "currency": string
+  "failure_code"?: string | null
+  "failure_message"?: string | null
+  "id": string
+  "internal_note"?: string | null
+  "lines": Array<RefundLine>
+  "mode": string
+  "provider": string
+  "provider_refund_id"?: string | null
+  "reason": string
+  "restock": boolean
+  "status": string
+}
+
+export interface RefundLine {
+  "amount_minor": number
+  "order_line_id": string
+  "product_title": string
+  "quantity": number
+  "sku": string
+  "variant_title": string
 }
 
 export interface ResetPasswordRequest {

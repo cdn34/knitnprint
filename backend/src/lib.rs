@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod cancellations;
 pub mod carts;
 pub mod catalog;
 pub mod config;
@@ -123,6 +124,14 @@ pub fn app(state: AppState) -> Router {
         .route(
             "/api/admin/orders/{order_id}/fulfillments",
             axum::routing::post(fulfillment::create),
+        )
+        .route(
+            "/api/admin/orders/{order_id}/cancel",
+            axum::routing::post(cancellations::cancel),
+        )
+        .route(
+            "/api/admin/orders/{order_id}/refunds",
+            axum::routing::post(cancellations::refund),
         )
         .route(
             "/api/admin/inventory/{variant_id}/movements",
