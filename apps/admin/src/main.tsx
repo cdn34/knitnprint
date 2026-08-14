@@ -303,6 +303,7 @@ function AdminShell({ profile }: Readonly<{ profile: StaffProfile }>) {
         {page === 'orders' && profile.capabilities.includes('orders.read') && (
           <OrderManagement
             canRecordPayment={profile.capabilities.includes('orders.fulfill')}
+            canRefund={profile.capabilities.includes('orders.refund')}
           />
         )}
         {page === 'products' &&
@@ -342,7 +343,8 @@ function orderDate(value: string) {
 
 function OrderManagement({
   canRecordPayment,
-}: Readonly<{ canRecordPayment: boolean }>) {
+  canRefund,
+}: Readonly<{ canRecordPayment: boolean; canRefund: boolean }>) {
   const client = useQueryClient()
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [queueOnly, setQueueOnly] = useState(false)
@@ -368,6 +370,27 @@ function OrderManagement({
       id: string
       input: Parameters<typeof api.createFulfillment>[1]
     }) => api.createFulfillment(id, input, crypto.randomUUID()),
+    onSuccess: (order) => {
+      client.setQueryData(['order', order.id], order)
+      client.invalidateQueries({ queryKey: ordersKey })
+    },
+  })
+  const cancellation = useMutation({
+    mutationFn: ({ id, reason, internalNote }: { id: string; reason: string; internalNote: string }) =>
+      api.cancelOrder(id, { reason, internal_note: internalNote }, crypto.randomUUID()),
+    onSuccess: (order) => {
+      client.setQueryData(['order', order.id], order)
+      client.invalidateQueries({ queryKey: ordersKey })
+    },
+  })
+  const refund = useMutation({
+    mutationFn: ({
+      id,
+      input,
+    }: {
+      id: string
+      input: Parameters<typeof api.createRefund>[1]
+    }) => api.createRefund(id, input, crypto.randomUUID()),
     onSuccess: (order) => {
       client.setQueryData(['order', order.id], order)
       client.invalidateQueries({ queryKey: ordersKey })
@@ -402,6 +425,37 @@ function OrderManagement({
     })
   }
 
+  function cancelOrder(order: Order) {
+    const reason = window.prompt(`Cancel ${order.order_number}. Give the customer-facing reason.`)
+    if (!reason?.trim()) return
+    const internalNote = window.prompt('Optional internal note (not shown to the customer).') ?? ''
+    cancellation.mutate({ id: order.id, reason: reason.trim(), internalNote: internalNote.trim() })
+  }
+
+  function refundOrder(event: FormEvent<HTMLFormElement>, order: Order) {
+    event.preventDefault()
+    const form = new FormData(event.currentTarget)
+    const mode = String(form.get('refund_mode') ?? 'partial')
+    const lines = mode === 'partial'
+      ? order.lines
+          .map((line) => ({
+            order_line_id: line.id,
+            quantity: Number(form.get(`refund-quantity-${line.id}`) ?? 0),
+          }))
+          .filter((line) => line.quantity > 0)
+      : []
+    refund.mutate({
+      id: order.id,
+      input: {
+        mode,
+        lines,
+        restock: form.get('restock') === 'on',
+        reason: String(form.get('refund_reason') ?? ''),
+        internal_note: String(form.get('refund_internal_note') ?? ''),
+      },
+    })
+  }
+
   const visibleOrders = useMemo(
     () =>
       queueOnly
@@ -418,7 +472,7 @@ function OrderManagement({
     <section className="orders-section" id="orders" aria-labelledby="orders-heading">
       <div className="section-heading">
         <div>
-          <p>Phase 8 · Fulfillment</p>
+          <p>Phase 9 · Cancellations & refunds</p>
           <h2 id="orders-heading">Orders</h2>
         </div>
         <div className="order-queue-controls" aria-label="Order queue">
@@ -453,12 +507,19 @@ function OrderManagement({
           loading={detail.isPending && Boolean(selectedId)}
           error={detail.isError}
           canRecordPayment={canRecordPayment}
+          canRefund={canRefund}
           paymentPending={payment.isPending}
           paymentError={payment.isError}
           onRecordPayment={recordPayment}
           fulfillmentPending={fulfillment.isPending}
           fulfillmentError={fulfillment.isError}
           onFulfill={fulfillOrder}
+          cancellationPending={cancellation.isPending}
+          cancellationError={cancellation.isError}
+          onCancel={cancelOrder}
+          refundPending={refund.isPending}
+          refundError={refund.isError}
+          onRefund={refundOrder}
         />
       </div>
     </section>
@@ -470,23 +531,37 @@ function OrderDetail({
   loading,
   error,
   canRecordPayment,
+  canRefund,
   paymentPending,
   paymentError,
   onRecordPayment,
   fulfillmentPending,
   fulfillmentError,
   onFulfill,
+  cancellationPending,
+  cancellationError,
+  onCancel,
+  refundPending,
+  refundError,
+  onRefund,
 }: Readonly<{
   order?: Order
   loading: boolean
   error: boolean
   canRecordPayment: boolean
+  canRefund: boolean
   paymentPending: boolean
   paymentError: boolean
   onRecordPayment: (order: Order) => void
   fulfillmentPending: boolean
   fulfillmentError: boolean
   onFulfill: (event: FormEvent<HTMLFormElement>, order: Order) => void
+  cancellationPending: boolean
+  cancellationError: boolean
+  onCancel: (order: Order) => void
+  refundPending: boolean
+  refundError: boolean
+  onRefund: (event: FormEvent<HTMLFormElement>, order: Order) => void
 }>) {
   if (loading) return <aside className="order-detail"><p className="panel-message">Loading order…</p></aside>
   if (error) return <aside className="order-detail"><p className="panel-message error" role="alert">The order could not be loaded.</p></aside>
@@ -508,6 +583,16 @@ function OrderDetail({
         </button>
       )}
       {paymentError && <p className="panel-error" role="alert">The payment could not be recorded.</p>}
+      {canRefund && order.operations.can_cancel && (
+        <section className="order-detail-section order-operation">
+          <h4>Cancel order</h4>
+          <p>This releases reserved stock. Paid or shipped orders cannot use this operation.</p>
+          <button className="danger-button" type="button" disabled={cancellationPending} onClick={() => onCancel(order)}>
+            {cancellationPending ? 'Cancelling…' : 'Cancel order'}
+          </button>
+          {cancellationError && <p className="panel-error" role="alert">The order could not be cancelled. Its state was left unchanged.</p>}
+        </section>
+      )}
       <section className="order-detail-section">
         <h4>Payment activity</h4>
         <p className="panel-message">
@@ -582,6 +667,43 @@ function OrderDetail({
                   : <span>{fulfillment.tracking_number}</span>
               )}
               <small>{fulfillment.lines.map((line) => `${line.quantity} × ${line.product_title}`).join(', ')}</small>
+            </article>
+          ))}
+        </section>
+      )}
+      {canRefund && order.operations.can_refund && (
+        <form className="fulfillment-form order-detail-section" onSubmit={(event) => onRefund(event, order)}>
+          <h4>Create refund</h4>
+          <p>The server calculates the amount from the immutable order lines. Refundable balance: {formatMoney(order.operations.refundable_minor, order.currency)}.</p>
+          <fieldset className="refund-mode">
+            <legend>Refund scope</legend>
+            <label><input type="radio" name="refund_mode" value="partial" defaultChecked /> Partial</label>
+            <label><input type="radio" name="refund_mode" value="full" /> Full remaining balance</label>
+          </fieldset>
+          {order.lines.map((line) => (
+            <label key={line.id}>
+              <span>{line.product_title} · {line.variant_title}</span>
+              <input name={`refund-quantity-${line.id}`} type="number" min="0" max={line.quantity} defaultValue="0" aria-label={`${line.product_title} quantity to refund`} />
+            </label>
+          ))}
+          <label className="check-row"><input name="restock" type="checkbox" /> Return selected quantities to available stock</label>
+          <label>Customer-facing reason<textarea name="refund_reason" minLength={3} maxLength={500} required /></label>
+          <label>Internal note<textarea name="refund_internal_note" maxLength={2000} /></label>
+          <button className="primary-button" disabled={refundPending}>{refundPending ? 'Submitting refund…' : 'Create refund'}</button>
+          {refundError && <p className="panel-error" role="alert">The refund could not be completed. Review the eligible balance and quantities.</p>}
+        </form>
+      )}
+      {order.refunds.length > 0 && (
+        <section className="order-detail-section">
+          <h4>Refund history</h4>
+          {order.refunds.map((record) => (
+            <article className="fulfillment-record" key={record.id}>
+              <strong>{formatMoney(record.amount_minor, record.currency)} · {record.status}</strong>
+              <time dateTime={record.created_at}>{orderDate(record.created_at)}</time>
+              <span>{record.reason}</span>
+              {record.internal_note && <small>Internal: {record.internal_note}</small>}
+              <small>{record.mode} refund · {record.restock ? 'Restocked' : 'Not restocked'}{record.actor_display_name ? ` · ${record.actor_display_name}` : ''}</small>
+              {record.failure_message && <small className="panel-error">{record.failure_message}</small>}
             </article>
           ))}
         </section>
