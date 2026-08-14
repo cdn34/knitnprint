@@ -545,14 +545,46 @@ Cancellation and refunds are implemented:
 - a real admin/storefront browser journey through payment, fulfillment, full
   refund, refund history, private notes, restocking, and mobile overflow.
 
-Phase 9 is complete. The next vertical slice is Phase 10 discounts.
+Phase 9 is complete.
+
+## Phase 10 progress
+
+Discounts are implemented:
+
+- capability-protected administration of fixed-amount and percentage codes,
+  with normalized unique codes, active date windows, currency, minimum order,
+  global usage limits, optional per-customer limits, and enable/disable status;
+- validated integer minor-unit and basis-point inputs, bounded date and usage
+  rules, staff reasons, actor attribution, and immutable audit history for
+  creation and status changes;
+- non-mutating cart evaluation with apply/remove operations, explicit
+  unavailable-code feedback, and server-derived subtotal, discount, and total;
+- checkout-time recalculation under a discount row lock, with usage counting in
+  the same transaction as order creation so concurrent checkout cannot exceed
+  a global limit;
+- immutable order discount snapshots containing the code, rule configuration,
+  subtotal, discount amount, and evaluated timestamp, preserving historical
+  orders after a code is disabled or changed;
+- customer-visible cart and order-confirmation discount totals, plus a
+  responsive admin Discounts workspace for code creation, inspection, and
+  status management;
+- generated OpenAPI and TypeScript schemas and client operations for the cart
+  and admin discount APIs;
+- PostgreSQL lifecycle coverage for fixed/percentage pricing, snapshot
+  stability, authorization, usage recording, and the exact concurrent global
+  limit boundary;
+- a real admin/storefront browser journey that creates a code, applies its
+  lowercase form, verifies the server-priced total, and sees its snapshot on
+  the resulting order.
+
+Phase 10 is complete. The next vertical slice is Phase 11 shipping, taxes, and
+settings.
 
 The complete Rust workspace suite, Clippy with warnings denied, API contract
-check, TypeScript checks, production builds, focused PostgreSQL order lifecycle,
-and full admin/storefront fulfillment/refund browser journey passed on
-2026-08-14. No
-request was sent to live Stripe or SES services because production credentials
-are not committed or available locally.
+check, TypeScript checks, production builds, focused PostgreSQL discount/order
+lifecycle, and full admin/storefront discount, fulfillment, and refund browser
+journey passed on 2026-08-14. No request was sent to live Stripe or SES services
+because production credentials are not committed or available locally.
 
 ## Environment notes
 
@@ -564,7 +596,6 @@ are not committed or available locally.
   schedule `npm run admin:cleanup-payments` before deployment. Schedule
   `npm run admin:deliver-notifications` frequently enough for the required
   delivery latency and alert on terminally failed jobs.
-- Phase 9 changes are currently uncommitted; preserve the user's untracked
-  `commands.md` when splitting them into focused commits.
+- Preserve the user's untracked `commands.md` during future work.
 - Generated public logo assets are reproducible with `npm run assets:brand`;
   the source at `images/logo.png` remains authoritative and untouched.

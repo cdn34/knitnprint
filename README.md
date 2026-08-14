@@ -76,6 +76,17 @@ reconciled by the API. Delivery capture creates or updates the guest
 customer/address attached to that cart; authenticated carts reuse the
 registered customer identity. Adding an item does not reserve stock.
 
+Customers can apply active fixed-amount or percentage discount codes in the
+cart. The API controls code normalization, dates, minimum order amounts,
+currency, and global or per-customer usage limits. Checkout recalculates the
+discount while locking its usage counter, then stores an immutable rule and
+amount snapshot on the order. A later discount change therefore cannot alter a
+historical order, and removing or rejecting a code never changes the cart's
+items or base prices. Staff with `discounts.manage` can create, enable, disable,
+and inspect codes in the admin Discounts workspace; every change requires an
+audit reason. Usage is counted when an order is created and is not restored by
+later cancellation or refund.
+
 Creating an order reserves stock. Development keeps the audited manual-payment
 path enabled. Hosted Stripe Checkout is enabled only when all of these values
 are present:
@@ -99,8 +110,9 @@ releases the reservation.
 Staff with `orders.refund` can cancel an unpaid, unfulfilled order or create a
 server-priced partial/full refund from the admin order detail. Every operation
 requires an idempotency key and reason; refunds also record an explicit
-restocking decision and support private internal notes. Stripe refunds use the verified payment-intent reference;
-manual refunds remain available only in development/test.
+restocking decision and support private internal notes. Stripe refunds use the
+verified payment-intent reference; manual refunds remain available only in
+development/test.
 
 Registration sends a 24-hour email-verification link, and forgotten-password
 requests send a one-hour single-use reset link. Development and test processes
