@@ -13,11 +13,24 @@ test('lets an owner create, preview, search, and publish a product', async ({
   const sku = `PLANTER-${unique}`
   const plumSku = `PLANTER-PLUM-${unique}`
   const oatSku = `PLANTER-OAT-${unique}`
+  const discountCode = `BROWSER-${unique}`.toUpperCase()
 
   await page.goto('/')
   await page.getByLabel('Email address').fill(ownerEmail)
   await page.getByLabel('Password').fill(ownerPassword)
   await page.getByRole('button', { name: 'Sign in' }).click()
+  await page.getByRole('link', { name: 'Discounts' }).click()
+  const discounts = page.getByRole('region', { name: 'Discounts' })
+  await discounts.getByLabel('Code').fill(discountCode)
+  await discounts.getByRole('spinbutton', { name: 'Percentage' }).fill('10')
+  await discounts.getByLabel('Global usage limit').fill('10')
+  await discounts.getByLabel('Per-customer limit').fill('1')
+  await discounts.getByLabel('Audit reason').fill('Browser checkout promotion')
+  await discounts.getByRole('button', { name: 'Create discount' }).click()
+  const discountRecord = discounts.getByRole('article').filter({ hasText: discountCode })
+  await expect(discountRecord).toContainText('10% off')
+  await expect(discountRecord).toContainText('active')
+
   await page.getByRole('link', { name: 'Products' }).click()
 
   const catalog = page.getByRole('region', { name: 'Products' })
@@ -243,6 +256,10 @@ test('lets an owner create, preview, search, and publish a product', async ({
   await page.getByLabel('City').fill('Lisbon')
   await page.getByLabel('Postal code').fill('1000-008')
   await page.getByRole('button', { name: 'Save delivery details' }).click()
+  await page.getByLabel('Discount code').fill(discountCode.toLowerCase())
+  await page.getByRole('button', { name: 'Apply', exact: true }).click()
+  await expect(page.locator('.cart-summary')).toContainText(discountCode)
+  await expect(page.locator('.cart-summary')).toContainText('€43.20')
   await page.getByRole('button', { name: 'Create order' }).click()
   const orderNumber = (await page.locator('.order-confirmation .eyebrow').textContent())?.trim()
   expect(orderNumber).toMatch(/KP-\d{4}-\d{6}/)
@@ -254,6 +271,7 @@ test('lets an owner create, preview, search, and publish a product', async ({
   await orderRow.click()
   await expect(page.getByLabel(`Order ${orderNumber}`)).toContainText(oatSku)
   await expect(page.getByLabel(`Order ${orderNumber}`)).toContainText('Order Browser')
+  await expect(page.getByLabel(`Order ${orderNumber}`)).toContainText(`Discount ${discountCode}`)
   page.once('dialog', async (dialog) => {
     await dialog.accept('Browser development payment')
   })

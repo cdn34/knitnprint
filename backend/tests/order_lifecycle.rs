@@ -83,6 +83,32 @@ async fn checkout_snapshots_reserves_and_manual_payment_are_idempotent() {
         manual_payments_enabled: true,
         ..AppState::default()
     });
+    let owner_cookie = login(&router).await;
+    let discount = request(
+        &router,
+        "POST",
+        "/api/admin/discounts",
+        Some(&owner_cookie),
+        Some(json!({
+            "code": "order10",
+            "kind": "percentage",
+            "value": 1000,
+            "currency": "eur",
+            "minimum_order_minor": 5000,
+            "starts_at": null,
+            "ends_at": null,
+            "usage_limit": 2,
+            "per_customer_limit": 1,
+            "reason": "Order lifecycle promotion"
+        })),
+        None,
+    )
+    .await;
+    assert_eq!(discount.status(), StatusCode::CREATED);
+    let discount_id = response_json(discount).await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
 
     let cart = request(&router, "GET", "/api/cart", None, None, None).await;
     let cart_cookie = response_cookie(&cart);
@@ -106,6 +132,21 @@ async fn checkout_snapshots_reserves_and_manual_payment_are_idempotent() {
     )
     .await;
     assert_eq!(delivered.status(), StatusCode::OK);
+    let discounted = request(
+        &router,
+        "POST",
+        "/api/cart/discount",
+        Some(&cart_cookie),
+        Some(json!({ "code": " order10 " })),
+        Some("order-discount-apply-0001"),
+    )
+    .await;
+    assert_eq!(discounted.status(), StatusCode::OK);
+    let discounted_body = response_json(discounted).await;
+    assert_eq!(discounted_body["subtotal_minor"], 6400);
+    assert_eq!(discounted_body["discount_minor"], 640);
+    assert_eq!(discounted_body["total_minor"], 5760);
+    assert_eq!(discounted_body["discount"]["code"], "ORDER10");
 
     let created = request(
         &router,
@@ -124,7 +165,10 @@ async fn checkout_snapshots_reserves_and_manual_payment_are_idempotent() {
     let created_body = response_json(created).await;
     assert_eq!(created_body["order_status"], "pending");
     assert_eq!(created_body["payment_status"], "pending");
-    assert_eq!(created_body["total_minor"], 6400);
+    assert_eq!(created_body["subtotal_minor"], 6400);
+    assert_eq!(created_body["discount_minor"], 640);
+    assert_eq!(created_body["total_minor"], 5760);
+    assert_eq!(created_body["discount"]["code"], "ORDER10");
     assert_eq!(created_body["lines"][0]["product_title"], "Order Loom");
     assert_eq!(created_body["shipping_address"]["line1"], "9 Thread Street");
     let order_id = created_body["id"].as_str().unwrap();
@@ -165,7 +209,16 @@ async fn checkout_snapshots_reserves_and_manual_payment_are_idempotent() {
         .await
         .unwrap();
 
-    let owner_cookie = login(&router).await;
+    let disabled = request(
+        &router,
+        "POST",
+        &format!("/api/admin/discounts/{discount_id}/status"),
+        Some(&owner_cookie),
+        Some(json!({ "enabled": false, "reason": "Promotion window closed" })),
+        None,
+    )
+    .await;
+    assert_eq!(disabled.status(), StatusCode::OK);
     let listed = request(
         &router,
         "GET",
@@ -189,6 +242,15 @@ async fn checkout_snapshots_reserves_and_manual_payment_are_idempotent() {
     let detail_body = response_json(detail).await;
     assert_eq!(detail_body["lines"][0]["product_title"], "Order Loom");
     assert_eq!(detail_body["lines"][0]["unit_price_minor"], 3200);
+    assert_eq!(detail_body["discount"]["code"], "ORDER10");
+    assert_eq!(detail_body["discount"]["amount_minor"], 640);
+    let usage_count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM discount_usages WHERE order_id = $1")
+            .bind(Uuid::parse_str(order_id).unwrap())
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(usage_count, 1);
 
     let paid = request(
         &router,
@@ -231,6 +293,19 @@ async fn checkout_snapshots_reserves_and_manual_payment_are_idempotent() {
         "integration-test-passphrase",
     )
     .await;
+    assert_eq!(
+        request(
+            &router,
+            "GET",
+            "/api/admin/discounts",
+            Some(&reader_cookie),
+            None,
+            None,
+        )
+        .await
+        .status(),
+        StatusCode::FORBIDDEN
+    );
     let denied = request(
         &router,
         "POST",
@@ -408,7 +483,7 @@ async fn checkout_snapshots_reserves_and_manual_payment_are_idempotent() {
     assert_eq!(partial_refund.status(), StatusCode::OK);
     let partial_refund_body = response_json(partial_refund).await;
     assert_eq!(partial_refund_body["payment_status"], "partially_refunded");
-    assert_eq!(partial_refund_body["operations"]["refundable_minor"], 3200);
+    assert_eq!(partial_refund_body["operations"]["refundable_minor"], 2560);
     assert_eq!(partial_refund_body["refunds"][0]["amount_minor"], 3200);
     assert_eq!(partial_refund_body["refunds"][0]["restock"], true);
 
@@ -888,6 +963,125 @@ async fn stripe_webhooks_are_signed_idempotent_and_drive_inventory() {
         .await
         .unwrap();
     admin.close().await;
+}
+
+#[tokio::test]
+async fn concurrent_checkout_cannot_exceed_a_discount_usage_limit() {
+    let Some(database_url) = env::var("DATABASE_URL").ok() else {
+        eprintln!("skipping PostgreSQL integration test because DATABASE_URL is not set");
+        return;
+    };
+    let schema = format!("discount_limit_test_{}", Uuid::new_v4().simple());
+    let admin = PgPoolOptions::new()
+        .max_connections(1)
+        .connect(&database_url)
+        .await
+        .unwrap();
+    sqlx::query(&format!(r#"CREATE SCHEMA "{schema}""#))
+        .execute(&admin)
+        .await
+        .unwrap();
+    let pool = isolated_pool(&database_url, &schema).await;
+    sqlx::migrate!("../migrations").run(&pool).await.unwrap();
+    let variant_id = insert_product(&pool).await;
+    sqlx::query("INSERT INTO discounts (id,code,kind,fixed_amount_minor,currency,usage_limit) VALUES ($1,'ONLYONCE','fixed',500,'EUR',1)")
+        .bind(Uuid::now_v7()).execute(&pool).await.unwrap();
+    let router = app(AppState {
+        database: Some(pool.clone()),
+        manual_payments_enabled: true,
+        ..AppState::default()
+    });
+    let first_cookie =
+        prepare_discount_cart(&router, variant_id, "first", "first@example.com").await;
+    let second_cookie =
+        prepare_discount_cart(&router, variant_id, "second", "second@example.com").await;
+
+    let first = request(
+        &router,
+        "POST",
+        "/api/orders",
+        Some(&first_cookie),
+        Some(json!({ "payment_method": "manual" })),
+        Some("discount-limit-checkout-first"),
+    );
+    let second = request(
+        &router,
+        "POST",
+        "/api/orders",
+        Some(&second_cookie),
+        Some(json!({ "payment_method": "manual" })),
+        Some("discount-limit-checkout-second"),
+    );
+    let (first, second) = tokio::join!(first, second);
+    let mut statuses = [first.status(), second.status()];
+    statuses.sort();
+    assert_eq!(statuses, [StatusCode::CREATED, StatusCode::CONFLICT]);
+    let counts: (i64, i64) = sqlx::query_as(
+        "SELECT (SELECT count(*) FROM discount_usages), (SELECT count(*) FROM orders)",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(counts, (1, 1));
+
+    pool.close().await;
+    sqlx::query(&format!(r#"DROP SCHEMA "{schema}" CASCADE"#))
+        .execute(&admin)
+        .await
+        .unwrap();
+    admin.close().await;
+}
+
+async fn prepare_discount_cart(
+    router: &axum::Router,
+    variant_id: Uuid,
+    suffix: &str,
+    email: &str,
+) -> String {
+    let cart = request(router, "GET", "/api/cart", None, None, None).await;
+    let cookie = response_cookie(&cart);
+    assert_eq!(
+        request(
+            router,
+            "POST",
+            "/api/cart/items",
+            Some(&cookie),
+            Some(json!({ "variant_id": variant_id, "quantity": 1 })),
+            Some(&format!("discount-limit-add-{suffix}")),
+        )
+        .await
+        .status(),
+        StatusCode::CREATED
+    );
+    let mut delivery = delivery_fixture();
+    delivery["email"] = json!(email);
+    assert_eq!(
+        request(
+            router,
+            "POST",
+            "/api/cart/delivery",
+            Some(&cookie),
+            Some(delivery),
+            Some(&format!("discount-limit-delivery-{suffix}")),
+        )
+        .await
+        .status(),
+        StatusCode::OK
+    );
+    assert_eq!(
+        request(
+            router,
+            "POST",
+            "/api/cart/discount",
+            Some(&cookie),
+            Some(json!({ "code": "onlyonce" })),
+            Some(&format!("discount-limit-apply-{suffix}")),
+        )
+        .await
+        .status(),
+        StatusCode::OK
+    );
+    cookie
 }
 
 async fn create_stripe_order(
