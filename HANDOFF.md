@@ -1,6 +1,6 @@
 # Project handoff
 
-Last updated: 2026-08-09
+Last updated: 2026-08-14
 
 ## Goal
 
@@ -479,20 +479,53 @@ Stripe payments are implemented:
   success, duplicate delivery, out-of-order failure, expiration, cleanup,
   inventory commitment/release, and manual-payment compatibility.
 
-Phase 7 is complete. The next vertical slice is Phase 8 fulfillment and
-notifications:
+Phase 7 is complete.
 
-- complete or line-level fulfillment;
-- carrier and tracking references;
-- fulfillment history and a paid-order operations queue;
-- confirmation and fulfillment emails;
-- retryable, idempotent background notification work.
+## Phase 8 progress
+
+Fulfillment and transactional notifications are implemented:
+
+- immutable fulfillment and line records supporting partial and complete
+  shipments, carrier and tracking references, staff reasons, and actor history;
+- paid-and-confirmed eligibility checks, order-row locking, and validation
+  against each line's remaining quantity so concurrent operations cannot
+  over-fulfill an order;
+- payload-bound fulfillment idempotency keys whose exact retries return the
+  original result while conflicting reuse is rejected;
+- automatic `partially_fulfilled` and `fulfilled` state transitions, with final
+  fulfillment completing the order and every shipment appending order timeline
+  and audit records;
+- a responsive admin paid-order queue, remaining-quantity fulfillment form,
+  carrier/tracking capture, shipment history, and notification delivery status;
+- transactionally enqueued, deduplicated order-confirmation and
+  fulfillment-created notification jobs, keeping commercial state independent
+  from email-provider availability;
+- a bounded `FOR UPDATE SKIP LOCKED` delivery worker with stale-claim recovery,
+  eight-attempt limits, exponential retry delays, and immutable attempt history;
+- development-mailbox and AWS SES delivery for confirmation and shipping
+  messages, including tracking links when supplied;
+- generated OpenAPI/TypeScript contracts and client support for fulfillment
+  creation and the expanded order detail;
+- PostgreSQL lifecycle coverage for authorization, partial/final fulfillment,
+  idempotent replay and conflict, notification failure/retry, durable commercial
+  state, and email delivery;
+- browser coverage for finding a paid order, creating its shipment, and seeing
+  its tracking, timeline, and notification status.
+
+Phase 8 is complete. The next vertical slice is Phase 9 cancellation and
+refunds:
+
+- cancellation before fulfillment;
+- complete and partial refunds with Stripe integration;
+- explicit restocking decisions;
+- staff reasons, internal notes, audit records, and order timeline events;
+- idempotent operations that preserve payment, order, and inventory state.
 
 The complete Rust workspace suite, Clippy with warnings denied, API contract
-check, TypeScript checks, and production builds passed on 2026-08-09. The
-focused PostgreSQL Stripe/manual order lifecycle and existing storefront order
-browser flow also pass. No request was sent to the live Stripe API because no
-Stripe account credentials are committed or available locally.
+check, TypeScript checks, production builds, focused PostgreSQL order lifecycle,
+and full admin/storefront fulfillment browser journey passed on 2026-08-14. No
+request was sent to live Stripe or SES services because production credentials
+are not committed or available locally.
 
 ## Environment notes
 
@@ -501,8 +534,10 @@ Stripe account credentials are committed or available locally.
   the next feature slice.
 - Production now requires `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, and an
   HTTPS `STOREFRONT_BASE_URL`; configure the documented webhook event set and
-  schedule `npm run admin:cleanup-payments` before deployment.
-- Work is committed in focused changes; preserve the user's untracked
-  `commands.md`.
+  schedule `npm run admin:cleanup-payments` before deployment. Schedule
+  `npm run admin:deliver-notifications` frequently enough for the required
+  delivery latency and alert on terminally failed jobs.
+- Phase 8 changes are currently uncommitted; preserve the user's untracked
+  `commands.md` when splitting them into focused commits.
 - Generated public logo assets are reproducible with `npm run assets:brand`;
   the source at `images/logo.png` remains authoritative and untouched.

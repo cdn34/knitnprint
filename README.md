@@ -205,6 +205,22 @@ cancels the unpaid order, releases reserved inventory, and appends payment,
 order-timeline, and audit history. Set `PAYMENT_CLEANUP_BATCH` from 1 to 1000 to
 change the bound; repeated and concurrent runs are safe.
 
+Fulfillment and order emails use a durable PostgreSQL outbox. Run its delivery
+worker continuously or once per minute:
+
+```bash
+DATABASE_URL=postgres://knitprint:knitprint@localhost:5432/knitprint \
+npm run admin:deliver-notifications
+```
+
+The worker claims at most 25 due jobs with `FOR UPDATE SKIP LOCKED`, records
+every delivery attempt, and retries failures with bounded exponential backoff
+for up to eight attempts. Set `NOTIFICATION_BATCH_SIZE` from 1 to 100 to change
+the batch. A stale processing claim becomes eligible again after 15 minutes.
+Order payment and fulfillment transactions only enqueue work; SES failure never
+rolls back or duplicates the commercial operation. Development delivery uses
+the in-memory mailbox, while production uses the configured SES sender.
+
 ## API contract
 
 The Rust routes and response types are the source of truth for OpenAPI. Regenerate
