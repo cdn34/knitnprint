@@ -15,6 +15,16 @@ export interface AdjustInventoryRequest {
   "reason": string
 }
 
+export interface AppliedDiscount {
+  "amount_minor": number
+  "code": string
+  "kind": string
+}
+
+export interface ApplyDiscountRequest {
+  "code": string
+}
+
 export interface AssignCategoriesRequest {
   "category_ids": Array<string>
 }
@@ -28,12 +38,15 @@ export interface Cart {
   "checkout_ready": boolean
   "currency"?: string | null
   "delivery"?: null | CartDelivery
+  "discount"?: null | AppliedDiscount
+  "discount_minor": number
   "expires_at": string
   "id": string
   "issues": Array<CartIssue>
   "item_count": number
   "items": Array<CartItem>
   "subtotal_minor": number
+  "total_minor": number
 }
 
 export interface CartAddress {
@@ -86,6 +99,11 @@ export interface Category {
   "slug": string
 }
 
+export interface ChangeDiscountStatusRequest {
+  "enabled": boolean
+  "reason": string
+}
+
 export interface ChangeProductStatusRequest {
   "status": string
 }
@@ -111,6 +129,19 @@ export interface CreateCategoryRequest {
   "description"?: string
   "name": string
   "slug": string
+}
+
+export interface CreateDiscountRequest {
+  "code": string
+  "currency": string
+  "ends_at"?: string | null
+  "kind": string
+  "minimum_order_minor"?: number
+  "per_customer_limit"?: number | null
+  "reason": string
+  "starts_at"?: string | null
+  "usage_limit"?: number | null
+  "value": number
 }
 
 export interface CreateFulfillmentLineRequest {
@@ -240,6 +271,22 @@ export interface DisableStaffRequest {
   "reason": string
 }
 
+export interface Discount {
+  "code": string
+  "created_at": string
+  "currency": string
+  "ends_at"?: string | null
+  "id": string
+  "kind": string
+  "minimum_order_minor": number
+  "per_customer_limit"?: number | null
+  "starts_at"?: string | null
+  "status": string
+  "usage_count": number
+  "usage_limit"?: number | null
+  "value": number
+}
+
 export interface ErrorBody {
   "error": ErrorDetail
 }
@@ -357,6 +404,7 @@ export interface Order {
   "created_at": string
   "currency": string
   "customer": OrderCustomer
+  "discount"?: null | OrderDiscount
   "discount_minor": number
   "fulfillment_status": string
   "fulfillments": Array<Fulfillment>
@@ -393,6 +441,14 @@ export interface OrderCustomer {
   "first_name": string
   "last_name": string
   "phone": string
+}
+
+export interface OrderDiscount {
+  "amount_minor": number
+  "code": string
+  "currency": string
+  "kind": string
+  "value": number
 }
 
 export interface OrderEvent {

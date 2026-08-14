@@ -1,8 +1,8 @@
 use utoipa::{OpenApi, openapi::OpenApi as OpenApiDocument};
 
 use crate::{
-    auth, cancellations, carts, catalog, customer_auth, customers, error, fulfillment, health,
-    inventory, media, notifications, orders, payments, staff,
+    auth, cancellations, carts, catalog, customer_auth, customers, discounts, error, fulfillment,
+    health, inventory, media, notifications, orders, payments, staff,
 };
 
 #[derive(OpenApi)]
@@ -32,6 +32,8 @@ use crate::{
         carts::update_item,
         carts::remove_item,
         carts::set_delivery,
+        carts::apply_discount,
+        carts::remove_discount,
         orders::create,
         orders::customer_detail,
         orders::admin_list,
@@ -40,6 +42,9 @@ use crate::{
         fulfillment::create,
         cancellations::cancel,
         cancellations::refund,
+        discounts::list,
+        discounts::create,
+        discounts::change_status,
         payments::options,
         payments::start_checkout,
         payments::stripe_webhook,
@@ -82,6 +87,7 @@ use crate::{
         customer_auth::CustomerAccountProfile,
         carts::AddCartItemRequest,
         carts::UpdateCartItemRequest,
+        carts::ApplyDiscountRequest,
         carts::Cart,
         carts::CartItem,
         carts::CartIssue,
@@ -106,6 +112,11 @@ use crate::{
         cancellations::Refund,
         cancellations::RefundLine,
         cancellations::OrderOperations,
+        discounts::Discount,
+        discounts::CreateDiscountRequest,
+        discounts::ChangeDiscountStatusRequest,
+        discounts::AppliedDiscount,
+        discounts::OrderDiscount,
         notifications::NotificationStatus,
         payments::PaymentOptions,
         payments::PaymentCheckout,
@@ -153,6 +164,7 @@ use crate::{
         ,(name = "orders", description = "Idempotent cart conversion and order confirmation")
         ,(name = "admin orders", description = "Capability-protected order operations")
         ,(name = "payments", description = "Server-owned payment initiation and verified provider events")
+        ,(name = "admin discounts", description = "Capability-protected promotion management")
     )
 )]
 struct ApiDoc;

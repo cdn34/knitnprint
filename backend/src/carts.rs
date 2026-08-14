@@ -16,6 +16,10 @@ use crate::{
     AppState,
     customer_auth::{CUSTOMER_SESSION_COOKIE, hash_token},
     customers::{CustomerAddressInput, GuestCustomerRequest, valid_guest},
+    discounts::{
+        AppliedDiscount, EvaluationError, evaluate, evaluate_in_transaction,
+        find_by_code_in_transaction, normalize_code,
+    },
     error::ErrorBody,
 };
 
@@ -33,6 +37,11 @@ pub struct UpdateCartItemRequest {
     pub quantity: i32,
 }
 
+#[derive(Deserialize, Serialize, ToSchema)]
+pub struct ApplyDiscountRequest {
+    pub code: String,
+}
+
 #[derive(Serialize, ToSchema)]
 pub struct Cart {
     pub id: Uuid,
@@ -40,6 +49,9 @@ pub struct Cart {
     pub items: Vec<CartItem>,
     pub item_count: i64,
     pub subtotal_minor: i64,
+    pub discount: Option<AppliedDiscount>,
+    pub discount_minor: i64,
+    pub total_minor: i64,
     pub checkout_ready: bool,
     pub issues: Vec<CartIssue>,
     pub delivery: Option<CartDelivery>,
@@ -96,6 +108,8 @@ pub struct CartAddress {
 #[derive(FromRow)]
 struct CartRow {
     currency: Option<String>,
+    customer_id: Option<Uuid>,
+    discount_id: Option<Uuid>,
     expires_at: String,
 }
 
@@ -595,6 +609,135 @@ pub async fn set_delivery(
     cart_response(&pool, session).await
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/cart/discount",
+    tag = "cart",
+    params(("Idempotency-Key" = String, Header)),
+    request_body = ApplyDiscountRequest,
+    responses(
+        (status = 200, body = Cart),
+        (status = 409, body = ErrorBody),
+        (status = 422, body = ErrorBody),
+        (status = 503, body = ErrorBody)
+    )
+)]
+pub async fn apply_discount(
+    State(state): State<AppState>,
+    jar: CookieJar,
+    headers: HeaderMap,
+    Json(input): Json<ApplyDiscountRequest>,
+) -> Response {
+    let Some(code) = normalize_code(&input.code) else {
+        return invalid_discount();
+    };
+    let Some(idempotency_hash) = idempotency_hash(&headers) else {
+        return invalid_idempotency_key();
+    };
+    let Some(pool) = state.database else {
+        return unavailable();
+    };
+    let session = match resolve_cart(&pool, jar, state.secure_cookies).await {
+        Ok(session) => session,
+        Err(_) => return unavailable(),
+    };
+    let signature = format!("discount:apply:{code}");
+    let mut tx = match pool.begin().await {
+        Ok(tx) => tx,
+        Err(_) => return unavailable(),
+    };
+    match claim_mutation(&mut tx, session.id, &idempotency_hash, &signature).await {
+        Ok(MutationClaim::Replay) => {
+            if tx.commit().await.is_err() {
+                return unavailable();
+            }
+            return cart_response(&pool, session).await;
+        }
+        Ok(MutationClaim::Conflict) => return idempotency_conflict(),
+        Ok(MutationClaim::New) => {}
+        Err(_) => return unavailable(),
+    }
+    let Some(discount_id) = (match find_by_code_in_transaction(&mut tx, &code).await {
+        Ok(value) => value,
+        Err(_) => return unavailable(),
+    }) else {
+        return invalid_discount();
+    };
+    let cart: Option<(Option<String>, Option<Uuid>, i64)> = sqlx::query_as(
+        r#"SELECT cart.currency::text, cart.customer_id,
+             COALESCE(sum(line.unit_price_minor * line.quantity),0)::bigint
+           FROM carts cart LEFT JOIN cart_lines line ON line.cart_id = cart.id
+           WHERE cart.id = $1 AND cart.status = 'active'
+           GROUP BY cart.id"#,
+    )
+    .bind(session.id)
+    .fetch_optional(&mut *tx)
+    .await
+    .ok()
+    .flatten();
+    let Some((Some(currency), customer_id, subtotal_minor)) = cart else {
+        return invalid_discount();
+    };
+    if evaluate_in_transaction(&mut tx, discount_id, subtotal_minor, &currency, customer_id)
+        .await
+        .is_err()
+    {
+        return invalid_discount();
+    }
+    if sqlx::query("UPDATE carts SET discount_id = $2, updated_at = now(), expires_at = now() + interval '30 days' WHERE id = $1")
+        .bind(session.id).bind(discount_id).execute(&mut *tx).await.is_err()
+        || tx.commit().await.is_err()
+    { return unavailable() }
+    cart_response(&pool, session).await
+}
+
+#[utoipa::path(
+    delete,
+    path = "/api/cart/discount",
+    tag = "cart",
+    params(("Idempotency-Key" = String, Header)),
+    responses(
+        (status = 200, body = Cart),
+        (status = 409, body = ErrorBody),
+        (status = 503, body = ErrorBody)
+    )
+)]
+pub async fn remove_discount(
+    State(state): State<AppState>,
+    jar: CookieJar,
+    headers: HeaderMap,
+) -> Response {
+    let Some(idempotency_hash) = idempotency_hash(&headers) else {
+        return invalid_idempotency_key();
+    };
+    let Some(pool) = state.database else {
+        return unavailable();
+    };
+    let session = match resolve_cart(&pool, jar, state.secure_cookies).await {
+        Ok(session) => session,
+        Err(_) => return unavailable(),
+    };
+    let mut tx = match pool.begin().await {
+        Ok(tx) => tx,
+        Err(_) => return unavailable(),
+    };
+    match claim_mutation(&mut tx, session.id, &idempotency_hash, "discount:remove").await {
+        Ok(MutationClaim::Replay) => {
+            if tx.commit().await.is_err() {
+                return unavailable();
+            }
+            return cart_response(&pool, session).await;
+        }
+        Ok(MutationClaim::Conflict) => return idempotency_conflict(),
+        Ok(MutationClaim::New) => {}
+        Err(_) => return unavailable(),
+    }
+    if sqlx::query("UPDATE carts SET discount_id = NULL, updated_at = now(), expires_at = now() + interval '30 days' WHERE id = $1")
+        .bind(session.id).execute(&mut *tx).await.is_err() || tx.commit().await.is_err()
+    { return unavailable() }
+    cart_response(&pool, session).await
+}
+
 async fn resolve_cart(
     pool: &PgPool,
     jar: CookieJar,
@@ -671,7 +814,7 @@ async fn load_cart(pool: &PgPool, cart_id: Uuid) -> Result<Cart, sqlx::Error> {
     .await?;
     let cart = sqlx::query_as::<_, CartRow>(
         r#"
-        SELECT currency::text AS currency,
+        SELECT currency::text AS currency, customer_id, discount_id,
                to_char(expires_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS expires_at
         FROM carts WHERE id = $1 AND status = 'active'
         "#,
@@ -764,6 +907,37 @@ async fn load_cart(pool: &PgPool, cart_id: Uuid) -> Result<Cart, sqlx::Error> {
             image_url: row.image_url,
         });
     }
+    let mut discount = None;
+    let mut discount_minor = 0;
+    if let Some(discount_id) = cart.discount_id {
+        match evaluate(
+            pool,
+            discount_id,
+            subtotal_minor,
+            cart.currency.as_deref().unwrap_or_default(),
+            cart.customer_id,
+        )
+        .await
+        {
+            Ok(value) => {
+                discount_minor = value.amount_minor;
+                discount = Some(AppliedDiscount {
+                    code: value.code,
+                    kind: value.kind,
+                    amount_minor: value.amount_minor,
+                });
+            }
+            Err(EvaluationError::Unavailable) => issues.push(CartIssue {
+                code: "discount_unavailable".into(),
+                line_id: None,
+                message:
+                    "The discount no longer applies to this cart. Remove it or choose another code."
+                        .into(),
+            }),
+            Err(EvaluationError::Database(error)) => return Err(error),
+        }
+    }
+    let total_minor = subtotal_minor.saturating_sub(discount_minor);
     let checkout_ready = !items.is_empty() && issues.is_empty() && delivery.is_some();
     Ok(Cart {
         id: cart_id,
@@ -771,6 +945,9 @@ async fn load_cart(pool: &PgPool, cart_id: Uuid) -> Result<Cart, sqlx::Error> {
         items,
         item_count,
         subtotal_minor,
+        discount,
+        discount_minor,
+        total_minor,
         checkout_ready,
         issues,
         delivery,
@@ -831,7 +1008,7 @@ async fn reset_empty_currency(
     cart_id: Uuid,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
-        "UPDATE carts SET currency = NULL WHERE id = $1 AND NOT EXISTS (SELECT 1 FROM cart_lines WHERE cart_id = $1)",
+        "UPDATE carts SET currency = NULL, discount_id = NULL WHERE id = $1 AND NOT EXISTS (SELECT 1 FROM cart_lines WHERE cart_id = $1)",
     )
     .bind(cart_id)
     .execute(&mut **transaction)
@@ -1202,4 +1379,15 @@ fn unavailable() -> Response {
         "cart_unavailable",
         "The cart is temporarily unavailable.",
     )
+}
+
+fn invalid_discount() -> Response {
+    (
+        StatusCode::UNPROCESSABLE_ENTITY,
+        Json(ErrorBody::new(
+            "discount_unavailable",
+            "That discount cannot be applied to this cart.",
+        )),
+    )
+        .into_response()
 }

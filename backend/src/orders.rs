@@ -15,6 +15,10 @@ use crate::{
     AppState,
     auth::{AuthenticatedStaff, require_capability},
     cancellations::{OrderOperations, Refund, load_operations, load_refunds},
+    discounts::{
+        EvaluationError as DiscountEvaluationError, OrderDiscount, evaluate_in_transaction,
+        load_order_discount, record_usage,
+    },
     error::ErrorBody,
     fulfillment::{Fulfillment, load_for_order as load_fulfillments},
     inventory::{InventoryOperationError, commit_in_transaction, reserve_in_transaction},
@@ -48,6 +52,7 @@ pub struct Order {
     pub currency: String,
     pub subtotal_minor: i64,
     pub discount_minor: i64,
+    pub discount: Option<OrderDiscount>,
     pub shipping_minor: i64,
     pub tax_minor: i64,
     pub total_minor: i64,
@@ -141,6 +146,7 @@ struct CheckoutCart {
     currency: Option<String>,
     customer_id: Option<Uuid>,
     shipping_address_id: Option<Uuid>,
+    discount_id: Option<Uuid>,
     expired: bool,
 }
 
@@ -475,7 +481,7 @@ async fn create_order(
     let mut transaction = pool.begin().await.map_err(|_| CreateError::Database)?;
     let cart = sqlx::query_as::<_, CheckoutCart>(
         r#"
-        SELECT id, status, currency::text AS currency, customer_id, shipping_address_id,
+        SELECT id, status, currency::text AS currency, customer_id, shipping_address_id, discount_id,
                expires_at <= now() AS expired
         FROM carts WHERE token_hash = $1
         FOR UPDATE
@@ -578,18 +584,43 @@ async fn create_order(
     .await?
     .ok_or(CreateError::NotReady)?;
 
+    let evaluated_discount = if let Some(discount_id) = cart.discount_id {
+        Some(
+            evaluate_in_transaction(
+                &mut transaction,
+                discount_id,
+                subtotal_minor,
+                currency,
+                Some(delivery.customer_id),
+            )
+            .await
+            .map_err(|error| match error {
+                DiscountEvaluationError::Unavailable => CreateError::Changed,
+                DiscountEvaluationError::Database(_) => CreateError::Database,
+            })?,
+        )
+    } else {
+        None
+    };
+    let discount_minor = evaluated_discount
+        .as_ref()
+        .map_or(0, |discount| discount.amount_minor);
+    let total_minor = subtotal_minor
+        .checked_sub(discount_minor)
+        .ok_or(CreateError::Changed)?;
+
     let order_id = Uuid::now_v7();
     let order_number: String = sqlx::query_scalar(
         r#"
         INSERT INTO orders (
             id, order_number, cart_id, customer_id, checkout_idempotency_hash,
-            currency, subtotal_minor, total_minor, customer_email,
+            currency, subtotal_minor, discount_minor, total_minor, customer_email,
             customer_first_name, customer_last_name, customer_phone,
             shipping_recipient_name, shipping_line1, shipping_line2, shipping_city,
             shipping_region, shipping_postal_code, shipping_country_code, shipping_phone
         ) VALUES (
             $1, 'KP-' || to_char(now(), 'YYYY') || '-' || lpad(nextval('order_number_sequence')::text, 6, '0'),
-            $2, $3, $4, $5, $6, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18
+            $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20
         ) RETURNING order_number
         "#,
     )
@@ -599,6 +630,8 @@ async fn create_order(
     .bind(idempotency_hash.as_slice())
     .bind(currency)
     .bind(subtotal_minor)
+    .bind(discount_minor)
+    .bind(total_minor)
     .bind(&delivery.email)
     .bind(&delivery.first_name)
     .bind(&delivery.last_name)
@@ -614,6 +647,12 @@ async fn create_order(
     .fetch_one(&mut *transaction)
     .await
     .map_err(|_| CreateError::Database)?;
+
+    if let Some(discount) = &evaluated_discount {
+        record_usage(&mut transaction, discount, order_id, delivery.customer_id)
+            .await
+            .map_err(|_| CreateError::Database)?;
+    }
 
     for (position, line) in lines.iter().enumerate() {
         sqlx::query(
@@ -653,7 +692,7 @@ async fn create_order(
     .bind(Uuid::now_v7())
     .bind(order_id)
     .bind(provider)
-    .bind(subtotal_minor)
+    .bind(total_minor)
     .bind(currency)
     .execute(&mut *transaction)
     .await
@@ -918,6 +957,7 @@ pub(crate) async fn load_order(
     let attempts = load_attempts(pool, head.payment_id).await?;
     let history = load_status_events(pool, head.payment_id).await?;
     let refunds = load_refunds(pool, order_id).await?;
+    let discount = load_order_discount(pool, order_id).await?;
     let operations = load_operations(
         pool,
         order_id,
@@ -951,6 +991,7 @@ pub(crate) async fn load_order(
         currency: head.currency,
         subtotal_minor: head.subtotal_minor,
         discount_minor: head.discount_minor,
+        discount,
         shipping_minor: head.shipping_minor,
         tax_minor: head.tax_minor,
         total_minor: head.total_minor,

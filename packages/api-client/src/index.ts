@@ -1,7 +1,10 @@
 export type {
   AddCartItemRequest,
+  AppliedDiscount,
+  ApplyDiscountRequest,
   AccountTokenRequest,
   ChangeProductStatusRequest,
+  ChangeDiscountStatusRequest,
   AssignCategoriesRequest,
   Cart,
   CartAddress,
@@ -15,6 +18,7 @@ export type {
   CreateAccountAddressRequest,
   CreateFulfillmentLineRequest,
   CreateFulfillmentRequest,
+  CreateDiscountRequest,
   CreateRefundLineRequest,
   CreateRefundRequest,
   CreateOrderRequest,
@@ -29,6 +33,7 @@ export type {
   CustomerLoginRequest,
   CustomerRegisterRequest,
   CustomerSummary,
+  Discount,
   DisableStaffRequest,
   ErrorBody,
   ErrorDetail,
@@ -47,6 +52,7 @@ export type {
   NotificationStatus,
   ManualPaymentRequest,
   Order,
+  OrderDiscount,
   OrderAddress,
   OrderCustomer,
   OrderEvent,
@@ -71,8 +77,10 @@ export type {
 
 import type {
   AddCartItemRequest,
+  ApplyDiscountRequest,
   AccountTokenRequest,
   ChangeProductStatusRequest,
+  ChangeDiscountStatusRequest,
   AssignCategoriesRequest,
   AdjustInventoryRequest,
   Category,
@@ -81,6 +89,7 @@ import type {
   CompleteUploadRequest,
   CreateAccountAddressRequest,
   CreateFulfillmentRequest,
+  CreateDiscountRequest,
   CreateRefundRequest,
   CreateOrderRequest,
   CreateProductRequest,
@@ -93,6 +102,7 @@ import type {
   CustomerLoginRequest,
   CustomerRegisterRequest,
   CustomerSummary,
+  Discount,
   DisableStaffRequest,
   ErrorBody,
   Health,
@@ -276,6 +286,20 @@ export function createApiClient(options: ApiClientOptions = {}) {
         method: 'DELETE',
         headers: { 'idempotency-key': idempotencyKey },
       }),
+    applyCartDiscount: (input: ApplyDiscountRequest, idempotencyKey: string) =>
+      send<Cart>('/api/cart/discount', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'idempotency-key': idempotencyKey,
+        },
+        body: JSON.stringify(input),
+      }),
+    removeCartDiscount: (idempotencyKey: string) =>
+      send<Cart>('/api/cart/discount', {
+        method: 'DELETE',
+        headers: { 'idempotency-key': idempotencyKey },
+      }),
     setCartDelivery: (input: GuestCustomerRequest, idempotencyKey: string) =>
       send<Cart>('/api/cart/delivery', {
         method: 'POST',
@@ -302,6 +326,22 @@ export function createApiClient(options: ApiClientOptions = {}) {
         method: 'POST',
       }),
     listOrders: () => send<Array<OrderSummary>>('/api/admin/orders'),
+    listDiscounts: () => send<Array<Discount>>('/api/admin/discounts'),
+    createDiscount: (input: CreateDiscountRequest) =>
+      send<Discount>('/api/admin/discounts', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(input),
+      }),
+    changeDiscountStatus: (
+      discountId: string,
+      input: ChangeDiscountStatusRequest,
+    ) =>
+      send<Discount>(`/api/admin/discounts/${discountId}/status`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(input),
+      }),
     order: (orderId: string) =>
       send<Order>(`/api/admin/orders/${orderId}`),
     recordManualPayment: (orderId: string, input: ManualPaymentRequest) =>

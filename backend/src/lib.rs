@@ -6,6 +6,7 @@ pub mod config;
 pub mod customer_auth;
 pub mod customer_retention;
 pub mod customers;
+pub mod discounts;
 pub mod email;
 pub mod error;
 pub mod fulfillment;
@@ -116,6 +117,14 @@ pub fn app(state: AppState) -> Router {
         .route("/api/admin/customers", get(customers::list))
         .route("/api/admin/customers/{customer_id}", get(customers::detail))
         .route("/api/admin/orders", get(orders::admin_list))
+        .route(
+            "/api/admin/discounts",
+            get(discounts::list).post(discounts::create),
+        )
+        .route(
+            "/api/admin/discounts/{discount_id}/status",
+            axum::routing::post(discounts::change_status),
+        )
         .route("/api/admin/orders/{order_id}", get(orders::admin_detail))
         .route(
             "/api/admin/orders/{order_id}/manual-payment",
@@ -172,6 +181,10 @@ pub fn app(state: AppState) -> Router {
         )
         .route("/api/cart", get(carts::get))
         .route("/api/cart/items", axum::routing::post(carts::add_item))
+        .route(
+            "/api/cart/discount",
+            axum::routing::post(carts::apply_discount).delete(carts::remove_discount),
+        )
         .route(
             "/api/cart/items/{line_id}",
             axum::routing::patch(carts::update_item).delete(carts::remove_item),
