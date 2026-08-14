@@ -11,8 +11,9 @@ use knitprint_api::{
     email::EmailService,
     notifications::deliver_due,
     payments::{
-        PaymentProvider, PaymentProviderError, PaymentService, ProviderCheckout,
-        ProviderCheckoutRequest, ProviderFuture,
+        PaymentProvider, PaymentProviderError, PaymentService, ProviderCancelFuture,
+        ProviderCheckout, ProviderCheckoutRequest, ProviderFuture, ProviderRefund,
+        ProviderRefundFuture, ProviderRefundRequest,
     },
 };
 use serde_json::{Value, json};
@@ -33,6 +34,19 @@ impl PaymentProvider for FakeStripe {
                 provider_payment_id: format!("cs_test_{}", request.order_id.simple()),
                 checkout_url: format!("https://checkout.stripe.test/{}", request.order_id),
                 expires_at: time::OffsetDateTime::now_utc().unix_timestamp() + 1800,
+            })
+        })
+    }
+
+    fn cancel_checkout(&self, _provider_payment_id: String) -> ProviderCancelFuture<'_> {
+        Box::pin(async { Ok(()) })
+    }
+
+    fn refund(&self, request: ProviderRefundRequest) -> ProviderRefundFuture<'_> {
+        Box::pin(async move {
+            Ok(ProviderRefund {
+                provider_refund_id: format!("re_test_{}", request.refund_id.simple()),
+                status: "succeeded".to_owned(),
             })
         })
     }
@@ -358,6 +372,225 @@ async fn checkout_snapshots_reserves_and_manual_payment_are_idempotent() {
     .await
     .unwrap();
     assert_eq!(audit_count, 2);
+
+    let denied_refund = request(
+        &router,
+        "POST",
+        &format!("/api/admin/orders/{order_id}/refunds"),
+        Some(&reader_cookie),
+        Some(json!({
+            "mode": "partial",
+            "lines": [{ "order_line_id": line_id, "quantity": 1 }],
+            "restock": true,
+            "reason": "Unauthorized return attempt",
+            "internal_note": ""
+        })),
+        Some("order-refund-denied-0001"),
+    )
+    .await;
+    assert_eq!(denied_refund.status(), StatusCode::FORBIDDEN);
+
+    let partial_refund = request(
+        &router,
+        "POST",
+        &format!("/api/admin/orders/{order_id}/refunds"),
+        Some(&owner_cookie),
+        Some(json!({
+            "mode": "partial",
+            "lines": [{ "order_line_id": line_id, "quantity": 1 }],
+            "restock": true,
+            "reason": "One item was returned",
+            "internal_note": "Return inspected in the development test"
+        })),
+        Some("order-refund-partial-0001"),
+    )
+    .await;
+    assert_eq!(partial_refund.status(), StatusCode::OK);
+    let partial_refund_body = response_json(partial_refund).await;
+    assert_eq!(partial_refund_body["payment_status"], "partially_refunded");
+    assert_eq!(partial_refund_body["operations"]["refundable_minor"], 3200);
+    assert_eq!(partial_refund_body["refunds"][0]["amount_minor"], 3200);
+    assert_eq!(partial_refund_body["refunds"][0]["restock"], true);
+
+    let refund_replay = request(
+        &router,
+        "POST",
+        &format!("/api/admin/orders/{order_id}/refunds"),
+        Some(&owner_cookie),
+        Some(json!({
+            "mode": "partial",
+            "lines": [{ "order_line_id": line_id, "quantity": 1 }],
+            "restock": true,
+            "reason": "One item was returned",
+            "internal_note": "Return inspected in the development test"
+        })),
+        Some("order-refund-partial-0001"),
+    )
+    .await;
+    assert_eq!(refund_replay.status(), StatusCode::OK);
+    assert_eq!(
+        response_json(refund_replay).await["refunds"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+
+    let conflicting_refund = request(
+        &router,
+        "POST",
+        &format!("/api/admin/orders/{order_id}/refunds"),
+        Some(&owner_cookie),
+        Some(json!({
+            "mode": "full",
+            "lines": [],
+            "restock": false,
+            "reason": "Conflicting retry",
+            "internal_note": ""
+        })),
+        Some("order-refund-partial-0001"),
+    )
+    .await;
+    assert_eq!(conflicting_refund.status(), StatusCode::CONFLICT);
+
+    let final_refund = request(
+        &router,
+        "POST",
+        &format!("/api/admin/orders/{order_id}/refunds"),
+        Some(&owner_cookie),
+        Some(json!({
+            "mode": "full",
+            "lines": [],
+            "restock": true,
+            "reason": "Refund remaining paid balance",
+            "internal_note": "Full refund after the partial return"
+        })),
+        Some("order-refund-full-0001"),
+    )
+    .await;
+    assert_eq!(final_refund.status(), StatusCode::OK);
+    let final_refund_body = response_json(final_refund).await;
+    assert_eq!(final_refund_body["payment_status"], "refunded");
+    assert_eq!(final_refund_body["order_status"], "completed");
+    assert_eq!(final_refund_body["operations"]["can_refund"], false);
+    assert_eq!(final_refund_body["refunds"].as_array().unwrap().len(), 2);
+    let quantities: (i64, i64, i64) = sqlx::query_as(
+        "SELECT available_quantity, reserved_quantity, committed_quantity FROM inventory_items WHERE variant_id = $1",
+    )
+    .bind(variant_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(quantities, (5, 0, 0));
+    let refund_audits: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM audit_log WHERE action IN ('order.refund_requested', 'order.refund') AND entity_id = $1",
+    )
+    .bind(order_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(refund_audits, 4);
+
+    let cancellable_cart = request(&router, "GET", "/api/cart", None, None, None).await;
+    let cancellable_cookie = response_cookie(&cancellable_cart);
+    assert_eq!(
+        request(
+            &router,
+            "POST",
+            "/api/cart/items",
+            Some(&cancellable_cookie),
+            Some(json!({ "variant_id": variant_id, "quantity": 1 })),
+            Some("cancel-cart-add-0001"),
+        )
+        .await
+        .status(),
+        StatusCode::CREATED
+    );
+    assert_eq!(
+        request(
+            &router,
+            "POST",
+            "/api/cart/delivery",
+            Some(&cancellable_cookie),
+            Some(delivery_fixture()),
+            Some("cancel-delivery-0001"),
+        )
+        .await
+        .status(),
+        StatusCode::OK
+    );
+    let cancellable_order = request(
+        &router,
+        "POST",
+        "/api/orders",
+        Some(&cancellable_cookie),
+        Some(json!({ "payment_method": "manual" })),
+        Some("cancel-checkout-0001"),
+    )
+    .await;
+    let cancellable_order_id = response_json(cancellable_order).await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let cancelled = request(
+        &router,
+        "POST",
+        &format!("/api/admin/orders/{cancellable_order_id}/cancel"),
+        Some(&owner_cookie),
+        Some(json!({
+            "reason": "Customer requested cancellation",
+            "internal_note": "Confirmed before payment"
+        })),
+        Some("order-cancellation-0001"),
+    )
+    .await;
+    assert_eq!(cancelled.status(), StatusCode::OK);
+    let cancelled_body = response_json(cancelled).await;
+    assert_eq!(cancelled_body["order_status"], "cancelled");
+    assert_eq!(cancelled_body["payment_status"], "cancelled");
+    assert_eq!(cancelled_body["operations"]["can_cancel"], false);
+    let cancellation_replay = request(
+        &router,
+        "POST",
+        &format!("/api/admin/orders/{cancellable_order_id}/cancel"),
+        Some(&owner_cookie),
+        Some(json!({
+            "reason": "Customer requested cancellation",
+            "internal_note": "Confirmed before payment"
+        })),
+        Some("order-cancellation-0001"),
+    )
+    .await;
+    assert_eq!(cancellation_replay.status(), StatusCode::OK);
+    let cancellation_conflict = request(
+        &router,
+        "POST",
+        &format!("/api/admin/orders/{cancellable_order_id}/cancel"),
+        Some(&owner_cookie),
+        Some(json!({
+            "reason": "Different cancellation reason",
+            "internal_note": ""
+        })),
+        Some("order-cancellation-0001"),
+    )
+    .await;
+    assert_eq!(cancellation_conflict.status(), StatusCode::CONFLICT);
+    let cancellation_audits: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM audit_log WHERE action = 'order.cancel' AND entity_id = $1",
+    )
+    .bind(&cancellable_order_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(cancellation_audits, 1);
+    let quantities: (i64, i64, i64) = sqlx::query_as(
+        "SELECT available_quantity, reserved_quantity, committed_quantity FROM inventory_items WHERE variant_id = $1",
+    )
+    .bind(variant_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(quantities, (5, 0, 0));
     assert!(
         sqlx::query("UPDATE order_lines SET product_title = 'Tampered' WHERE order_id = $1")
             .bind(Uuid::parse_str(order_id).unwrap())
@@ -397,6 +630,7 @@ async fn stripe_webhooks_are_signed_idempotent_and_drive_inventory() {
         .await
         .expect("migrations should run");
     let variant_id = insert_product(&pool).await;
+    insert_owner(&pool).await;
     let webhook_secret = "whsec_order_lifecycle";
     let router = app(AppState {
         database: Some(pool.clone()),
@@ -535,6 +769,51 @@ async fn stripe_webhooks_are_signed_idempotent_and_drive_inventory() {
     .unwrap();
     assert_eq!(quantities, (5, 0, 2));
 
+    let owner_cookie = login(&router).await;
+    let stripe_refund = request(
+        &router,
+        "POST",
+        &format!("/api/admin/orders/{order_id}/refunds"),
+        Some(&owner_cookie),
+        Some(json!({
+            "mode": "full",
+            "lines": [],
+            "restock": true,
+            "reason": "Stripe test refund",
+            "internal_note": "Provider adapter lifecycle"
+        })),
+        Some("stripe-refund-full-0001"),
+    )
+    .await;
+    assert_eq!(stripe_refund.status(), StatusCode::OK);
+    let stripe_refund_body = response_json(stripe_refund).await;
+    assert_eq!(stripe_refund_body["payment_status"], "refunded");
+    assert_eq!(stripe_refund_body["order_status"], "cancelled");
+    assert!(
+        stripe_refund_body["refunds"][0]["provider_refund_id"]
+            .as_str()
+            .unwrap()
+            .starts_with("re_test_")
+    );
+    let customer_refund_view = request(
+        &router,
+        "GET",
+        &format!("/api/orders/{order_id}"),
+        Some(&cart_cookie),
+        None,
+        None,
+    )
+    .await;
+    assert!(response_json(customer_refund_view).await["refunds"][0]["internal_note"].is_null());
+    let quantities: (i64, i64, i64) = sqlx::query_as(
+        "SELECT available_quantity, reserved_quantity, committed_quantity FROM inventory_items WHERE variant_id = $1",
+    )
+    .bind(variant_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(quantities, (7, 0, 0));
+
     let third_cart = request(
         &router,
         "GET",
@@ -601,7 +880,7 @@ async fn stripe_webhooks_are_signed_idempotent_and_drive_inventory() {
     .fetch_one(&pool)
     .await
     .unwrap();
-    assert_eq!(quantities, (5, 0, 2));
+    assert_eq!(quantities, (7, 0, 0));
 
     pool.close().await;
     sqlx::query(&format!(r#"DROP SCHEMA "{schema}" CASCADE"#))
@@ -673,6 +952,7 @@ fn stripe_event(
                 "id": session_id,
                 "object": "checkout.session",
                 "payment_status": payment_status,
+                "payment_intent": format!("pi_test_{}", order_id.replace('-', "")),
                 "metadata": { "order_id": order_id }
             }
         }

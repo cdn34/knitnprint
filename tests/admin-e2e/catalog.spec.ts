@@ -262,7 +262,7 @@ test('lets an owner create, preview, search, and publish a product', async ({
   await expect(orderRow).toContainText('paid')
 
   await page.getByRole('heading', { name: 'Create fulfillment' }).scrollIntoViewIfNeeded()
-  await page.locator('.fulfillment-form input[type="number"]').fill('1')
+  await page.getByRole('spinbutton', { name: /quantity to ship/ }).fill('1')
   await page.getByLabel('Carrier').fill('CTT')
   await page.getByLabel('Tracking number').fill(`TRACK-${unique}`)
   await page.getByLabel('Tracking URL').fill(`https://tracking.example.test/TRACK-${unique}`)
@@ -272,4 +272,24 @@ test('lets an owner create, preview, search, and publish a product', async ({
   await expect(page.getByLabel(`Order ${orderNumber}`)).toContainText(`TRACK-${unique}`)
   await expect(page.getByLabel(`Order ${orderNumber}`)).toContainText('fulfillment created')
   await expect(orderRow).toContainText('paid')
+
+  await page.getByRole('heading', { name: 'Create refund' }).scrollIntoViewIfNeeded()
+  await page.getByLabel('Full remaining balance').check()
+  await page.getByLabel('Return selected quantities to available stock').check()
+  await page.getByLabel('Customer-facing reason').fill('Browser return accepted')
+  await page.getByLabel('Internal note').fill('Verified by the Phase 9 browser journey')
+  await page.getByRole('button', { name: 'Create refund' }).click()
+  const orderDetail = page.getByLabel(`Order ${orderNumber}`)
+  await expect(orderDetail).toContainText('Payment refunded')
+  await expect(orderDetail).toContainText('Browser return accepted')
+  await expect(orderDetail).toContainText('Verified by the Phase 9 browser journey')
+  await expect(orderDetail).toContainText('Restocked')
+  await expect(orderRow).toContainText('refunded')
+
+  await page.setViewportSize({ width: 390, height: 844 })
+  const orderDimensions = await page.evaluate(() => ({
+    viewport: document.documentElement.clientWidth,
+    content: document.documentElement.scrollWidth,
+  }))
+  expect(orderDimensions.content).toBeLessThanOrEqual(orderDimensions.viewport)
 })
