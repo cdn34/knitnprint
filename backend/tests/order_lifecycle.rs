@@ -8,6 +8,8 @@ use hmac::{Hmac, Mac};
 use knitprint_api::{
     AppState, app,
     auth::hash_password,
+    email::EmailService,
+    notifications::deliver_due,
     payments::{
         PaymentProvider, PaymentProviderError, PaymentService, ProviderCheckout,
         ProviderCheckoutRequest, ProviderFuture,
@@ -59,8 +61,11 @@ async fn checkout_snapshots_reserves_and_manual_payment_are_idempotent() {
         .expect("migrations should run");
     let variant_id = insert_product(&pool).await;
     insert_owner(&pool).await;
+    insert_order_reader(&pool).await;
+    let email = EmailService::development("http://127.0.0.1:3000");
     let router = app(AppState {
         database: Some(pool.clone()),
+        email: email.clone(),
         manual_payments_enabled: true,
         ..AppState::default()
     });
@@ -185,6 +190,7 @@ async fn checkout_snapshots_reserves_and_manual_payment_are_idempotent() {
     assert_eq!(paid_body["order_status"], "confirmed");
     assert_eq!(paid_body["payment_status"], "paid");
     assert_eq!(paid_body["timeline"].as_array().unwrap().len(), 2);
+    assert_eq!(paid_body["notifications"][0]["kind"], "order_confirmation");
     let paid_replay = request(
         &router,
         "POST",
@@ -203,6 +209,155 @@ async fn checkout_snapshots_reserves_and_manual_payment_are_idempotent() {
     .await
     .unwrap();
     assert_eq!(quantities, (3, 0, 2));
+
+    let line_id = paid_body["lines"][0]["id"].as_str().unwrap();
+    let reader_cookie = login_as(
+        &router,
+        "orders-reader@test.invalid",
+        "integration-test-passphrase",
+    )
+    .await;
+    let denied = request(
+        &router,
+        "POST",
+        &format!("/api/admin/orders/{order_id}/fulfillments"),
+        Some(&reader_cookie),
+        Some(json!({
+            "carrier": "",
+            "tracking_number": "",
+            "tracking_url": "",
+            "reason": "Unauthorized shipment",
+            "lines": [{ "order_line_id": line_id, "quantity": 1 }]
+        })),
+        Some("order-fulfillment-denied-0001"),
+    )
+    .await;
+    assert_eq!(denied.status(), StatusCode::FORBIDDEN);
+    let partial = request(
+        &router,
+        "POST",
+        &format!("/api/admin/orders/{order_id}/fulfillments"),
+        Some(&owner_cookie),
+        Some(json!({
+            "carrier": "CTT",
+            "tracking_number": "TRACK-ONE",
+            "tracking_url": "https://tracking.example.test/TRACK-ONE",
+            "reason": "First parcel dispatched",
+            "lines": [{ "order_line_id": line_id, "quantity": 1 }]
+        })),
+        Some("order-fulfillment-0001"),
+    )
+    .await;
+    assert_eq!(partial.status(), StatusCode::CREATED);
+    let partial_body = response_json(partial).await;
+    assert_eq!(partial_body["order_status"], "confirmed");
+    assert_eq!(partial_body["fulfillment_status"], "partially_fulfilled");
+    assert_eq!(partial_body["lines"][0]["fulfilled_quantity"], 1);
+    assert_eq!(partial_body["fulfillments"][0]["carrier"], "CTT");
+    assert_eq!(partial_body["notifications"].as_array().unwrap().len(), 2);
+
+    let replay = request(
+        &router,
+        "POST",
+        &format!("/api/admin/orders/{order_id}/fulfillments"),
+        Some(&owner_cookie),
+        Some(json!({
+            "carrier": "CTT",
+            "tracking_number": "TRACK-ONE",
+            "tracking_url": "https://tracking.example.test/TRACK-ONE",
+            "reason": "First parcel dispatched",
+            "lines": [{ "order_line_id": line_id, "quantity": 1 }]
+        })),
+        Some("order-fulfillment-0001"),
+    )
+    .await;
+    assert_eq!(replay.status(), StatusCode::OK);
+    assert_eq!(
+        response_json(replay).await["fulfillments"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+
+    let conflict = request(
+        &router,
+        "POST",
+        &format!("/api/admin/orders/{order_id}/fulfillments"),
+        Some(&owner_cookie),
+        Some(json!({
+            "carrier": "CTT",
+            "tracking_number": "TRACK-TWO",
+            "tracking_url": "",
+            "reason": "Different request",
+            "lines": [{ "order_line_id": line_id, "quantity": 1 }]
+        })),
+        Some("order-fulfillment-0001"),
+    )
+    .await;
+    assert_eq!(conflict.status(), StatusCode::CONFLICT);
+
+    let failed_delivery = deliver_due(&pool, &EmailService::default(), 25)
+        .await
+        .unwrap();
+    assert_eq!(failed_delivery.failed, 2);
+    let status: (String, String) =
+        sqlx::query_as("SELECT order_status, fulfillment_status FROM orders WHERE id = $1")
+            .bind(Uuid::parse_str(order_id).unwrap())
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(status, ("confirmed".into(), "partially_fulfilled".into()));
+    sqlx::query("UPDATE notification_jobs SET next_attempt_at = now() WHERE status = 'pending'")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let delivered = deliver_due(&pool, &email, 25).await.unwrap();
+    assert_eq!(delivered.sent, 2);
+    let fulfillment_email = request(
+        &router,
+        "GET",
+        "/api/development/emails/latest?to=order%40example.com&kind=fulfillment_created",
+        None,
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(fulfillment_email.status(), StatusCode::OK);
+    assert_eq!(
+        response_json(fulfillment_email).await["subject"],
+        "Your KnitPrint order is on its way"
+    );
+
+    let completed = request(
+        &router,
+        "POST",
+        &format!("/api/admin/orders/{order_id}/fulfillments"),
+        Some(&owner_cookie),
+        Some(json!({
+            "carrier": "",
+            "tracking_number": "",
+            "tracking_url": "",
+            "reason": "Final parcel collected",
+            "lines": [{ "order_line_id": line_id, "quantity": 1 }]
+        })),
+        Some("order-fulfillment-0002"),
+    )
+    .await;
+    assert_eq!(completed.status(), StatusCode::CREATED);
+    let completed_body = response_json(completed).await;
+    assert_eq!(completed_body["order_status"], "completed");
+    assert_eq!(completed_body["fulfillment_status"], "fulfilled");
+    assert_eq!(completed_body["lines"][0]["fulfilled_quantity"], 2);
+    assert_eq!(completed_body["fulfillments"].as_array().unwrap().len(), 2);
+    let audit_count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM audit_log WHERE action = 'order.fulfill' AND entity_id = $1",
+    )
+    .bind(order_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(audit_count, 2);
     assert!(
         sqlx::query("UPDATE order_lines SET product_title = 'Tampered' WHERE order_id = $1")
             .bind(Uuid::parse_str(order_id).unwrap())
@@ -581,15 +736,40 @@ async fn insert_owner(pool: &PgPool) {
         .unwrap();
 }
 
+async fn insert_order_reader(pool: &PgPool) {
+    let password_hash = hash_password("integration-test-passphrase").unwrap();
+    let staff_id = Uuid::now_v7();
+    sqlx::query("INSERT INTO staff_users (id, email, display_name, password_hash, role) VALUES ($1, 'orders-reader@test.invalid', 'Order Reader', $2, 'staff')")
+        .bind(staff_id)
+        .bind(password_hash)
+        .execute(pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO staff_capabilities (staff_user_id, capability_name) VALUES ($1, 'orders.read')")
+        .bind(staff_id)
+        .execute(pool)
+        .await
+        .unwrap();
+}
+
 async fn login(router: &axum::Router) -> String {
+    login_as(
+        router,
+        "orders-owner@test.invalid",
+        "integration-test-passphrase",
+    )
+    .await
+}
+
+async fn login_as(router: &axum::Router, email: &str, password: &str) -> String {
     let response = request(
         router,
         "POST",
         "/api/admin/auth/login",
         None,
         Some(json!({
-            "email": "orders-owner@test.invalid",
-            "password": "integration-test-passphrase"
+            "email": email,
+            "password": password
         })),
         None,
     )
