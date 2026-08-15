@@ -110,3 +110,67 @@ jobs:
       - run: npm run admin:create-owner
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e:admin
+
+  hardening:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: knitprint
+          POSTGRES_USER: knitprint
+          POSTGRES_PASSWORD: knitprint
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U knitprint -d knitprint"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://knitprint:knitprint@localhost:5432/knitprint
+      RESTORE_DATABASE_URL: postgres://knitprint:knitprint@localhost:5432/knitprint_restore_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo run -p knitprint-api --bin migrate
+      - run: cargo run -p knitprint-api --bin seed
+      - run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c 'CREATE DATABASE knitprint_restore_test'
+      - run: scripts/verify-backup-restore.sh
+      - run: cargo run -p knitprint-api --bin check_operations
+      - name: Start API for bounded load test
+        run: |
+          cargo run -p knitprint-api --bin knitprint-api >/tmp/knitprint-api.log 2>&1 &
+          for attempt in {1..60}; do
+            if curl --fail --silent http://127.0.0.1:8080/api/ready >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/knitprint-api.log
+          exit 1
+      - uses: grafana/setup-k6-action@v1
+      - run: k6 run tests/load/public-api.js
+
+  security-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: rustsec/audit-check@v2.0.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: aquasecurity/trivy-action@0.33.1
+        with:
+          scan-type: fs
+          scanners: vuln,secret,misconfig
+          severity: CRITICAL,HIGH
+          exit-code: 1
+          ignore-unfixed: true
+      - run: docker build --tag knitprint-api:ci --file backend/Dockerfile .
+      - uses: aquasecurity/trivy-action@0.33.1
+        with:
+          image-ref: knitprint-api:ci
+          severity: CRITICAL,HIGH
+          exit-code: 1
+          ignore-unfixed: true

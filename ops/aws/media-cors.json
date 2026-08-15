@@ -1,0 +1,11 @@
+{
+  "CORSRules": [
+    {
+      "AllowedOrigins": ["https://REPLACE_WITH_ADMIN_ORIGIN"],
+      "AllowedMethods": ["PUT"],
+      "AllowedHeaders": ["content-type"],
+      "ExposeHeaders": ["etag"],
+      "MaxAgeSeconds": 300
+    }
+  ]
+}

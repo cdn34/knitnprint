@@ -4,8 +4,13 @@ use sqlx::postgres::PgPoolOptions;
 
 #[tokio::main]
 async fn main() -> ExitCode {
-    let Ok(database_url) = env::var("DATABASE_URL") else {
-        eprintln!("DATABASE_URL is required to migrate the database");
+    let Some(database_url) = env::var("MIGRATION_DATABASE_URL")
+        .ok()
+        .or_else(|| env::var("DATABASE_URL").ok())
+    else {
+        eprintln!(
+            "MIGRATION_DATABASE_URL (or DATABASE_URL for development) is required to migrate the database"
+        );
         return ExitCode::FAILURE;
     };
 

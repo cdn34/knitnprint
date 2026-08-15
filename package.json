@@ -29,6 +29,7 @@
     "admin:cleanup-carts": "cargo run -p knitprint-api --bin cleanup_carts",
     "admin:cleanup-payments": "cargo run -p knitprint-api --bin cleanup_payments",
     "admin:deliver-notifications": "cargo run -p knitprint-api --bin deliver_notifications",
+    "admin:check-operations": "cargo run -p knitprint-api --bin check_operations",
     "admin:create-owner": "cargo run -p knitprint-api --bin create_owner"
   },
   "devDependencies": {
