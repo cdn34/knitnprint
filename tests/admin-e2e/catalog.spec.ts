@@ -205,18 +205,18 @@ test('lets an owner manage commercial settings and complete an order journey', a
   await expect(plumInventoryRow).toContainText('2')
 
   await page.getByRole('link', { name: 'Dashboard' }).click()
-  const metrics = page.getByRole('region', { name: 'Inventory metrics' })
+  const metrics = page.getByRole('region', { name: 'Operational metrics' })
   await expect(metrics).toBeVisible()
   await expect(
     metrics
       .getByRole('article')
-      .filter({ hasText: 'Available units' })
+      .filter({ hasText: 'Orders today' })
       .locator('strong'),
   ).not.toHaveText('—')
   await expect(
     metrics
       .getByRole('article')
-      .filter({ hasText: 'Low stock' })
+      .filter({ hasText: 'Low-stock variants' })
       .locator('strong'),
   ).not.toHaveText('—')
   const stockSummary = page.getByRole('region', { name: 'Low-stock variants' })
@@ -229,7 +229,7 @@ test('lets an owner manage commercial settings and complete an order journey', a
   expect(dashboardDimensions.content).toBeLessThanOrEqual(
     dashboardDimensions.viewport,
   )
-  await stockSummary.getByRole('link', { name: 'Review inventory' }).click()
+  await stockSummary.getByRole('link', { name: 'View all' }).click()
 
   const filteredInventory = page.getByRole('region', { name: 'Inventory' })
   await filteredInventory.getByLabel('Search inventory').fill(plumSku)
@@ -339,6 +339,14 @@ test('lets an owner manage commercial settings and complete an order journey', a
   await expect(page.getByLabel(`Order ${orderNumber}`)).toContainText('Manual payment recorded')
   await expect(orderRow).toContainText('paid')
 
+  await page.getByRole('link', { name: 'Dashboard' }).click()
+  const fulfillmentQueue = page.getByRole('region', { name: 'Paid orders awaiting fulfillment' })
+  await expect(fulfillmentQueue).toContainText(orderNumber ?? '')
+  await fulfillmentQueue
+    .getByRole('link', { name: new RegExp(orderNumber ?? '') })
+    .click()
+  await expect(page.getByLabel(`Order ${orderNumber}`)).toBeVisible()
+
   await page.getByRole('heading', { name: 'Create fulfillment' }).scrollIntoViewIfNeeded()
   await page.getByRole('spinbutton', { name: /quantity to ship/ }).fill('1')
   await page.getByLabel('Carrier').fill('CTT')
@@ -364,10 +372,18 @@ test('lets an owner manage commercial settings and complete an order journey', a
   await expect(orderDetail).toContainText('Restocked')
   await expect(orderRow).toContainText('refunded')
 
+  await page.getByRole('link', { name: 'Dashboard' }).click()
+  const refundActivity = page.getByRole('region', { name: 'Recent refunds' })
+  await expect(refundActivity).toContainText(orderNumber ?? '')
+  await expect(refundActivity).toContainText('Browser return accepted')
   await page.setViewportSize({ width: 390, height: 844 })
   const orderDimensions = await page.evaluate(() => ({
     viewport: document.documentElement.clientWidth,
     content: document.documentElement.scrollWidth,
   }))
   expect(orderDimensions.content).toBeLessThanOrEqual(orderDimensions.viewport)
+  await refundActivity
+    .getByRole('link', { name: new RegExp(orderNumber ?? '') })
+    .click()
+  await expect(page.getByLabel(`Order ${orderNumber}`)).toContainText('Browser return accepted')
 })

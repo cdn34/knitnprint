@@ -83,6 +83,12 @@ async fn checkout_snapshots_reserves_and_manual_payment_are_idempotent() {
         manual_payments_enabled: true,
         ..AppState::default()
     });
+    assert_eq!(
+        request(&router, "GET", "/api/admin/dashboard", None, None, None)
+            .await
+            .status(),
+        StatusCode::UNAUTHORIZED
+    );
     let owner_cookie = login(&router).await;
     let configured = request(
         &router,
@@ -374,6 +380,37 @@ async fn checkout_snapshots_reserves_and_manual_payment_are_idempotent() {
     assert_eq!(paid_body["payment_status"], "paid");
     assert_eq!(paid_body["timeline"].as_array().unwrap().len(), 2);
     assert_eq!(paid_body["notifications"][0]["kind"], "order_confirmation");
+    let dashboard = request(
+        &router,
+        "GET",
+        "/api/admin/dashboard",
+        Some(&owner_cookie),
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(dashboard.status(), StatusCode::OK);
+    assert_eq!(
+        dashboard.headers()[header::CACHE_CONTROL],
+        "no-store, private"
+    );
+    let dashboard_body = response_json(dashboard).await;
+    assert_eq!(dashboard_body["timezone"], "UTC");
+    assert_eq!(dashboard_body["metrics"]["orders_total"], 1);
+    assert_eq!(dashboard_body["metrics"]["orders_today"], 1);
+    assert_eq!(dashboard_body["metrics"]["gross_revenue_minor"], 8191);
+    assert_eq!(dashboard_body["metrics"]["refunds_minor"], 0);
+    assert_eq!(dashboard_body["metrics"]["net_revenue_minor"], 8191);
+    assert_eq!(dashboard_body["metrics"]["paid_awaiting_fulfillment"], 1);
+    assert_eq!(dashboard_body["metrics"]["low_stock_variants"], 1);
+    assert_eq!(
+        dashboard_body["paid_awaiting_fulfillment"][0]["id"],
+        order_id
+    );
+    assert_eq!(
+        dashboard_body["low_stock_variants"][0]["variant_id"],
+        variant_id.to_string()
+    );
     let paid_replay = request(
         &router,
         "POST",
@@ -400,6 +437,29 @@ async fn checkout_snapshots_reserves_and_manual_payment_are_idempotent() {
         "integration-test-passphrase",
     )
     .await;
+    let reader_dashboard = request(
+        &router,
+        "GET",
+        "/api/admin/dashboard",
+        Some(&reader_cookie),
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(reader_dashboard.status(), StatusCode::OK);
+    let reader_dashboard_body = response_json(reader_dashboard).await;
+    assert_eq!(reader_dashboard_body["access"]["orders"], true);
+    assert_eq!(reader_dashboard_body["access"]["inventory"], false);
+    assert_eq!(
+        reader_dashboard_body["metrics"]["low_stock_variants"],
+        Value::Null
+    );
+    assert!(
+        reader_dashboard_body["low_stock_variants"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
     assert_eq!(
         request(
             &router,
@@ -669,6 +729,33 @@ async fn checkout_snapshots_reserves_and_manual_payment_are_idempotent() {
     assert_eq!(final_refund_body["order_status"], "completed");
     assert_eq!(final_refund_body["operations"]["can_refund"], false);
     assert_eq!(final_refund_body["refunds"].as_array().unwrap().len(), 2);
+    let refunded_dashboard = request(
+        &router,
+        "GET",
+        "/api/admin/dashboard",
+        Some(&owner_cookie),
+        None,
+        None,
+    )
+    .await;
+    let refunded_dashboard_body = response_json(refunded_dashboard).await;
+    assert_eq!(
+        refunded_dashboard_body["metrics"]["gross_revenue_minor"],
+        8191
+    );
+    assert_eq!(refunded_dashboard_body["metrics"]["refunds_minor"], 8191);
+    assert_eq!(refunded_dashboard_body["metrics"]["net_revenue_minor"], 0);
+    assert_eq!(
+        refunded_dashboard_body["metrics"]["paid_awaiting_fulfillment"],
+        0
+    );
+    assert_eq!(
+        refunded_dashboard_body["recent_refunds"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
     let quantities: (i64, i64, i64) = sqlx::query_as(
         "SELECT available_quantity, reserved_quantity, committed_quantity FROM inventory_items WHERE variant_id = $1",
     )
@@ -965,6 +1052,21 @@ async fn stripe_webhooks_are_signed_idempotent_and_drive_inventory() {
     assert_eq!(quantities, (5, 0, 2));
 
     let owner_cookie = login(&router).await;
+    let failed_dashboard = request(
+        &router,
+        "GET",
+        "/api/admin/dashboard",
+        Some(&owner_cookie),
+        None,
+        None,
+    )
+    .await;
+    let failed_dashboard_body = response_json(failed_dashboard).await;
+    assert_eq!(failed_dashboard_body["metrics"]["failed_payments"], 1);
+    assert_eq!(
+        failed_dashboard_body["failed_payments"][0]["order_id"],
+        expired_order_id
+    );
     let stripe_refund = request(
         &router,
         "POST",

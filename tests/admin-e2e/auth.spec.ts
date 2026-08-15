@@ -25,11 +25,11 @@ test('protects the admin shell with a persistent staff session', async ({
   await expect(page.getByRole('heading', { name: /Good to see you/ })).toBeVisible()
   await page.reload()
   await expect(page.getByRole('heading', { name: /Good to see you/ })).toBeVisible()
-  const metrics = page.getByRole('region', { name: 'Inventory metrics' })
+  const metrics = page.getByRole('region', { name: 'Operational metrics' })
   await expect(
     metrics
       .getByRole('article')
-      .filter({ hasText: 'Low stock' })
+      .filter({ hasText: 'Low-stock variants' })
       .locator('strong'),
   ).not.toHaveText('—')
   await expect(page.getByRole('region', { name: 'Low-stock variants' })).toBeVisible()
