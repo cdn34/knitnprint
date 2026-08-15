@@ -1,6 +1,7 @@
 import {
   StrictMode,
   type FormEvent,
+  type ReactNode,
   useEffect,
   useMemo,
   useState,
@@ -220,15 +221,17 @@ function AdminShell({ profile }: Readonly<{ profile: StaffProfile }>) {
       : []),
   ] as const
   type PageId = (typeof availablePages)[number]['id']
-  const pageFromHash = () => {
-    const requested = window.location.hash.slice(1)
-    return (
-      availablePages.find((page) => page.id === requested)?.id ?? 'dashboard'
-    )
+  const targetFromHash = () => {
+    const [requested, entityId] = window.location.hash.slice(1).split('/')
+    return {
+      page: availablePages.find((page) => page.id === requested)?.id ?? 'dashboard',
+      entityId: entityId || undefined,
+    }
   }
-  const [page, setPage] = useState<PageId>(pageFromHash)
+  const [target, setTarget] = useState<{ page: PageId; entityId?: string }>(targetFromHash)
+  const page = target.page
   useEffect(() => {
-    const changePage = () => setPage(pageFromHash())
+    const changePage = () => setTarget(targetFromHash())
     window.addEventListener('hashchange', changePage)
     return () => window.removeEventListener('hashchange', changePage)
   }, [])
@@ -318,6 +321,7 @@ function AdminShell({ profile }: Readonly<{ profile: StaffProfile }>) {
           <OrderManagement
             canRecordPayment={profile.capabilities.includes('orders.fulfill')}
             canRefund={profile.capabilities.includes('orders.refund')}
+            initialOrderId={target.entityId}
           />
         )}
         {page === 'products' &&
@@ -329,7 +333,7 @@ function AdminShell({ profile }: Readonly<{ profile: StaffProfile }>) {
         )}
         {page === 'inventory' &&
           profile.capabilities.includes('inventory.adjust') && (
-            <InventoryManagement />
+            <InventoryManagement initialVariantId={target.entityId} />
           )}
         {page === 'customers' &&
           profile.capabilities.includes('customers.read') && (
@@ -366,9 +370,13 @@ function orderDate(value: string) {
 function OrderManagement({
   canRecordPayment,
   canRefund,
-}: Readonly<{ canRecordPayment: boolean; canRefund: boolean }>) {
+  initialOrderId,
+}: Readonly<{ canRecordPayment: boolean; canRefund: boolean; initialOrderId?: string }>) {
   const client = useQueryClient()
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [selectedId, setSelectedId] = useState<string | null>(initialOrderId ?? null)
+  useEffect(() => {
+    if (initialOrderId) setSelectedId(initialOrderId)
+  }, [initialOrderId])
   const [queueOnly, setQueueOnly] = useState(false)
   const orders = useQuery({ queryKey: ordersKey, queryFn: api.listOrders })
   const detail = useQuery({
@@ -1354,129 +1362,156 @@ function CustomerDetailPanel({
 const inventoryKey = ['inventory'] as const
 
 function Dashboard({ profile }: Readonly<{ profile: StaffProfile }>) {
-  const canManageInventory = profile.capabilities.includes('inventory.adjust')
-  const inventory = useQuery({
-    queryKey: inventoryKey,
-    queryFn: api.listInventory,
-    enabled: canManageInventory,
+  const dashboard = useQuery({
+    queryKey: ['operational-dashboard'],
+    queryFn: api.dashboard,
+    staleTime: 0,
+    refetchOnMount: 'always',
   })
-  const records = inventory.data ?? []
-  const availableUnits = records.reduce(
-    (total, record) => total + record.available_quantity,
-    0,
-  )
-  const reservedUnits = records.reduce(
-    (total, record) => total + record.reserved_quantity,
-    0,
-  )
-  const attention = records
-    .filter(({ low_stock }) => low_stock)
-    .sort(
-      (left, right) =>
-        left.available_quantity - right.available_quantity ||
-        left.product_title.localeCompare(right.product_title),
-    )
-  const outOfStock = records.filter(
-    ({ available_quantity }) => available_quantity === 0,
-  ).length
-  const metric = (value: number) => (inventory.isSuccess ? value : '—')
-  const inventoryContext = !canManageInventory
-    ? 'Requires inventory access'
-    : inventory.isPending
-      ? 'Loading inventory'
-      : inventory.isError
-        ? 'Inventory unavailable'
-        : `${records.length} variants tracked`
+  const data = dashboard.data
+  const metric = (value?: number | null) => value ?? '—'
+  const definition = (key: string) =>
+    data?.definitions.find((item) => item.key === key)?.description ?? ''
 
   return (
     <>
       <section className="welcome">
         <div>
-          <p>Secure workspace</p>
-          <h2>Your KnitPrint operations, in one place.</h2>
+          <p>Operational workspace</p>
+          <h2>Your store’s next actions, in one place.</h2>
           <span>
-            Signed in as {profile.role}. Use the sidebar to move between focused
-            operational areas.
+            Signed in as {profile.role}. Metrics use UTC and link directly to
+            the records that need attention.
           </span>
         </div>
         <div className="welcome-mark">KP</div>
       </section>
-      <section className="metrics" aria-label="Inventory metrics">
-        <article>
-          <span>Available units</span><strong>{metric(availableUnits)}</strong>
-          <small>{inventoryContext}</small>
-        </article>
-        <article>
-          <span>Reserved units</span><strong>{metric(reservedUnits)}</strong>
-          <small>Held by active reservations</small>
-        </article>
-        <article>
-          <span>Low stock</span><strong>{metric(attention.length)}</strong>
-          <small>{outOfStock} out of stock</small>
-        </article>
-      </section>
-      {canManageInventory && (
-        <section
-          className="dashboard-stock"
-          aria-labelledby="dashboard-stock-heading"
-        >
-          <div className="dashboard-stock-heading">
-            <div>
-              <p>Inventory attention</p>
-              <h2 id="dashboard-stock-heading">Low-stock variants</h2>
-            </div>
-            <a href="#inventory">Review inventory</a>
+      {dashboard.isPending && <p className="panel-message dashboard-loading">Loading operations…</p>}
+      {dashboard.isError && <p className="panel-error dashboard-loading" role="alert">Operational data could not be loaded.</p>}
+      {data && (
+        <>
+          <section className="metrics operational-metrics" aria-label="Operational metrics">
+            {data.access.orders && (
+              <>
+                <article><span>Orders today</span><strong>{metric(data.metrics.orders_today)}</strong><small>{metric(data.metrics.orders_total)} total orders</small><a href="#orders">Review orders</a></article>
+                <article><span>Net revenue</span><strong>{formatMoney(data.metrics.net_revenue_minor ?? 0, data.currency)}</strong><small>{formatMoney(data.metrics.gross_revenue_minor ?? 0, data.currency)} captured · {formatMoney(data.metrics.refunds_minor ?? 0, data.currency)} refunded</small><a href="#orders">Review payments</a></article>
+                <article><span>Awaiting fulfillment</span><strong>{metric(data.metrics.paid_awaiting_fulfillment)}</strong><small>{definition('paid_awaiting_fulfillment')}</small><a href="#orders">Open queue</a></article>
+                <article><span>Failed payments</span><strong>{metric(data.metrics.failed_payments)}</strong><small>{definition('failed_payments')}</small><a href="#orders">Inspect failures</a></article>
+              </>
+            )}
+            {data.access.inventory && (
+              <article><span>Low-stock variants</span><strong>{metric(data.metrics.low_stock_variants)}</strong><small>{definition('low_stock_variants')}</small><a href="#inventory">Review stock</a></article>
+            )}
+          </section>
+
+          <div className="dashboard-grid">
+            {data.access.orders && (
+              <DashboardPanel title="Paid orders awaiting fulfillment" eyebrow="Fulfillment queue" href="#orders" empty="No paid orders are waiting for fulfillment.">
+                {data.paid_awaiting_fulfillment.map((order) => (
+                  <a className="dashboard-row" href={`#orders/${order.id}`} key={order.id}>
+                    <Send aria-hidden="true" />
+                    <span><strong>{order.order_number} · {order.customer_name}</strong><small>{order.payment_status} · {order.fulfillment_status} · {orderDate(order.created_at)}</small></span>
+                    <b>{formatMoney(order.total_minor, order.currency)}</b>
+                  </a>
+                ))}
+              </DashboardPanel>
+            )}
+
+            {data.access.orders && (
+              <DashboardPanel title="Recent orders" eyebrow="Latest activity" href="#orders" empty="No orders have been created yet.">
+                {data.recent_orders.map((order) => (
+                  <a className="dashboard-row" href={`#orders/${order.id}`} key={order.id}>
+                    <ReceiptText aria-hidden="true" />
+                    <span><strong>{order.order_number} · {order.customer_name}</strong><small>{order.payment_status} · {orderDate(order.created_at)}</small></span>
+                    <b>{formatMoney(order.total_minor, order.currency)}</b>
+                  </a>
+                ))}
+              </DashboardPanel>
+            )}
+
+            {data.access.inventory && (
+              <DashboardPanel title="Low-stock variants" eyebrow="Inventory attention" href="#inventory" empty="Stock levels are above every configured threshold.">
+                {data.low_stock_variants.map((record) => (
+                  <a className="dashboard-row" href={`#inventory/${record.variant_id}`} key={record.variant_id}>
+                    <TriangleAlert aria-hidden="true" />
+                    <span><strong>{record.product_title} · {record.variant_title}</strong><small>{record.sku} · threshold {record.low_stock_threshold}</small></span>
+                    <b>{record.available_quantity}</b>
+                  </a>
+                ))}
+              </DashboardPanel>
+            )}
+
+            {data.access.orders && (
+              <DashboardPanel title="Failed payments" eyebrow="Payment attention" href="#orders" empty="No payment is currently failed.">
+                {data.failed_payments.map((payment) => (
+                  <a className="dashboard-row" href={`#orders/${payment.order_id}`} key={payment.order_id}>
+                    <TriangleAlert aria-hidden="true" />
+                    <span><strong>{payment.order_number} · {payment.customer_name}</strong><small>{payment.failure_message} · {orderDate(payment.updated_at)}</small></span>
+                    <b>{formatMoney(payment.amount_minor, payment.currency)}</b>
+                  </a>
+                ))}
+              </DashboardPanel>
+            )}
+
+            {data.access.orders && (
+              <DashboardPanel title="Recent refunds" eyebrow="Returns & refunds" href="#orders" empty="No refunds have been requested yet.">
+                {data.recent_refunds.map((refund) => (
+                  <a className="dashboard-row" href={`#orders/${refund.order_id}`} key={refund.id}>
+                    <History aria-hidden="true" />
+                    <span><strong>{refund.order_number} · {refund.status}</strong><small>{refund.reason} · {orderDate(refund.created_at)}</small></span>
+                    <b>{formatMoney(refund.amount_minor, refund.currency)}</b>
+                  </a>
+                ))}
+              </DashboardPanel>
+            )}
           </div>
-          {inventory.isPending && (
-            <p className="panel-message">Loading inventory…</p>
-          )}
-          {inventory.isError && (
-            <p className="panel-message error" role="alert">
-              Inventory metrics could not be loaded.
-            </p>
-          )}
-          {inventory.isSuccess && attention.length === 0 && (
-            <div className="dashboard-stock-empty">
-              <CircleCheck aria-hidden="true" />
-              <span>
-                <strong>Stock levels look healthy.</strong>
-                <small>No variants are at or below their threshold.</small>
-              </span>
-            </div>
-          )}
-          {attention.length > 0 && (
-            <div className="dashboard-stock-list">
-              {attention.slice(0, 6).map((record) => (
-                <article key={record.variant_id}>
-                  <TriangleAlert aria-hidden="true" />
-                  <span>
-                    <strong>
-                      {record.product_title} · {record.variant_title}
-                    </strong>
-                    <small>
-                      {record.sku} · threshold {record.low_stock_threshold}
-                    </small>
-                  </span>
-                  <b>{record.available_quantity}</b>
-                </article>
-              ))}
-            </div>
-          )}
-        </section>
+
+          <details className="metric-definitions">
+            <summary>Metric definitions · generated {orderDate(data.generated_at)} · {data.timezone}</summary>
+            <dl>{data.definitions.map((item) => <div key={item.key}><dt>{item.key.replaceAll('_', ' ')}</dt><dd>{item.description}</dd></div>)}</dl>
+          </details>
+        </>
       )}
     </>
   )
 }
 
+function DashboardPanel({
+  title,
+  eyebrow,
+  href,
+  empty,
+  children,
+}: Readonly<{
+  title: string
+  eyebrow: string
+  href: string
+  empty: string
+  children: ReactNode
+}>) {
+  const hasItems = Array.isArray(children) ? children.length > 0 : Boolean(children)
+  return (
+    <section className="dashboard-panel" aria-label={title}>
+      <div className="dashboard-panel-heading"><div><p>{eyebrow}</p><h2>{title}</h2></div><a href={href}>View all</a></div>
+      {hasItems ? <div className="dashboard-list">{children}</div> : <div className="dashboard-empty"><CircleCheck aria-hidden="true" /><span>{empty}</span></div>}
+    </section>
+  )
+}
+
 type InventoryFilter = 'all' | 'attention' | 'out' | 'healthy'
 
-function InventoryManagement() {
+function InventoryManagement({ initialVariantId }: Readonly<{ initialVariantId?: string }>) {
   const client = useQueryClient()
   const [selected, setSelected] = useState<InventoryRecord | null>(null)
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<InventoryFilter>('all')
   const inventory = useQuery({ queryKey: inventoryKey, queryFn: api.listInventory })
   const records = inventory.data ?? []
+  useEffect(() => {
+    if (!initialVariantId || !inventory.data) return
+    const record = inventory.data.find((item) => item.variant_id === initialVariantId)
+    if (record) setSelected(record)
+  }, [initialVariantId, inventory.data])
   const counts = {
     all: records.length,
     attention: records.filter(({ low_stock }) => low_stock).length,
