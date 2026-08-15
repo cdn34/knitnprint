@@ -51,6 +51,7 @@ export type {
   LoginRequest,
   MediaRecord,
   NotificationStatus,
+  OperationalDashboard,
   ManualPaymentRequest,
   Order,
   OrderDiscount,
@@ -129,6 +130,7 @@ import type {
   MediaRecord,
   ManualPaymentRequest,
   Order,
+  OperationalDashboard,
   OrderSummary,
   PaymentCheckout,
   PaymentOptions,
@@ -204,6 +206,7 @@ export function createApiClient(options: ApiClientOptions = {}) {
         method: 'POST',
       }),
     profile: () => send<StaffProfile>('/api/admin/auth/me'),
+    dashboard: () => send<OperationalDashboard>('/api/admin/dashboard'),
     customerAccount: () =>
       send<CustomerAccountProfile>('/api/account/me'),
     registerCustomer: (input: CustomerRegisterRequest) =>

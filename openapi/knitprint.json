@@ -745,6 +745,46 @@
         }
       }
     },
+    "/api/admin/dashboard": {
+      "get": {
+        "tags": [
+          "admin dashboard"
+        ],
+        "operationId": "get",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperationalDashboard"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/admin/discounts": {
       "get": {
         "tags": [
@@ -4747,6 +4787,236 @@
           }
         }
       },
+      "DashboardAccess": {
+        "type": "object",
+        "required": [
+          "orders",
+          "inventory"
+        ],
+        "properties": {
+          "inventory": {
+            "type": "boolean"
+          },
+          "orders": {
+            "type": "boolean"
+          }
+        }
+      },
+      "DashboardFailedPayment": {
+        "type": "object",
+        "required": [
+          "order_id",
+          "order_number",
+          "customer_name",
+          "amount_minor",
+          "currency",
+          "failure_message",
+          "updated_at"
+        ],
+        "properties": {
+          "amount_minor": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "customer_name": {
+            "type": "string"
+          },
+          "failure_message": {
+            "type": "string"
+          },
+          "order_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "order_number": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        }
+      },
+      "DashboardInventory": {
+        "type": "object",
+        "required": [
+          "variant_id",
+          "product_title",
+          "variant_title",
+          "sku",
+          "available_quantity",
+          "low_stock_threshold"
+        ],
+        "properties": {
+          "available_quantity": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "low_stock_threshold": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "product_title": {
+            "type": "string"
+          },
+          "sku": {
+            "type": "string"
+          },
+          "variant_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "variant_title": {
+            "type": "string"
+          }
+        }
+      },
+      "DashboardMetrics": {
+        "type": "object",
+        "properties": {
+          "failed_payments": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "gross_revenue_minor": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "low_stock_variants": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "net_revenue_minor": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "orders_today": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "orders_total": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "paid_awaiting_fulfillment": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "refunds_minor": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          }
+        }
+      },
+      "DashboardOrder": {
+        "type": "object",
+        "required": [
+          "id",
+          "order_number",
+          "customer_name",
+          "payment_status",
+          "fulfillment_status",
+          "total_minor",
+          "currency",
+          "created_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "customer_name": {
+            "type": "string"
+          },
+          "fulfillment_status": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "order_number": {
+            "type": "string"
+          },
+          "payment_status": {
+            "type": "string"
+          },
+          "total_minor": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "DashboardRefund": {
+        "type": "object",
+        "required": [
+          "id",
+          "order_id",
+          "order_number",
+          "amount_minor",
+          "currency",
+          "status",
+          "reason",
+          "created_at"
+        ],
+        "properties": {
+          "amount_minor": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "order_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "order_number": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        }
+      },
       "DisableStaffRequest": {
         "type": "object",
         "required": [
@@ -5219,6 +5489,21 @@
           }
         }
       },
+      "MetricDefinition": {
+        "type": "object",
+        "required": [
+          "key",
+          "description"
+        ],
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          }
+        }
+      },
       "NotificationStatus": {
         "type": "object",
         "required": [
@@ -5256,6 +5541,79 @@
             ]
           },
           "status": {
+            "type": "string"
+          }
+        }
+      },
+      "OperationalDashboard": {
+        "type": "object",
+        "required": [
+          "generated_at",
+          "timezone",
+          "period_start",
+          "currency",
+          "access",
+          "metrics",
+          "definitions",
+          "paid_awaiting_fulfillment",
+          "recent_orders",
+          "low_stock_variants",
+          "failed_payments",
+          "recent_refunds"
+        ],
+        "properties": {
+          "access": {
+            "$ref": "#/components/schemas/DashboardAccess"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "definitions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MetricDefinition"
+            }
+          },
+          "failed_payments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DashboardFailedPayment"
+            }
+          },
+          "generated_at": {
+            "type": "string"
+          },
+          "low_stock_variants": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DashboardInventory"
+            }
+          },
+          "metrics": {
+            "$ref": "#/components/schemas/DashboardMetrics"
+          },
+          "paid_awaiting_fulfillment": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DashboardOrder"
+            }
+          },
+          "period_start": {
+            "type": "string"
+          },
+          "recent_orders": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DashboardOrder"
+            }
+          },
+          "recent_refunds": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DashboardRefund"
+            }
+          },
+          "timezone": {
             "type": "string"
           }
         }
@@ -6610,6 +6968,10 @@
     {
       "name": "admin settings",
       "description": "Capability-protected commercial settings and integration status"
+    },
+    {
+      "name": "admin dashboard",
+      "description": "Capability-aware bounded operational queues and metrics"
     }
   ]
 }

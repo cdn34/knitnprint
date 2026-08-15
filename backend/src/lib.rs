@@ -6,6 +6,7 @@ pub mod config;
 pub mod customer_auth;
 pub mod customer_retention;
 pub mod customers;
+pub mod dashboard;
 pub mod discounts;
 pub mod email;
 pub mod error;
@@ -118,6 +119,7 @@ pub fn app(state: AppState) -> Router {
         .route("/api/admin/customers", get(customers::list))
         .route("/api/admin/customers/{customer_id}", get(customers::detail))
         .route("/api/admin/orders", get(orders::admin_list))
+        .route("/api/admin/dashboard", get(dashboard::get))
         .route(
             "/api/admin/discounts",
             get(discounts::list).post(discounts::create),

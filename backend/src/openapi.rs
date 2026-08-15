@@ -1,8 +1,8 @@
 use utoipa::{OpenApi, openapi::OpenApi as OpenApiDocument};
 
 use crate::{
-    auth, cancellations, carts, catalog, customer_auth, customers, discounts, error, fulfillment,
-    health, inventory, media, notifications, orders, payments, settings, staff,
+    auth, cancellations, carts, catalog, customer_auth, customers, dashboard, discounts, error,
+    fulfillment, health, inventory, media, notifications, orders, payments, settings, staff,
 };
 
 #[derive(OpenApi)]
@@ -46,6 +46,7 @@ use crate::{
         discounts::list,
         discounts::create,
         discounts::change_status,
+        dashboard::get,
         settings::get,
         settings::update,
         payments::options,
@@ -121,6 +122,14 @@ use crate::{
         discounts::ChangeDiscountStatusRequest,
         discounts::AppliedDiscount,
         discounts::OrderDiscount,
+        dashboard::OperationalDashboard,
+        dashboard::DashboardAccess,
+        dashboard::DashboardMetrics,
+        dashboard::MetricDefinition,
+        dashboard::DashboardOrder,
+        dashboard::DashboardInventory,
+        dashboard::DashboardFailedPayment,
+        dashboard::DashboardRefund,
         settings::CommercialSettings,
         settings::ShippingZone,
         settings::ShippingMethod,
@@ -184,6 +193,7 @@ use crate::{
         ,(name = "payments", description = "Server-owned payment initiation and verified provider events")
         ,(name = "admin discounts", description = "Capability-protected promotion management")
         ,(name = "admin settings", description = "Capability-protected commercial settings and integration status")
+        ,(name = "admin dashboard", description = "Capability-aware bounded operational queues and metrics")
     )
 )]
 struct ApiDoc;

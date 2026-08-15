@@ -284,6 +284,63 @@ export interface CustomerSummary {
   "last_name": string
 }
 
+export interface DashboardAccess {
+  "inventory": boolean
+  "orders": boolean
+}
+
+export interface DashboardFailedPayment {
+  "amount_minor": number
+  "currency": string
+  "customer_name": string
+  "failure_message": string
+  "order_id": string
+  "order_number": string
+  "updated_at": string
+}
+
+export interface DashboardInventory {
+  "available_quantity": number
+  "low_stock_threshold": number
+  "product_title": string
+  "sku": string
+  "variant_id": string
+  "variant_title": string
+}
+
+export interface DashboardMetrics {
+  "failed_payments"?: number | null
+  "gross_revenue_minor"?: number | null
+  "low_stock_variants"?: number | null
+  "net_revenue_minor"?: number | null
+  "orders_today"?: number | null
+  "orders_total"?: number | null
+  "paid_awaiting_fulfillment"?: number | null
+  "refunds_minor"?: number | null
+}
+
+export interface DashboardOrder {
+  "created_at": string
+  "currency": string
+  "customer_name": string
+  "fulfillment_status": string
+  "id": string
+  "order_number": string
+  "payment_status": string
+  "total_minor": number
+}
+
+export interface DashboardRefund {
+  "amount_minor": number
+  "created_at": string
+  "currency": string
+  "id": string
+  "order_id": string
+  "order_number": string
+  "reason": string
+  "status": string
+}
+
 export interface DisableStaffRequest {
   "reason": string
 }
@@ -414,6 +471,11 @@ export interface MediaRecord {
   "product_id": string
 }
 
+export interface MetricDefinition {
+  "description": string
+  "key": string
+}
+
 export interface NotificationStatus {
   "attempt_count": number
   "created_at": string
@@ -422,6 +484,21 @@ export interface NotificationStatus {
   "last_error"?: string | null
   "sent_at"?: string | null
   "status": string
+}
+
+export interface OperationalDashboard {
+  "access": DashboardAccess
+  "currency": string
+  "definitions": Array<MetricDefinition>
+  "failed_payments": Array<DashboardFailedPayment>
+  "generated_at": string
+  "low_stock_variants": Array<DashboardInventory>
+  "metrics": DashboardMetrics
+  "paid_awaiting_fulfillment": Array<DashboardOrder>
+  "period_start": string
+  "recent_orders": Array<DashboardOrder>
+  "recent_refunds": Array<DashboardRefund>
+  "timezone": string
 }
 
 export interface Order {
