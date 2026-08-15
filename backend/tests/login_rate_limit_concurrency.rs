@@ -1,11 +1,19 @@
-use std::{env, net::SocketAddr, str::FromStr, sync::Arc};
+use std::{
+    env,
+    net::{IpAddr, SocketAddr},
+    str::FromStr,
+    sync::Arc,
+};
 
 use axum::{
     body::Body,
     extract::ConnectInfo,
     http::{Request, StatusCode, header},
 };
-use knitprint_api::{AppState, app};
+use knitprint_api::{
+    AppState, app,
+    login_rate_limit::{LoginLimitError, consume_account_action},
+};
 use serde_json::json;
 use sqlx::{
     PgPool,
@@ -131,6 +139,17 @@ async fn concurrent_account_and_ip_limits_are_exact_and_scope_safe() {
     .await
     .expect("rate-limit schema should be inspectable");
     assert_eq!(raw_identifier_columns, 0);
+
+    let action_ip = IpAddr::from_str("203.0.113.12").unwrap();
+    for _ in 0..5 {
+        consume_account_action(&pool, "password_reset", "target@example.test", action_ip)
+            .await
+            .expect("the bounded account-action allowance should pass");
+    }
+    assert!(matches!(
+        consume_account_action(&pool, "password_reset", "target@example.test", action_ip,).await,
+        Err(LoginLimitError::Limited(3600))
+    ));
 
     pool.close().await;
     sqlx::query(&format!(r#"DROP SCHEMA "{schema}" CASCADE"#))

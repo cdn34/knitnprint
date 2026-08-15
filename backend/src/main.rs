@@ -10,13 +10,16 @@ use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() {
-    init_tracing();
-
     let config = Config::from_env().unwrap_or_else(|error| {
         eprintln!("invalid configuration: {error}");
         std::process::exit(2);
     });
-    let database = connect_database(config.database_url.as_deref()).await;
+    init_tracing(config.environment);
+    let database = connect_database(
+        config.database_url.as_deref(),
+        config.environment == Environment::Production,
+    )
+    .await;
     let media_storage =
         knitprint_api::media::MediaStorage::from_env(config.environment == Environment::Production)
             .await
@@ -24,6 +27,13 @@ async fn main() {
                 eprintln!("invalid media storage configuration: {error}");
                 std::process::exit(2);
             });
+    let media_scanner = knitprint_api::media_scanner::MediaScanner::from_env(
+        config.environment == Environment::Production,
+    )
+    .unwrap_or_else(|error| {
+        eprintln!("invalid media scanner configuration: {error}");
+        std::process::exit(2);
+    });
     let email = knitprint_api::email::EmailService::from_env(config.environment)
         .await
         .unwrap_or_else(|error| {
@@ -52,11 +62,16 @@ async fn main() {
         app(AppState {
             database,
             media_storage,
+            media_scanner,
             email,
             payments,
             trust_proxy_headers: config.trust_proxy_headers,
             secure_cookies: config.environment == Environment::Production,
             manual_payments_enabled: config.environment != Environment::Production,
+            security: knitprint_api::security::SecurityPolicy {
+                allowed_origins: config.web_origins,
+                production: config.environment == Environment::Production,
+            },
         })
         .into_make_service_with_connect_info::<SocketAddr>(),
     )
@@ -65,7 +80,7 @@ async fn main() {
     .expect("API server should run");
 }
 
-async fn connect_database(url: Option<&str>) -> Option<PgPool> {
+async fn connect_database(url: Option<&str>, production: bool) -> Option<PgPool> {
     let Some(url) = url else {
         warn!("DATABASE_URL is not set; readiness will report unavailable");
         return None;
@@ -74,11 +89,30 @@ async fn connect_database(url: Option<&str>) -> Option<PgPool> {
     match PgPoolOptions::new()
         .max_connections(5)
         .acquire_timeout(Duration::from_secs(3))
+        .after_connect(move |connection, _| {
+            Box::pin(async move {
+                sqlx::query("SET application_name = 'knitprint-api'")
+                    .execute(&mut *connection)
+                    .await?;
+                if production {
+                    sqlx::query("SET statement_timeout = 15000")
+                        .execute(&mut *connection)
+                        .await?;
+                    sqlx::query("SET lock_timeout = 5000")
+                        .execute(&mut *connection)
+                        .await?;
+                    sqlx::query("SET idle_in_transaction_session_timeout = 15000")
+                        .execute(&mut *connection)
+                        .await?;
+                }
+                Ok(())
+            })
+        })
         .connect(url)
         .await
     {
         Ok(pool) => {
-            if let Err(error) = sqlx::migrate!("../migrations").run(&pool).await {
+            if !production && let Err(error) = sqlx::migrate!("../migrations").run(&pool).await {
                 warn!(%error, "database migrations failed");
                 return None;
             }
@@ -91,15 +125,23 @@ async fn connect_database(url: Option<&str>) -> Option<PgPool> {
     }
 }
 
-fn init_tracing() {
+fn init_tracing(environment: Environment) {
     let filter = EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| EnvFilter::new("knitprint_api=info,tower_http=info"));
 
-    tracing_subscriber::fmt()
-        .with_env_filter(filter)
-        .with_target(false)
-        .compact()
-        .init();
+    if environment == Environment::Production {
+        tracing_subscriber::fmt()
+            .with_env_filter(filter)
+            .with_target(false)
+            .json()
+            .init();
+    } else {
+        tracing_subscriber::fmt()
+            .with_env_filter(filter)
+            .with_target(false)
+            .compact()
+            .init();
+    }
 }
 
 async fn shutdown_signal() {

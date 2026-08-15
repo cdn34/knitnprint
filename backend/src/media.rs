@@ -18,6 +18,7 @@ use crate::{
     AppState,
     auth::{AuthenticatedStaff, require_capability},
     error::ErrorBody,
+    media_scanner::ScanOutcome,
 };
 
 const MAX_PRODUCT_IMAGE_BYTES: i64 = 10 * 1024 * 1024;
@@ -31,43 +32,50 @@ pub struct MediaStorage {
 
 impl MediaStorage {
     pub async fn from_env(production: bool) -> Result<Option<Self>, String> {
-        let values = (
-            env::var("S3_ENDPOINT").ok(),
-            env::var("S3_REGION").ok(),
-            env::var("S3_BUCKET").ok(),
-            env::var("S3_ACCESS_KEY_ID").ok(),
-            env::var("S3_SECRET_ACCESS_KEY").ok(),
-        );
-        let (endpoint, region, bucket, access_key, secret_key) = match values {
-            (Some(endpoint), Some(region), Some(bucket), Some(access_key), Some(secret_key)) => {
-                (endpoint, region, bucket, access_key, secret_key)
-            }
-            _ if production => {
-                return Err("S3 storage configuration is required in production".into());
-            }
-            _ => (
-                "http://127.0.0.1:9100".into(),
-                "eu-west-1".into(),
-                "knitprint-media".into(),
-                "knitprint".into(),
-                "knitprint-local".into(),
-            ),
+        let endpoint = env::var("S3_ENDPOINT").ok();
+        let region = env::var("S3_REGION")
+            .ok()
+            .or_else(|| (!production).then(|| "eu-west-1".into()));
+        let bucket = env::var("S3_BUCKET")
+            .ok()
+            .or_else(|| (!production).then(|| "knitprint-media".into()));
+        let access_key = env::var("S3_ACCESS_KEY_ID").ok();
+        let secret_key = env::var("S3_SECRET_ACCESS_KEY").ok();
+        let (Some(region), Some(bucket)) = (region, bucket) else {
+            return Err("S3_REGION and S3_BUCKET are required in production".into());
         };
-        let shared = aws_config::defaults(BehaviorVersion::latest())
-            .region(Region::new(region))
-            .credentials_provider(Credentials::new(
+        if access_key.is_some() != secret_key.is_some() {
+            return Err(
+                "S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY must be configured together".into(),
+            );
+        }
+        let mut loader =
+            aws_config::defaults(BehaviorVersion::latest()).region(Region::new(region));
+        if let (Some(access_key), Some(secret_key)) = (access_key, secret_key) {
+            loader = loader.credentials_provider(Credentials::new(
                 access_key,
                 secret_key,
                 None,
                 None,
                 "knitprint-config",
-            ))
-            .load()
-            .await;
-        let config = aws_sdk_s3::config::Builder::from(&shared)
-            .endpoint_url(endpoint)
-            .force_path_style(true)
-            .build();
+            ));
+        } else if !production {
+            loader = loader.credentials_provider(Credentials::new(
+                "knitprint",
+                "knitprint-local",
+                None,
+                None,
+                "knitprint-development",
+            ));
+        }
+        let shared = loader.load().await;
+        let mut builder = aws_sdk_s3::config::Builder::from(&shared);
+        if let Some(endpoint) =
+            endpoint.or_else(|| (!production).then(|| "http://127.0.0.1:9100".into()))
+        {
+            builder = builder.endpoint_url(endpoint).force_path_style(true);
+        }
+        let config = builder.build();
         Ok(Some(Self {
             client: Client::from_conf(config),
             bucket,
@@ -147,6 +155,7 @@ pub async fn initiate(
         .bucket(&storage.bucket)
         .key(&object_key)
         .content_type(&input.content_type)
+        .content_length(input.byte_size)
         .presigned(
             PresigningConfig::expires_in(Duration::from_secs(300))
                 .expect("five minutes is a valid presigning duration"),
@@ -259,6 +268,19 @@ pub async fn complete(
         },
         Err(_) => return upload_incomplete(),
     };
+    match state.media_scanner.scan(&source).await {
+        Ok(ScanOutcome::Clean) => {}
+        Ok(ScanOutcome::Infected(signature)) => {
+            return reject_infected(&pool, media_id, actor.id, &signature).await;
+        }
+        Err(error) => {
+            tracing::warn!(media_id = %media_id, %error, "media malware scan failed closed");
+            return scanner_unavailable();
+        }
+    }
+    if !declared_format_matches(&source, &content_type) {
+        return invalid_image();
+    }
     let variants = match tokio::task::spawn_blocking(move || process_image(&source)).await {
         Ok(Ok(variants)) => variants,
         _ => return invalid_image(),
@@ -314,7 +336,7 @@ pub async fn complete(
             return unavailable();
         }
     }
-    if sqlx::query("UPDATE media_assets SET status = 'ready', completed_at = now() WHERE id = $1")
+    if sqlx::query("UPDATE media_assets SET status = 'ready', scan_status = 'clean', scanned_at = now(), scan_detail = NULL, completed_at = now() WHERE id = $1")
         .bind(media_id)
         .execute(&mut *transaction)
         .await
@@ -429,13 +451,22 @@ pub async fn public_asset(
 }
 
 fn process_image(source: &[u8]) -> Result<Vec<ProcessedVariant>, image::ImageError> {
-    let image = image::load_from_memory(source)?;
-    let pixels = u64::from(image.width()) * u64::from(image.height());
+    let format = image::guess_format(source)?;
+    let dimensions =
+        image::ImageReader::with_format(Cursor::new(source), format).into_dimensions()?;
+    let pixels = u64::from(dimensions.0) * u64::from(dimensions.1);
     if pixels > 40_000_000 {
         return Err(image::ImageError::Limits(
             image::error::LimitError::from_kind(image::error::LimitErrorKind::DimensionError),
         ));
     }
+    let mut reader = image::ImageReader::with_format(Cursor::new(source), format);
+    let mut limits = image::Limits::default();
+    limits.max_image_width = Some(20_000);
+    limits.max_image_height = Some(20_000);
+    limits.max_alloc = Some(200 * 1024 * 1024);
+    reader.limits(limits);
+    let image = reader.decode()?;
     [("thumbnail", 320), ("card", 900), ("detail", 1600)]
         .into_iter()
         .map(|(kind, maximum)| {
@@ -450,6 +481,54 @@ fn process_image(source: &[u8]) -> Result<Vec<ProcessedVariant>, image::ImageErr
             })
         })
         .collect()
+}
+
+fn declared_format_matches(source: &[u8], content_type: &str) -> bool {
+    let expected = match content_type {
+        "image/jpeg" => image::ImageFormat::Jpeg,
+        "image/png" => image::ImageFormat::Png,
+        "image/webp" => image::ImageFormat::WebP,
+        _ => return false,
+    };
+    image::guess_format(source).is_ok_and(|actual| actual == expected)
+}
+
+async fn reject_infected(
+    pool: &sqlx::PgPool,
+    media_id: Uuid,
+    actor_id: Uuid,
+    signature: &str,
+) -> Response {
+    let detail = signature.chars().take(200).collect::<String>();
+    let mut transaction = match pool.begin().await {
+        Ok(transaction) => transaction,
+        Err(_) => return unavailable(),
+    };
+    let updated = sqlx::query(
+        "UPDATE media_assets SET status = 'failed', scan_status = 'infected', scanned_at = now(), scan_detail = $2 WHERE id = $1 AND status = 'pending'",
+    )
+    .bind(media_id)
+    .bind(&detail)
+    .execute(&mut *transaction)
+    .await;
+    let audited = sqlx::query(
+        "INSERT INTO audit_log (actor_staff_user_id, action, entity_type, entity_id, reason) VALUES ($1, 'media.scan_rejected', 'media_asset', $2, 'Malware scanner rejected quarantined upload')",
+    )
+    .bind(actor_id)
+    .bind(media_id.to_string())
+    .execute(&mut *transaction)
+    .await;
+    if updated.is_err() || audited.is_err() || transaction.commit().await.is_err() {
+        return unavailable();
+    }
+    (
+        StatusCode::UNPROCESSABLE_ENTITY,
+        Json(ErrorBody::new(
+            "unsafe_media_upload",
+            "The quarantined upload failed the safety scan and was rejected.",
+        )),
+    )
+        .into_response()
 }
 
 fn variant_key(media_id: Uuid, kind: &str) -> String {
@@ -519,6 +598,17 @@ fn invalid_image() -> Response {
         .into_response()
 }
 
+fn scanner_unavailable() -> Response {
+    (
+        StatusCode::SERVICE_UNAVAILABLE,
+        Json(ErrorBody::new(
+            "media_scanner_unavailable",
+            "The upload remains quarantined because the safety scan could not complete.",
+        )),
+    )
+        .into_response()
+}
+
 fn not_found() -> Response {
     (
         StatusCode::NOT_FOUND,
@@ -539,4 +629,38 @@ fn unavailable() -> Response {
         )),
     )
         .into_response()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::Cursor;
+
+    use image::{DynamicImage, ImageFormat, RgbaImage};
+
+    use super::{declared_format_matches, process_image};
+
+    fn encoded(format: ImageFormat) -> Vec<u8> {
+        let image = DynamicImage::ImageRgba8(RgbaImage::new(2, 2));
+        let mut bytes = Cursor::new(Vec::new());
+        image.write_to(&mut bytes, format).unwrap();
+        bytes.into_inner()
+    }
+
+    #[test]
+    fn declared_content_type_must_match_image_signature() {
+        let png = encoded(ImageFormat::Png);
+        assert!(declared_format_matches(&png, "image/png"));
+        assert!(!declared_format_matches(&png, "image/jpeg"));
+    }
+
+    #[test]
+    fn decoded_images_are_normalized_to_bounded_webp_variants() {
+        let png = encoded(ImageFormat::Png);
+        let variants = process_image(&png).unwrap();
+        assert_eq!(variants.len(), 3);
+        for (variant, maximum) in variants.iter().zip([320, 900, 1600]) {
+            assert!((1..=maximum).contains(&variant.width));
+            assert!((1..=maximum).contains(&variant.height));
+        }
+    }
 }

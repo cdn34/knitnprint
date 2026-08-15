@@ -15,21 +15,27 @@ pub mod health;
 pub mod inventory;
 pub mod login_rate_limit;
 pub mod media;
+pub mod media_scanner;
 pub mod notifications;
 pub mod openapi;
 pub mod orders;
 pub mod payments;
+pub mod security;
 pub mod settings;
 pub mod staff;
 
 use axum::{
     Json, Router,
-    http::{HeaderName, Method},
+    extract::DefaultBodyLimit,
+    http::{HeaderName, HeaderValue, Method, header},
+    middleware,
+    response::IntoResponse,
     routing::get,
 };
 use sqlx::PgPool;
 use tower_http::{
-    cors::{Any, CorsLayer},
+    catch_panic::CatchPanicLayer,
+    cors::{AllowOrigin, CorsLayer},
     request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer},
     trace::TraceLayer,
 };
@@ -38,15 +44,23 @@ use tower_http::{
 pub struct AppState {
     pub database: Option<PgPool>,
     pub media_storage: Option<media::MediaStorage>,
+    pub media_scanner: media_scanner::MediaScanner,
     pub email: email::EmailService,
     pub payments: payments::PaymentService,
     pub trust_proxy_headers: bool,
     pub secure_cookies: bool,
     pub manual_payments_enabled: bool,
+    pub security: security::SecurityPolicy,
 }
 
 pub fn app(state: AppState) -> Router {
     let request_id = HeaderName::from_static("x-request-id");
+    let security = state.security.clone();
+    let allowed_origins = security
+        .allowed_origins
+        .iter()
+        .filter_map(|origin| origin.parse::<HeaderValue>().ok())
+        .collect::<Vec<_>>();
 
     Router::new()
         .route("/api/health", get(health::health))
@@ -213,15 +227,31 @@ pub fn app(state: AppState) -> Router {
         .route("/api/media/{media_id}/{variant}", get(media::public_asset))
         .fallback(error::not_found)
         .with_state(state)
+        .layer(DefaultBodyLimit::max(1024 * 1024))
         .layer(PropagateRequestIdLayer::new(request_id.clone()))
         .layer(SetRequestIdLayer::new(request_id, MakeRequestUuid))
         .layer(TraceLayer::new_for_http())
+        .layer(CatchPanicLayer::custom(|_| {
+            (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                Json(error::ErrorBody::new(
+                    "internal_error",
+                    "The request could not be completed.",
+                )),
+            )
+                .into_response()
+        }))
         .layer(
             CorsLayer::new()
-                .allow_origin(Any)
+                .allow_origin(AllowOrigin::list(allowed_origins))
+                .allow_credentials(true)
                 .allow_methods([Method::GET, Method::POST, Method::PATCH, Method::DELETE])
-                .allow_headers(Any),
+                .allow_headers([
+                    header::CONTENT_TYPE,
+                    HeaderName::from_static("idempotency-key"),
+                ]),
         )
+        .layer(middleware::from_fn_with_state(security, security::enforce))
 }
 
 #[cfg(test)]
@@ -307,5 +337,111 @@ mod tests {
         let json: Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(json["info"]["title"], "KnitPrint API");
         assert!(json["paths"]["/api/health"].is_object());
+    }
+
+    #[tokio::test]
+    async fn responses_include_browser_security_headers() {
+        let response = app(AppState::default())
+            .oneshot(
+                Request::builder()
+                    .uri("/api/health")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.headers()["x-content-type-options"], "nosniff");
+        assert_eq!(response.headers()["x-frame-options"], "DENY");
+        assert_eq!(response.headers()["referrer-policy"], "no-referrer");
+        assert!(response.headers().contains_key("content-security-policy"));
+        assert!(!response.headers().contains_key("strict-transport-security"));
+    }
+
+    #[tokio::test]
+    async fn unsafe_cross_origin_requests_are_rejected_before_handlers() {
+        let response = app(AppState::default())
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/admin/auth/login")
+                    .header("origin", "https://attacker.example")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"email":"owner@example.com","password":"password"}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        let body = to_bytes(response.into_body(), 2048).await.unwrap();
+        let json: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["error"]["code"], "cross_origin_request_rejected");
+    }
+
+    #[tokio::test]
+    async fn configured_origins_receive_credentialed_cors_headers() {
+        let response = app(AppState::default())
+            .oneshot(
+                Request::builder()
+                    .method("OPTIONS")
+                    .uri("/api/account/login")
+                    .header("origin", "http://localhost:3000")
+                    .header("access-control-request-method", "POST")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers()["access-control-allow-origin"],
+            "http://localhost:3000"
+        );
+        assert_eq!(
+            response.headers()["access-control-allow-credentials"],
+            "true"
+        );
+    }
+
+    #[tokio::test]
+    async fn production_responses_require_transport_security() {
+        let mut state = AppState::default();
+        state.security.production = true;
+        let response = app(state)
+            .oneshot(
+                Request::builder()
+                    .uri("/api/health")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            response.headers()["strict-transport-security"],
+            "max-age=31536000; includeSubDomains"
+        );
+    }
+
+    #[tokio::test]
+    async fn oversized_json_requests_are_rejected() {
+        let response = app(AppState::default())
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/account/login")
+                    .header("origin", "http://localhost:3000")
+                    .header("content-type", "application/json")
+                    .body(Body::from(vec![b'a'; 1024 * 1024 + 1]))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
     }
 }

@@ -18,11 +18,18 @@ const IP_LOCK_MINUTES: i32 = 5;
 const GLOBAL_LIMIT: i32 = 1_000;
 const GLOBAL_WINDOW_MINUTES: i32 = 1;
 const GLOBAL_LOCK_MINUTES: i32 = 1;
+const ACTION_ACCOUNT_LIMIT: i32 = 5;
+const ACTION_ACCOUNT_WINDOW_MINUTES: i32 = 60;
+const ACTION_IP_LIMIT: i32 = 20;
+const ACTION_IP_WINDOW_MINUTES: i32 = 15;
+const ACTION_GLOBAL_LIMIT: i32 = 300;
+const ACTION_GLOBAL_WINDOW_MINUTES: i32 = 1;
 
 #[derive(Clone, Copy)]
 pub enum AuthScope {
     Staff,
     Customer,
+    AccountAction,
 }
 
 impl AuthScope {
@@ -30,10 +37,66 @@ impl AuthScope {
         match self {
             Self::Staff => "staff",
             Self::Customer => "customer",
+            Self::AccountAction => "account_action",
         }
     }
 }
 
+pub async fn consume_account_action(
+    pool: &PgPool,
+    action: &str,
+    account_identifier: &str,
+    client_ip: IpAddr,
+) -> Result<(), LoginLimitError> {
+    let scope = AuthScope::AccountAction;
+    let global_hash = bucket_hash(scope, "global", action);
+    let ip_hash = bucket_hash(scope, "ip", &format!("{action}\0{client_ip}"));
+    let account_hash = bucket_hash(scope, "account", &format!("{action}\0{account_identifier}"));
+    let mut transaction = pool.begin().await?;
+    for hash in [&global_hash, &ip_hash, &account_hash] {
+        advisory_lock(&mut transaction, hash).await?;
+    }
+    for (dimension, hash, retry_after) in [
+        ("global", &global_hash, 60),
+        ("ip", &ip_hash, 900),
+        ("account", &account_hash, 3600),
+    ] {
+        if bucket_is_locked(&mut transaction, scope, dimension, hash).await? {
+            transaction.rollback().await?;
+            return Err(LoginLimitError::Limited(retry_after));
+        }
+    }
+    for (dimension, hash, limit, window) in [
+        (
+            "global",
+            &global_hash,
+            ACTION_GLOBAL_LIMIT,
+            ACTION_GLOBAL_WINDOW_MINUTES,
+        ),
+        ("ip", &ip_hash, ACTION_IP_LIMIT, ACTION_IP_WINDOW_MINUTES),
+        (
+            "account",
+            &account_hash,
+            ACTION_ACCOUNT_LIMIT,
+            ACTION_ACCOUNT_WINDOW_MINUTES,
+        ),
+    ] {
+        record_event(
+            &mut transaction,
+            scope,
+            dimension,
+            hash,
+            limit,
+            window,
+            window,
+        )
+        .await?;
+    }
+    transaction.commit().await?;
+    Ok(())
+}
+
+#[derive(Debug)]
 pub enum LoginLimitError {
     Limited(u64),
     Database(sqlx::Error),

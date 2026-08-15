@@ -31,7 +31,7 @@ pub async fn cleanup_expired_customer_data(
     .await?
     .rows_affected();
     summary.login_rate_limits_removed += sqlx::query(
-        "DELETE FROM auth_login_rate_limits WHERE auth_scope = 'customer' AND updated_at < now() - interval '24 hours'",
+        "DELETE FROM auth_login_rate_limits WHERE auth_scope IN ('customer', 'account_action') AND updated_at < now() - interval '24 hours'",
     )
     .execute(&mut *transaction)
     .await?

@@ -18,7 +18,9 @@ use crate::{
     customers::{CustomerAddress, valid_email},
     email::{AccountEmailKind, log_delivery_failure},
     error::ErrorBody,
-    login_rate_limit::{AccountLoginGuard, AuthScope, ClientIp, LoginLimitError},
+    login_rate_limit::{
+        AccountLoginGuard, AuthScope, ClientIp, LoginLimitError, consume_account_action,
+    },
 };
 
 pub const CUSTOMER_SESSION_COOKIE: &str = "knitprint_customer";
@@ -129,6 +131,7 @@ pub struct AuthenticatedCustomer {
 )]
 pub async fn register(
     State(state): State<AppState>,
+    ClientIp(client_ip): ClientIp,
     jar: CookieJar,
     Json(input): Json<CustomerRegisterRequest>,
 ) -> Response {
@@ -138,6 +141,10 @@ pub async fn register(
     let Some(pool) = state.database else {
         return unavailable();
     };
+    let action_email = input.email.trim().to_ascii_lowercase();
+    if let Err(error) = consume_account_action(&pool, "register", &action_email, client_ip).await {
+        return account_action_limit_error(error);
+    }
     let password_hash = match hash_password(&input.password) {
         Ok(hash) => hash,
         Err(_) => return unavailable(),
@@ -511,6 +518,7 @@ pub async fn add_address(
 )]
 pub async fn request_verification(
     State(state): State<AppState>,
+    ClientIp(client_ip): ClientIp,
     customer: AuthenticatedCustomer,
 ) -> Response {
     if customer.email_verified {
@@ -519,6 +527,11 @@ pub async fn request_verification(
     let Some(pool) = state.database else {
         return unavailable();
     };
+    if let Err(error) =
+        consume_account_action(&pool, "verification", &customer.email, client_ip).await
+    {
+        return account_action_limit_error(error);
+    }
     let token = new_session_token();
     let token_hash = hash_token(&token);
     let token_id = Uuid::now_v7();
@@ -664,12 +677,16 @@ pub async fn confirm_verification(
 )]
 pub async fn forgot_password(
     State(state): State<AppState>,
+    ClientIp(client_ip): ClientIp,
     Json(input): Json<ForgotPasswordRequest>,
 ) -> Response {
     let Some(pool) = state.database else {
         return unavailable();
     };
     let email = input.email.trim().to_ascii_lowercase();
+    if let Err(error) = consume_account_action(&pool, "password_reset", &email, client_ip).await {
+        return account_action_limit_error(error);
+    }
     let token = new_session_token();
     let token_hash = hash_token(&token);
     let token_id = Uuid::now_v7();
@@ -1274,6 +1291,26 @@ fn login_limited(retry_after: u64) -> Response {
         response.headers_mut().insert(header::RETRY_AFTER, value);
     }
     response
+}
+
+fn account_action_limit_error(error: LoginLimitError) -> Response {
+    match error {
+        LoginLimitError::Limited(retry_after) => {
+            let mut response = (
+                StatusCode::TOO_MANY_REQUESTS,
+                Json(ErrorBody::new(
+                    "account_action_rate_limited",
+                    "Too many account requests. Wait before trying again.",
+                )),
+            )
+                .into_response();
+            if let Ok(value) = retry_after.to_string().parse() {
+                response.headers_mut().insert(header::RETRY_AFTER, value);
+            }
+            no_store(response)
+        }
+        LoginLimitError::Database(_) => unavailable(),
+    }
 }
 
 fn bounded_identifier(identifier: &str) -> &str {
