@@ -105,6 +105,16 @@ jurisdiction before enabling production tax collection. The Settings page also
 reports whether database, media, email, and payment integrations are configured,
 but never accepts or displays their credentials.
 
+The admin Dashboard is a live, capability-aware operational projection. Staff
+with order access see paid orders awaiting fulfillment, recent orders, current
+payment failures, recent refunds, and order/revenue totals; staff with inventory
+access see low-stock variants. Every queue row links directly to its order or
+variant. Lists are bounded to eight records and refetch whenever the Dashboard
+is opened. “Today” begins at 00:00 UTC. Gross revenue is captured payment value
+in the configured store currency, refunds include succeeded refunds in that
+currency, and net revenue is gross minus refunds. Counts may include orders in
+other currencies where the on-screen metric definition says so.
+
 Creating an order reserves stock. Development keeps the audited manual-payment
 path enabled. Hosted Stripe Checkout is enabled only when all of these values
 are present:

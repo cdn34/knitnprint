@@ -614,12 +614,48 @@ Commercial settings, shipping, and tax pricing are implemented:
   shipping plus a test-only destination rate, selects the express method, and
   verifies the resulting order totals and snapshots.
 
-Phase 11 is complete. The next vertical slice is Phase 12 operational dashboard.
+Phase 11 is complete.
+
+## Phase 12 progress
+
+The operational dashboard is implemented:
+
+- a private, capability-aware aggregate endpoint that exposes order sections
+  only to staff with `orders.read` and inventory sections only to staff with
+  `inventory.adjust`;
+- explicit server-owned metric definitions and UTC boundaries, including all
+  order counts, current-UTC-day orders, captured gross revenue, succeeded
+  refunds, net revenue, paid fulfillment work, failed payments, and low-stock
+  variants;
+- revenue constrained to the configured store currency while order counts are
+  explicitly documented as spanning currencies and states;
+- bounded eight-record queues for paid orders awaiting fulfillment, recent
+  orders, low-stock variants, current failed payments, and recent refunds;
+- direct `#orders/{id}` and `#inventory/{variant_id}` links that open the exact
+  actionable record instead of leaving staff to search again;
+- dashboard refetch-on-open behavior so operational state changes are visible
+  immediately rather than waiting for the general reference-data cache;
+- targeted partial indexes for fulfillment work, failed payments, and recent
+  cross-order refund activity;
+- responsive operational metric cards, queue panels, empty states, and an
+  inspectable definition panel showing generation time and timezone;
+- generated OpenAPI and TypeScript support for every dashboard metric and
+  queue item;
+- PostgreSQL lifecycle coverage for authentication, capability filtering, UTC
+  periods, paid queue transitions, low stock, failed payments, gross/refund/net
+  totals, and bounded record identifiers;
+- browser and accessibility coverage proving dashboard freshness, responsive
+  behavior, and direct navigation from fulfillment, inventory, and refund
+  queues to their source records.
+
+Phase 12 is complete. The next planned milestone is the dedicated security and
+operational hardening pass in section 11 of `IMPLEMENTATION_PLAN.md`.
 
 The complete Rust workspace suite, Clippy with warnings denied, API contract
 check, TypeScript checks, production builds, focused PostgreSQL commercial
-settings/discount/order lifecycle, and the full admin/storefront settings,
-discount, fulfillment, and refund browser journey passed on 2026-08-14. No
+settings/discount/order/dashboard lifecycle, and the full admin/storefront
+dashboard, settings, discount, fulfillment, and refund browser journey passed
+on 2026-08-15. No
 request was sent to live Stripe or SES services because production credentials
 are not committed or available locally.
 
