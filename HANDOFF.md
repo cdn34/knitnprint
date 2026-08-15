@@ -1,6 +1,6 @@
 # Project handoff
 
-Last updated: 2026-08-14
+Last updated: 2026-08-15
 
 ## Goal
 
@@ -648,16 +648,65 @@ The operational dashboard is implemented:
   behavior, and direct navigation from fulfillment, inventory, and refund
   queues to their source records.
 
-Phase 12 is complete. The next planned milestone is the dedicated security and
-operational hardening pass in section 11 of `IMPLEMENTATION_PLAN.md`.
+Phase 12 is complete. The section-11 security and operational hardening
+milestone is addressed in Phase 13 below.
 
-The complete Rust workspace suite, Clippy with warnings denied, API contract
-check, TypeScript checks, production builds, focused PostgreSQL commercial
-settings/discount/order/dashboard lifecycle, and the full admin/storefront
-dashboard, settings, discount, fulfillment, and refund browser journey passed
-on 2026-08-15. No
-request was sent to live Stripe or SES services because production credentials
-are not committed or available locally.
+## Phase 13 progress
+
+The dedicated security and operational hardening milestone is implemented:
+
+- production requires an explicit exact-HTTPS `WEB_ORIGINS` allowlist;
+- unsafe cross-origin browser mutations are rejected using `Origin` and Fetch
+  Metadata, credentialed CORS is allowlisted, request bodies are capped at 1
+  MiB, and defensive response headers are applied centrally;
+- staff cookies remain strict, customer cookies remain intentionally lax for
+  ordinary storefront navigation, and all production cookies are secure,
+  HTTP-only, opaque, hashed server-side, expiring, revocable, and cleaned;
+- registration, verification-email, and password-reset requests now have
+  concurrency-safe persistent account/IP/global abuse limits with hashed keys,
+  complementing the existing exact login limiter;
+- quarantined media must pass a production-required ClamAV-compatible INSTREAM
+  scan, declared MIME/signature matching, dimension/pixel/allocation bounds, and
+  normalization before it can become ready; scanner failure fails closed and an
+  infected result creates an immutable audit event;
+- production S3 supports the standard AWS credential chain for workload roles,
+  with prefix-scoped IAM, TLS-only bucket, and narrow upload-CORS templates;
+- production API startup no longer runs migrations and uses bounded statement,
+  lock, and idle-transaction timeouts; separate migration/runtime/reporting
+  PostgreSQL grants are provided;
+- production request tracing is structured JSON with request IDs/status/latency,
+  panics are converted to non-disclosing JSON errors, and a machine-readable
+  operational backlog check exits nonzero for durable work requiring attention;
+- a safe explicit-source/destination backup/restore verification script checks
+  successful migrations, table parity, and core commercial record counts after
+  a custom-format logical restore;
+- CI adds RustSec, filesystem/secret/misconfiguration scanning, a non-root API
+  container build and image scan, a PostgreSQL backup/restore drill, operational
+  backlog verification, and a bounded k6 public API load gate;
+- a production runbook maps every section-11 control to evidence and documents
+  the launch gate, AWS/PostgreSQL obligations, alerts, secret rotation, recovery
+  drill, retention workers, and first incident actions.
+
+Phase 13 is complete at the application/repository level. Production launch is
+still gated on executing and recording the runbook checks in the real AWS,
+PostgreSQL, Stripe, SES, malware-scanner, monitoring, and backup environments;
+those external controls cannot be truthfully verified from this repository.
+
+The complete Rust workspace suite (including PostgreSQL authorization,
+ownership, concurrency, idempotency, retention, webhook, media, and abuse-limit
+coverage), Clippy with warnings denied, API contract check, TypeScript checks,
+production builds, the 22-test storefront/account browser suite, and all four
+admin browser journeys passed on 2026-08-15. The live npm production audit
+identified two high-severity transitive advisories; the lockfile was advanced
+to `js-yaml` 4.3.1 and `nanoid` 3.3.18, after which the audit reported zero
+vulnerabilities and the frontend checks/builds passed again. The pinned-base,
+non-root API container built successfully and its configured user was verified
+as `10001:10001`. The operational backlog check reported healthy, and live
+local HTTP checks confirmed security headers and hostile-origin rejection. CI
+will run the RustSec/Trivy scans, backup/restore drill, and k6 gate in its clean
+tooling environment. No request was sent to live Stripe, SES, AWS S3, or a
+production malware scanner because their production credentials/services are
+not committed or available locally.
 
 ## Environment notes
 

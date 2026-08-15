@@ -50,7 +50,8 @@ placing real credentials in committed files.
 
 The API can start without PostgreSQL for development. `/api/health` will remain
 healthy while `/api/ready` reports `503` until a database connection is ready.
-Production startup requires `DATABASE_URL`.
+Production startup requires `DATABASE_URL` and does not run migrations. Apply
+them first with the separate migration credential in `MIGRATION_DATABASE_URL`.
 
 Local product images use the private `knitprint-media` bucket in MinIO.
 `docker compose up -d` creates the bucket automatically. The API defaults to
@@ -170,6 +171,20 @@ production must use HTTPS so secure session cookies work. Do not configure the
 browser to call a separate API origin unless the cookie and CSRF design is
 intentionally revised.
 
+Production also requires `WEB_ORIGINS` containing the exact HTTPS storefront
+and admin origins. Unsafe browser requests from any other origin are rejected,
+credentialed CORS is restricted to that list, request bodies are capped at 1
+MiB, and API responses receive defensive browser headers. Registration,
+verification-email, and password-reset requests have persistent hashed
+account/IP/global abuse limits in addition to the login limiter.
+
+Uploaded media remains quarantined until its object metadata, declared type,
+file signature, decode limits, and malware scan pass. Production requires a
+ClamAV-compatible TCP INSTREAM service in `MEDIA_SCANNER_ADDRESS`; scanner
+failure or timeout fails closed and cannot publish the object. When custom
+local `S3_ACCESS_KEY_ID`/`S3_SECRET_ACCESS_KEY` values are absent, production S3
+uses the standard AWS SDK credential chain so a workload role can be used.
+
 Staff and customer sign-ins share a PostgreSQL-backed limiter with independent
 scopes. Each account allows five failed attempts in 15 minutes, each client IP
 allows 60 login requests in five minutes, and each authentication scope allows
@@ -268,6 +283,20 @@ Order payment and fulfillment transactions only enqueue work; SES failure never
 rolls back or duplicates the commercial operation. Development delivery uses
 the in-memory mailbox, while production uses the configured SES sender.
 
+Run the operational backlog check from monitoring at least every five minutes:
+
+```bash
+DATABASE_URL=postgres://knitprint-runtime@localhost:5432/knitprint \
+npm run admin:check-operations
+```
+
+It writes a single JSON status report and exits nonzero for terminal/stale
+notification work, overdue payment cleanup, stale or infected media, expired
+carts, or expired customer-retention records. The full production gate,
+least-privilege PostgreSQL and AWS policy templates, alert thresholds, secret
+rotation order, and backup/restore drill are documented in
+`docs/operations/production-readiness.md`.
+
 ## API contract
 
 The Rust routes and response types are the source of truth for OpenAPI. Regenerate
@@ -312,12 +341,13 @@ DATABASE_URL=postgres://knitprint:knitprint@localhost:5432/knitprint \
 npx playwright test tests/e2e/account.spec.ts
 ```
 
-The planned payment, fulfillment, cancellation, and refund foundations are
-implemented. Production readiness still requires the dedicated security and
-operational hardening milestone. Production email additionally depends on a verified SES
-identity, production sending access, and the runtime configuration described
-above. Configure an edge request limit as part of deployment even though login
-endpoints also enforce hashed account, IP, and global database limits.
+The application-side security and operational hardening milestone is
+implemented. Production launch still requires completing the infrastructure
+deployment gate and recording evidence in the target AWS, PostgreSQL, Stripe,
+SES, scanner, monitoring, and backup environments. Production email also
+depends on a verified SES identity and production sending access. Configure an
+edge request limit even though sensitive account endpoints enforce persistent
+hashed account, IP, and global limits.
 
 Brand derivatives are generated deterministically from `images/logo.png`:
 
