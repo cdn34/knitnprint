@@ -146,11 +146,28 @@ development/test.
 Registration sends a 24-hour email-verification link, and forgotten-password
 requests send a one-hour single-use reset link. Development and test processes
 keep these messages in an in-memory mailbox used by browser automation; no
-external email is sent. Production uses the AWS SES v2 API and requires:
+external email is sent by default. To send real email through SES while keeping
+the rest of the application in development mode, export:
+
+```bash
+APP_ENV=development
+EMAIL_DELIVERY=ses
+STOREFRONT_BASE_URL=http://127.0.0.1:3000
+EMAIL_FROM=accounts@example.com
+AWS_REGION=eu-west-1
+AWS_PROFILE=knitprint-development
+# Optional: SES_CONFIGURATION_SET=knitprint-transactional
+```
+
+`AWS_PROFILE` is intended for local development and may be omitted when the
+standard AWS credential chain already resolves a workload role or environment
+credentials. Production uses SES by default and rejects
+`EMAIL_DELIVERY=development`; its minimum email configuration is:
 
 ```bash
 APP_ENV=production
 STOREFRONT_BASE_URL=https://shop.example.com
+EMAIL_DELIVERY=ses
 EMAIL_FROM=accounts@example.com
 AWS_REGION=eu-west-1
 # Optional: SES_CONFIGURATION_SET=knitprint-transactional
@@ -281,7 +298,8 @@ for up to eight attempts. Set `NOTIFICATION_BATCH_SIZE` from 1 to 100 to change
 the batch. A stale processing claim becomes eligible again after 15 minutes.
 Order payment and fulfillment transactions only enqueue work; SES failure never
 rolls back or duplicates the commercial operation. Development delivery uses
-the in-memory mailbox, while production uses the configured SES sender.
+the in-memory mailbox unless `EMAIL_DELIVERY=ses` is selected, while production
+always uses the configured SES sender.
 
 Run the operational backlog check from monitoring at least every five minutes:
 

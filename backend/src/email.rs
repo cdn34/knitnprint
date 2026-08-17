@@ -24,6 +24,12 @@ pub enum OrderEmailKind {
     Fulfillment,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum EmailDeliveryMode {
+    Development,
+    Ses,
+}
+
 impl OrderEmailKind {
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -136,10 +142,15 @@ impl EmailService {
             env::var("STOREFRONT_BASE_URL").unwrap_or_else(|_| "http://127.0.0.1:3000".into());
         validate_base_url(&base_url, environment == Environment::Production)?;
         let storefront_base_url = base_url.trim_end_matches('/').to_owned();
-        if environment != Environment::Production {
+
+        if delivery_mode(environment, env::var("EMAIL_DELIVERY").ok().as_deref())?
+            == EmailDeliveryMode::Development
+        {
             return Ok(Self::development(storefront_base_url));
         }
-        let from = env::var("EMAIL_FROM").map_err(|_| "EMAIL_FROM is required in production")?;
+
+        let from =
+            env::var("EMAIL_FROM").map_err(|_| "EMAIL_FROM is required when EMAIL_DELIVERY=ses")?;
         if !valid_email(&from) {
             return Err("EMAIL_FROM must be a valid email address".into());
         }
@@ -412,6 +423,23 @@ pub fn log_delivery_failure(error: &str, kind: AccountEmailKind) {
     warn!(%error, email_kind = kind.as_str(), "account email delivery failed");
 }
 
+fn delivery_mode(
+    environment: Environment,
+    configured: Option<&str>,
+) -> Result<EmailDeliveryMode, String> {
+    match (environment, configured) {
+        (Environment::Production, None | Some("ses")) => Ok(EmailDeliveryMode::Ses),
+        (Environment::Production, Some("development")) => {
+            Err("EMAIL_DELIVERY=development is not allowed in production".into())
+        }
+        (Environment::Development | Environment::Test, None | Some("development")) => {
+            Ok(EmailDeliveryMode::Development)
+        }
+        (Environment::Development | Environment::Test, Some("ses")) => Ok(EmailDeliveryMode::Ses),
+        (_, Some(_)) => Err("EMAIL_DELIVERY must be one of: development, ses".into()),
+    }
+}
+
 fn validate_base_url(value: &str, production: bool) -> Result<(), String> {
     let value = value.trim();
     let valid_scheme = value.starts_with("http://") || value.starts_with("https://");
@@ -439,7 +467,10 @@ fn escape_html(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{AccountEmailKind, EmailService, validate_base_url};
+    use super::{
+        AccountEmailKind, EmailDeliveryMode, EmailService, delivery_mode, validate_base_url,
+    };
+    use crate::config::Environment;
 
     #[tokio::test]
     async fn development_delivery_keeps_action_links_out_of_logs_and_respects_kinds() {
@@ -474,5 +505,46 @@ mod tests {
         assert!(validate_base_url("https://shop.example.com", true).is_ok());
         assert!(validate_base_url("http://shop.example.com", true).is_err());
         assert!(validate_base_url("shop.example.com", false).is_err());
+    }
+
+    #[test]
+    fn development_defaults_to_mailbox_and_can_opt_into_ses() {
+        assert_eq!(
+            delivery_mode(Environment::Development, None).unwrap(),
+            EmailDeliveryMode::Development
+        );
+        assert_eq!(
+            delivery_mode(Environment::Development, Some("development")).unwrap(),
+            EmailDeliveryMode::Development
+        );
+        assert_eq!(
+            delivery_mode(Environment::Development, Some("ses")).unwrap(),
+            EmailDeliveryMode::Ses
+        );
+    }
+
+    #[test]
+    fn production_defaults_to_ses_and_rejects_development_mailbox() {
+        assert_eq!(
+            delivery_mode(Environment::Production, None).unwrap(),
+            EmailDeliveryMode::Ses
+        );
+        assert_eq!(
+            delivery_mode(Environment::Production, Some("ses")).unwrap(),
+            EmailDeliveryMode::Ses
+        );
+        assert!(
+            delivery_mode(Environment::Production, Some("development"))
+                .unwrap_err()
+                .contains("not allowed")
+        );
+    }
+
+    #[test]
+    fn delivery_mode_rejects_unknown_values() {
+        assert_eq!(
+            delivery_mode(Environment::Test, Some("smtp")).unwrap_err(),
+            "EMAIL_DELIVERY must be one of: development, ses"
+        );
     }
 }
