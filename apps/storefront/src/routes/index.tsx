@@ -4,14 +4,11 @@ import { useMemo, useState } from 'react'
 import {
   ArrowRight,
   ChevronRight,
-  CircleUserRound,
   Clock3,
   Heart,
-  Menu,
   PackageCheck,
   Search,
   ShieldCheck,
-  ShoppingBag,
   Sparkles,
 } from 'lucide-react'
 import {
@@ -21,6 +18,11 @@ import {
   publishedCategories,
   publishedProducts,
 } from '../catalog-api'
+import {
+  StorefrontAnnouncement,
+  StorefrontFooter,
+  StorefrontHeader,
+} from '../components/storefront-shell'
 
 export const Route = createFileRoute('/')({
   loader: async () => {
@@ -55,17 +57,6 @@ const categoryPlaceholders = [
     description: 'Your idea, shaped in our studio',
   },
 ]
-
-function IconButton({
-  label,
-  children,
-}: Readonly<{ label: string; children: React.ReactNode }>) {
-  return (
-    <button className="icon-button" aria-label={label} type="button">
-      {children}
-    </button>
-  )
-}
 
 function ProductCard({
   product,
@@ -208,7 +199,7 @@ function HomePage() {
     const placeholders = categoryPlaceholders.slice(0, missing).map((category, index) => ({
       ...category,
       id: `category-placeholder-${index}`,
-      href: '#shop',
+      href: '/collections',
       count: 0,
       image: undefined,
       isPlaceholder: true,
@@ -218,46 +209,8 @@ function HomePage() {
 
   return (
     <>
-      <div className="announcement">
-        <Sparkles size={14} aria-hidden="true" />
-        Small-batch objects, made slowly in Portugal
-      </div>
-
-      <header className="site-header">
-        <a className="brand" href="/" aria-label="KnitPrint home">
-          <img
-            src="/knitprint-wordmark.webp"
-            alt="KnitPrint"
-            width="750"
-            height="195"
-          />
-        </a>
-
-        <nav className="desktop-nav" aria-label="Main navigation">
-          <a href="#shop">Shop</a>
-          <a href="#categories">Collections</a>
-          <a href="#story">Our story</a>
-        </nav>
-
-        <div className="header-actions">
-          <span className="desktop-action">
-            <IconButton label="Search">
-              <Search />
-            </IconButton>
-          </span>
-          <a className="icon-button" aria-label="Account" href="/account">
-            <CircleUserRound />
-          </a>
-          <a className="icon-button" aria-label="View cart" href="/cart">
-            <ShoppingBag />
-          </a>
-          <span className="mobile-action">
-            <IconButton label="Open menu">
-              <Menu />
-            </IconButton>
-          </span>
-        </div>
-      </header>
+      <StorefrontAnnouncement />
+      <StorefrontHeader />
 
       <main id="main-content" tabIndex={-1}>
         <section className="hero">
@@ -352,7 +305,7 @@ function HomePage() {
             <p>Everyday objects that bring softness, character, and a little joy.</p>
           </div>
           <ProductShelf products={products.slice(0, 4)} minimum={4} placeholderOffset={4} />
-          <a className="browse-all-link" href="#shop">
+          <a className="browse-all-link" href="/products">
             Browse all pieces <ChevronRight size={16} />
           </a>
         </section>
@@ -387,7 +340,7 @@ function HomePage() {
               <Clock3 aria-hidden="true" />
               <h3>Made in small batches</h3>
               <p>We make only what is needed, with time for every detail and less material waste.</p>
-              <a href="/about">Our process <ArrowRight size={14} /></a>
+              <a href="/our-process">Our process <ArrowRight size={14} /></a>
             </article>
             <article>
               <ShieldCheck aria-hidden="true" />
@@ -411,50 +364,7 @@ function HomePage() {
         </section>
       </main>
 
-      <footer className="site-footer">
-        <div className="footer-lead">
-          <img
-            src="/knitprint-wordmark.webp"
-            alt="KnitPrint"
-            width="750"
-            height="195"
-          />
-          <p>Objects with the soul of craft and the precision of print.</p>
-        </div>
-        <div className="footer-links">
-          <div>
-            <h2>About us</h2>
-            <a href="/about">About us</a>
-            <a href="/discounts">Discount code</a>
-            <a href="/personalized-gifts">Personalized gifts</a>
-          </div>
-          <div>
-            <h2>Shop</h2>
-            <a href="#shop">All pieces</a>
-            <a href="#categories">Collections</a>
-          </div>
-          <div>
-            <h2>Help</h2>
-            <a href="/terms">Terms and conditions</a>
-            <a href="/privacy">Privacy policy</a>
-            <a href="/cookies">Cookies policy</a>
-            <a href="/returns">Return policy</a>
-            <a href="/complaints-book">Complaints book</a>
-          </div>
-          <div>
-            <h2>Customer support and contacts</h2>
-            <a href="mailto:hello@knitprint.local">Our email</a>
-            <a href="/contact#phone">Phone number</a>
-            <a href="/contact#social-media">Social media</a>
-          </div>
-        </div>
-        <div className="footer-bottom">
-          <span>© 2026 KnitPrint</span>
-          <span>Made with care in Portugal</span>
-          <a href="/privacy">Privacy</a>
-          <a href="/terms">Terms</a>
-        </div>
-      </footer>
+      <StorefrontFooter />
     </>
   )
 }
