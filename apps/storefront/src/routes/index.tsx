@@ -264,10 +264,6 @@ function HomePage() {
           <div className="hero-copy">
             <p className="eyebrow">Made between yarn and form</p>
             <h1>Soft ideas, shaped into lasting objects.</h1>
-            <p className="hero-intro">
-              Thoughtful homeware where the warmth of knitting meets the
-              precision of 3D printing.
-            </p>
             <div className="hero-actions">
               <a className="button button--primary" href="#shop">
                 Explore the collection <ArrowRight size={18} />
@@ -276,18 +272,6 @@ function HomePage() {
                 Discover our process
               </a>
             </div>
-          </div>
-
-          <div className="hero-art" aria-label="Sculptural KnitPrint objects">
-            <div className="thread thread--one" />
-            <div className="thread thread--two" />
-            <div className="object object--tall">
-              <span />
-            </div>
-            <div className="object object--round">
-              <span />
-            </div>
-            <p>Layer by layer.<br />Loop by loop.</p>
           </div>
         </section>
 
