@@ -48,7 +48,7 @@ function CollectionPage() {
             height="195"
           />
         </a>
-        <a className="text-link" href="/#collections">
+        <a className="text-link" href="/collections">
           <ArrowLeft size={17} /> All collections
         </a>
       </header>
