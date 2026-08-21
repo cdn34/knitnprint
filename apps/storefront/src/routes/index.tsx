@@ -268,9 +268,6 @@ function HomePage() {
               <a className="button button--primary" href="#shop">
                 Explore the collection <ArrowRight size={18} />
               </a>
-              <a className="text-link" href="#story">
-                Discover our process
-              </a>
             </div>
           </div>
         </section>
