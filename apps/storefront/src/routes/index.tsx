@@ -218,8 +218,15 @@ function HomePage() {
             <p className="eyebrow">Made between yarn and form</p>
             <h1>Soft ideas, shaped into lasting objects.</h1>
             <div className="hero-actions">
-              <a className="button button--primary" href="#shop">
-                Explore the collection <ArrowRight size={18} />
+              <a
+                className="button button--primary"
+                href="/collections"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Explore the collection
+                <span className="sr-only"> (opens in a new tab)</span>
+                <ArrowRight size={18} aria-hidden="true" />
               </a>
             </div>
           </div>
