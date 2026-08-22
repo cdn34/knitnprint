@@ -2,7 +2,6 @@ import type { ReactNode } from 'react'
 import {
   CircleUserRound,
   Menu,
-  Search,
   ShoppingBag,
   Sparkles,
 } from 'lucide-react'
@@ -46,11 +45,6 @@ export function StorefrontHeader() {
       </nav>
 
       <div className="header-actions">
-        <span className="desktop-action">
-          <IconButton label="Search">
-            <Search />
-          </IconButton>
-        </span>
         <a className="icon-button" aria-label="Account" href="/account">
           <CircleUserRound />
         </a>

@@ -1109,7 +1109,7 @@ main:focus { outline: none; }
   .announcement { font-size: .6rem; }
   .site-header { height: 76px; padding-inline: 1rem; grid-template-columns: 1fr auto; }
   .brand { width: 134px; }
-  .desktop-nav, .desktop-action { display: none; }
+  .desktop-nav { display: none; }
   .mobile-action { display: inline; }
   .hero {
     min-height: 660px;
