@@ -103,8 +103,6 @@ export function StorefrontFooter() {
       <div className="footer-bottom">
         <span>© 2026 KnitPrint</span>
         <span>Made with care in Portugal</span>
-        <a href="/privacy">Privacy</a>
-        <a href="/terms">Terms</a>
       </div>
     </footer>
   )
