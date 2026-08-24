@@ -3,14 +3,14 @@ WORKDIR /build
 COPY Cargo.toml Cargo.lock ./
 COPY backend ./backend
 COPY migrations ./migrations
-RUN cargo build --locked --release -p knitprint-api --bin knitprint-api
+RUN cargo build --locked --release -p knitnprint-api --bin knitnprint-api
 
 FROM debian:bookworm-slim@sha256:abd67ffcfa541b485a3dff59865ab629aa048a6c613e639d36e7456b0b229241
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
-    && useradd --system --uid 10001 --no-create-home knitprint
-COPY --from=build /build/target/release/knitprint-api /usr/local/bin/knitprint-api
+    && useradd --system --uid 10001 --no-create-home knitnprint
+COPY --from=build /build/target/release/knitnprint-api /usr/local/bin/knitnprint-api
 USER 10001:10001
 EXPOSE 8080
-ENTRYPOINT ["/usr/local/bin/knitprint-api"]
+ENTRYPOINT ["/usr/local/bin/knitnprint-api"]

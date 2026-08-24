@@ -15,8 +15,8 @@ export const Route = createFileRoute('/collections/')({
   },
   head: () => ({
     meta: [
-      { title: 'Collections — KnitnPrint' },
-      { name: 'description', content: 'Browse KnitnPrint collections by category.' },
+      { title: 'Collections — KnitNPrint' },
+      { name: 'description', content: 'Browse KnitNPrint collections by category.' },
     ],
   }),
   component: CollectionsPage,

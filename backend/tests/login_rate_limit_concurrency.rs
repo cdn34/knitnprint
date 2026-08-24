@@ -10,7 +10,7 @@ use axum::{
     extract::ConnectInfo,
     http::{Request, StatusCode, header},
 };
-use knitprint_api::{
+use knitnprint_api::{
     AppState, app,
     login_rate_limit::{LoginLimitError, consume_account_action},
 };

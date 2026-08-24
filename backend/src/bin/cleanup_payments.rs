@@ -25,7 +25,7 @@ async fn main() {
             eprintln!("database unavailable: {error}");
             std::process::exit(1);
         });
-    let cleaned = knitprint_api::payments::cleanup_abandoned(&pool, batch_size)
+    let cleaned = knitnprint_api::payments::cleanup_abandoned(&pool, batch_size)
         .await
         .unwrap_or_else(|error| {
             eprintln!("payment cleanup failed: {error}");

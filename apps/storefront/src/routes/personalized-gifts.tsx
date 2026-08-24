@@ -6,8 +6,8 @@ import { useI18n } from '../i18n'
 export const Route = createFileRoute('/personalized-gifts')({
   head: () => ({
     meta: [
-      { title: 'Personalized gifts — KnitnPrint' },
-      { name: 'description', content: 'Personalized KnitnPrint gift inspiration.' },
+      { title: 'Personalized gifts — KnitNPrint' },
+      { name: 'description', content: 'Personalized KnitNPrint gift inspiration.' },
     ],
   }),
   component: PersonalizedGiftsPage,

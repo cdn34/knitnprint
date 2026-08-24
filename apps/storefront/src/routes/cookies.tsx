@@ -8,8 +8,8 @@ import { cookiesEs, cookiesPt } from '../i18n/cookies-content'
 export const Route = createFileRoute('/cookies')({
   head: () => ({
     meta: [
-      { title: 'Cookies Policy — KnitnPrint' },
-      { name: 'description', content: 'Learn how KnitnPrint uses cookies and how you can manage your preferences.' },
+      { title: 'Cookies Policy — KnitNPrint' },
+      { name: 'description', content: 'Learn how KnitNPrint uses cookies and how you can manage your preferences.' },
     ],
   }),
   component: CookiesPage,
@@ -29,7 +29,7 @@ function CookiesPage() {
         <article className="policy-document">
           {locale === 'en' ? <>
           <div className="policy-opening policy-opening--first">
-            <p>This Cookies Policy explains how KnitnPrint uses cookies and similar technologies on its website, as well as the choices available to users regarding their use.</p>
+            <p>This Cookies Policy explains how KnitNPrint uses cookies and similar technologies on its website, as well as the choices available to users regarding their use.</p>
             <p>This Policy should be read together with our Privacy Policy, where you can find further information about how we process and protect your personal data.</p>
           </div>
 
@@ -160,13 +160,13 @@ function CookiesPage() {
           </PolicySection>
 
           <PolicySection number="12" title="Changes to this Cookies Policy">
-            <p>KnitnPrint may update this Cookies Policy whenever necessary, including as a result of legislative or technological changes or changes to the services used on the website.</p>
+            <p>KnitNPrint may update this Cookies Policy whenever necessary, including as a result of legislative or technological changes or changes to the services used on the website.</p>
             <p>We recommend checking this page periodically.</p>
             <p>The date of the latest update will be shown at the beginning of the document.</p>
           </PolicySection>
 
           <PolicySection number="13" title="Contact us">
-            <p>For any questions about this Cookies Policy or the protection of your personal data, please contact KnitnPrint at <a href="mailto:support@knitnprint.com">support@knitnprint.com</a>.</p>
+            <p>For any questions about this Cookies Policy or the protection of your personal data, please contact KnitNPrint at <a href="mailto:support@knitnprint.com">support@knitnprint.com</a>.</p>
           </PolicySection>
           </> : <LocalizedCookies content={localized} label={t('cookies.label')} />}
         </article>
@@ -177,7 +177,7 @@ function CookiesPage() {
         title={t('cookies.faqTitle')}
         items={locale === 'en' ? [
           { question: 'What are cookies?', answer: 'Cookies are small files stored by a website on your browser or device to support functionality, remember preferences and understand website use.' },
-          { question: 'Which cookies does KnitnPrint use?', answer: 'The website may use necessary, preference, analytics and advertising cookies, as described in the complete Cookies Policy above.' },
+          { question: 'Which cookies does KnitNPrint use?', answer: 'The website may use necessary, preference, analytics and advertising cookies, as described in the complete Cookies Policy above.' },
           { question: 'Can I reject optional cookies?', answer: 'Yes. Where a consent panel is available, optional cookies should remain inactive until you make a valid choice.' },
           { question: 'How can I change my cookie preferences?', answer: 'Use the Manage Cookies option when available, or review the privacy and cookie controls in your browser settings.' },
           { question: 'Will the website still work if I reject cookies?', answer: 'Necessary cookies support essential store functions. Rejecting optional cookies should not prevent those functions, although some additional features may be affected.' },

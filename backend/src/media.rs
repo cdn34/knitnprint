@@ -31,18 +31,18 @@ pub struct MediaStorage {
 }
 
 impl MediaStorage {
-    pub async fn from_env(production: bool) -> Result<Option<Self>, String> {
+    pub async fn from_env(deployed: bool) -> Result<Option<Self>, String> {
         let endpoint = env::var("S3_ENDPOINT").ok();
         let region = env::var("S3_REGION")
             .ok()
-            .or_else(|| (!production).then(|| "eu-west-1".into()));
+            .or_else(|| (!deployed).then(|| "eu-west-1".into()));
         let bucket = env::var("S3_BUCKET")
             .ok()
-            .or_else(|| (!production).then(|| "knitprint-media".into()));
+            .or_else(|| (!deployed).then(|| "knitnprint-media".into()));
         let access_key = env::var("S3_ACCESS_KEY_ID").ok();
         let secret_key = env::var("S3_SECRET_ACCESS_KEY").ok();
         let (Some(region), Some(bucket)) = (region, bucket) else {
-            return Err("S3_REGION and S3_BUCKET are required in production".into());
+            return Err("S3_REGION and S3_BUCKET are required in staging and production".into());
         };
         if access_key.is_some() != secret_key.is_some() {
             return Err(
@@ -57,21 +57,21 @@ impl MediaStorage {
                 secret_key,
                 None,
                 None,
-                "knitprint-config",
+                "knitnprint-config",
             ));
-        } else if !production {
+        } else if !deployed {
             loader = loader.credentials_provider(Credentials::new(
-                "knitprint",
-                "knitprint-local",
+                "knitnprint",
+                "knitnprint-local",
                 None,
                 None,
-                "knitprint-development",
+                "knitnprint-development",
             ));
         }
         let shared = loader.load().await;
         let mut builder = aws_sdk_s3::config::Builder::from(&shared);
         if let Some(endpoint) =
-            endpoint.or_else(|| (!production).then(|| "http://127.0.0.1:9100".into()))
+            endpoint.or_else(|| (!deployed).then(|| "http://127.0.0.1:9100".into()))
         {
             builder = builder.endpoint_url(endpoint).force_path_style(true);
         }

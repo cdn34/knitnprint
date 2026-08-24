@@ -97,7 +97,7 @@ pub async fn cleanup_expired_customer_data(
             "#,
         )
         .bind(customer_id)
-        .bind("anonymized@knitprint.invalid")
+        .bind("anonymized@knitnprint.invalid")
         .execute(&mut *transaction)
         .await?;
         sqlx::query(

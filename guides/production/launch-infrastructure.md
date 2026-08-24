@@ -333,14 +333,14 @@ Staging and production must have separate:
 Example names:
 
 ```text
-knitprint-staging-media
-knitprint-production-media
+knitnprint-staging-media
+knitnprint-production-media
 
-knitprint-staging-stripe-events
-knitprint-production-stripe-events
+knitnprint-staging-stripe-events
+knitnprint-production-stripe-events
 
-knitprint-staging-stripe-events-dlq
-knitprint-production-stripe-events-dlq
+knitnprint-staging-stripe-events-dlq
+knitnprint-production-stripe-events-dlq
 ```
 
 The tradeoff is that an account-level credential compromise, quota problem, or incorrect administrator action could affect both environments. Least-privilege IAM, MFA, tested backups, explicit production guardrails, and environment-specific resource policies are proportionate mitigations for now.
@@ -349,20 +349,20 @@ The tradeoff is that an account-level credential compromise, quota problem, or i
 
 The website domain and the SES sender identity are related operationally but are configured separately:
 
-- `https://staging.knitnpick.com` can be the representative website URL in the SES production-access request.
+- `https://staging.knitnprint.com` can be the representative website URL in the SES production-access request.
 - SES domain ownership is verified using DNS records; the production web application does not need to be live first.
-- Verify `staging.knitnpick.com` for staging mail.
-- Verify `knitnpick.com`, or a dedicated production mail subdomain, for production mail.
+- Verify `staging.knitnprint.com` for staging mail.
+- Verify `knitnprint.com`, or a dedicated production mail subdomain, for production mail.
 
 Within the shared AWS account and `eu-west-1`:
 
 1. Verify the staging and production sender identities.
 2. Create separate transactional configuration sets, for example:
-   - `knitprint-staging-transactional`
-   - `knitprint-production-transactional`
+   - `knitnprint-staging-transactional`
+   - `knitnprint-production-transactional`
 3. Request SES production access once for the account in `eu-west-1`.
 4. Select `TRANSACTIONAL` as the primary mail type.
-5. Use `https://staging.knitnpick.com` as the website URL while the production site is not live.
+5. Use `https://staging.knitnprint.com` as the website URL while the production site is not live.
 6. Describe account-verification, password-reset, and order-notification use cases.
 7. Describe the bounce and complaint suppression and monitoring process.
 
@@ -408,7 +408,7 @@ Scheduled processes
 ## Pre-launch checklist
 
 - [ ] Create environment-specific resources in `eu-west-1`.
-- [ ] Configure the staging site at `staging.knitnpick.com`.
+- [ ] Configure the staging site at `staging.knitnprint.com`.
 - [ ] Verify staging and production SES sender identities in `eu-west-1`.
 - [ ] Request and receive SES production access in `eu-west-1`.
 - [ ] Enforce a staging email-recipient allowlist.

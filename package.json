@@ -1,5 +1,5 @@
 {
-  "name": "knitprint",
+  "name": "knitnprint",
   "private": true,
   "version": "0.1.0",
   "engines": {
@@ -10,27 +10,27 @@
     "packages/*"
   ],
   "scripts": {
-    "dev:storefront": "npm run dev --workspace=@knitprint/storefront",
-    "dev:admin": "npm run dev --workspace=@knitprint/admin",
+    "dev:storefront": "npm run dev --workspace=@knitnprint/storefront",
+    "dev:admin": "npm run dev --workspace=@knitnprint/admin",
     "build": "npm run build --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "test:e2e": "playwright test",
     "test:e2e:admin": "playwright test --config=playwright.admin.config.ts",
     "assets:brand": "node scripts/generate-brand-assets.mjs",
-    "api:openapi": "cargo run -q -p knitprint-api --bin export_openapi -- openapi/knitprint.json",
+    "api:openapi": "cargo run -q -p knitnprint-api --bin export_openapi -- openapi/knitnprint.json",
     "api:generate": "npm run api:openapi && node scripts/generate-api-schema.mjs",
     "api:check": "node scripts/check-api-schema.mjs",
-    "db:migrate": "cargo run -p knitprint-api --bin migrate",
-    "db:seed": "cargo run -p knitprint-api --bin seed",
-    "admin:cleanup-sessions": "cargo run -p knitprint-api --bin cleanup_sessions",
-    "admin:cleanup-media": "cargo run -p knitprint-api --bin cleanup_media",
-    "admin:cleanup-customers": "cargo run -p knitprint-api --bin cleanup_customers",
-    "admin:cleanup-carts": "cargo run -p knitprint-api --bin cleanup_carts",
-    "admin:cleanup-payments": "cargo run -p knitprint-api --bin cleanup_payments",
-    "admin:deliver-notifications": "cargo run -p knitprint-api --bin deliver_notifications",
-    "admin:check-operations": "cargo run -p knitprint-api --bin check_operations",
-    "admin:create-owner": "cargo run -p knitprint-api --bin create_owner"
+    "db:migrate": "cargo run -p knitnprint-api --bin migrate",
+    "db:seed": "cargo run -p knitnprint-api --bin seed",
+    "admin:cleanup-sessions": "cargo run -p knitnprint-api --bin cleanup_sessions",
+    "admin:cleanup-media": "cargo run -p knitnprint-api --bin cleanup_media",
+    "admin:cleanup-customers": "cargo run -p knitnprint-api --bin cleanup_customers",
+    "admin:cleanup-carts": "cargo run -p knitnprint-api --bin cleanup_carts",
+    "admin:cleanup-payments": "cargo run -p knitnprint-api --bin cleanup_payments",
+    "admin:deliver-notifications": "cargo run -p knitnprint-api --bin deliver_notifications",
+    "admin:check-operations": "cargo run -p knitnprint-api --bin check_operations",
+    "admin:create-owner": "cargo run -p knitnprint-api --bin create_owner"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.12.1",

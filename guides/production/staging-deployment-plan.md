@@ -120,7 +120,7 @@ EMAIL_DELIVERY=ses
 EMAIL_FROM=no-reply@staging.knitnprint.com
 EMAIL_RECIPIENT_ALLOWLIST=<explicit-test-addresses>
 AWS_REGION=eu-west-1
-SES_CONFIGURATION_SET=knitprint-staging-transactional
+SES_CONFIGURATION_SET=knitnprint-staging-transactional
 ```
 
 Secrets injected from Secrets Manager:
@@ -170,7 +170,7 @@ Create a Terraform DNS-prerequisite stack that requests but does not manage exte
 - SES identity for `staging.knitnprint.com` in `eu-west-1`.
 - Easy DKIM.
 - Custom MAIL FROM domain such as `bounce.staging.knitnprint.com`.
-- `knitprint-staging-transactional` configuration set.
+- `knitnprint-staging-transactional` configuration set.
 - Account-level SES suppression enabled.
 - Failure-event SNS topic for bounce, complaint, reject, and delivery-delay events.
 
@@ -317,7 +317,7 @@ First deployment:
 Start staging:
 
 1. Authenticate and verify account/Region.
-2. Set `/knitprint/staging/desired-state` to `on`.
+2. Set `/knitnprint/staging/desired-state` to `on`.
 3. Start RDS and wait until available.
 4. Start ClamAV and wait until healthy.
 5. scale API and storefront services to one.
@@ -382,7 +382,7 @@ Functional staging acceptance:
 
 Documentation delivered with implementation:
 
-- Correct every `knitnpick.com` typo to `knitnprint.com`.
+- Correct every `knitnprint.com` typo to `knitnprint.com`.
 - Update `guides/production/launch-infrastructure.md` with the final staging decisions and costs.
 - Add a dedicated staging deployment runbook containing every command in execution order.
 - Add separate troubleshooting, start/stop, rollback, SES migration, Stripe test, backup/restore, and teardown sections.

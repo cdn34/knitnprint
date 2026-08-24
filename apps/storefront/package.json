@@ -1,5 +1,5 @@
 {
-  "name": "@knitprint/storefront",
+  "name": "@knitnprint/storefront",
   "private": true,
   "type": "module",
   "scripts": {
@@ -8,7 +8,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@knitprint/api-client": "*",
+    "@knitnprint/api-client": "*",
     "@tanstack/react-router": "latest",
     "@tanstack/react-start": "latest",
     "lucide-react": "latest",

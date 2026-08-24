@@ -1785,7 +1785,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "knitprint-api"
+name = "knitnprint-api"
 version = "0.1.0"
 dependencies = [
  "argon2",

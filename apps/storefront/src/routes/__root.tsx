@@ -18,11 +18,11 @@ export const Route = createRootRoute({
       {
         name: 'description',
         content:
-          'KnitnPrint creates thoughtful objects where soft craft meets precise 3D printing.',
+          'KnitNPrint creates thoughtful objects where soft craft meets precise 3D printing.',
       },
-      { title: 'KnitnPrint — Made between yarn and form' },
+      { title: 'KnitNPrint — Made between yarn and form' },
     ],
-    links: [{ rel: 'icon', type: 'image/webp', href: '/knitprint-mark.webp' }],
+    links: [{ rel: 'icon', type: 'image/webp', href: '/knitnprint-mark.webp' }],
   }),
   component: Root,
   notFoundComponent: NotFoundPage,
@@ -70,12 +70,12 @@ function LocalizedMetadata() {
   useEffect(() => {
     const metadata = metadataByPath[pathname]
     if (pathname === '/our-process') {
-      document.title = `${t('process.title1')} ${t('process.title2')} — KnitnPrint`
+      document.title = `${t('process.title1')} ${t('process.title2')} — KnitNPrint`
       updateMetaDescription(t('process.intro'))
       return
     }
     if (!metadata) return
-    document.title = `${t(metadata.title)} — KnitnPrint`
+    document.title = `${t(metadata.title)} — KnitNPrint`
     updateMetaDescription(t(metadata.description))
   }, [pathname, t])
 

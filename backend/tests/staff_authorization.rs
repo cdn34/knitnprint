@@ -4,7 +4,7 @@ use axum::{
     body::{Body, to_bytes},
     http::{Request, StatusCode, header},
 };
-use knitprint_api::{
+use knitnprint_api::{
     AppState, app,
     auth::{SESSION_COOKIE, hash_password},
 };

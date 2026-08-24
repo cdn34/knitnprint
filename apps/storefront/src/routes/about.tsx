@@ -6,8 +6,8 @@ import { useI18n } from '../i18n'
 export const Route = createFileRoute('/about')({
   head: () => ({
     meta: [
-      { title: 'Our story — KnitnPrint' },
-      { name: 'description', content: 'Discover how KnitnPrint turns meaningful ideas into personalised products.' },
+      { title: 'Our story — KnitNPrint' },
+      { name: 'description', content: 'Discover how KnitNPrint turns meaningful ideas into personalised products.' },
     ],
   }),
   component: AboutPage,

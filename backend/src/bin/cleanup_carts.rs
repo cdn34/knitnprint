@@ -1,6 +1,6 @@
 use std::{env, process::ExitCode};
 
-use knitprint_api::carts::cleanup_expired;
+use knitnprint_api::carts::cleanup_expired;
 use sqlx::postgres::PgPoolOptions;
 
 #[tokio::main]

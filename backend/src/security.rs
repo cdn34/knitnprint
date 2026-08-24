@@ -11,7 +11,7 @@ use crate::error::ErrorBody;
 #[derive(Clone, Debug)]
 pub struct SecurityPolicy {
     pub allowed_origins: Vec<String>,
-    pub production: bool,
+    pub deployed: bool,
 }
 
 impl Default for SecurityPolicy {
@@ -23,7 +23,7 @@ impl Default for SecurityPolicy {
                 "http://127.0.0.1:3001".into(),
                 "http://localhost:3001".into(),
             ],
-            production: false,
+            deployed: false,
         }
     }
 }
@@ -67,7 +67,7 @@ pub async fn enforce(
         header::HeaderName::from_static("cross-origin-resource-policy"),
         HeaderValue::from_static("same-origin"),
     );
-    if policy.production {
+    if policy.deployed {
         headers.insert(
             header::STRICT_TRANSPORT_SECURITY,
             HeaderValue::from_static("max-age=31536000; includeSubDomains"),

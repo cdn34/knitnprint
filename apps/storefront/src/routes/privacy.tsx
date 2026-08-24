@@ -9,8 +9,8 @@ import type { LegalSection } from '../i18n/terms-content'
 export const Route = createFileRoute('/privacy')({
   head: () => ({
     meta: [
-      { title: 'Privacy Policy — KnitnPrint' },
-      { name: 'description', content: 'Learn how KnitnPrint collects, uses and protects your personal data.' },
+      { title: 'Privacy Policy — KnitNPrint' },
+      { name: 'description', content: 'Learn how KnitNPrint collects, uses and protects your personal data.' },
     ],
   }),
   component: PrivacyPage,
@@ -34,7 +34,7 @@ function PrivacyPage() {
               <p className="eyebrow">{t('terms.eyebrow')}</p>
               <h2 id="data-controller-title">{t('privacy.controller')}</h2>
               <dl>
-                <div><dt>{t('terms.tradingName')}</dt><dd>KnitnPrint</dd></div>
+                <div><dt>{t('terms.tradingName')}</dt><dd>KnitNPrint</dd></div>
                 <div><dt>{t('terms.owner')}</dt><dd>Daniela Tojal</dd></div>
                 <div><dt>{t('terms.taxNumber')}</dt><dd>220666768</dd></div>
                 <div><dt>{t('terms.email')}</dt><dd><a href="mailto:support@knitnprint.com">support@knitnprint.com</a></dd></div>
@@ -45,7 +45,7 @@ function PrivacyPage() {
 
           {locale === 'en' ? <>
           <div className="policy-opening">
-            <p>This Privacy Policy describes how KnitnPrint, the company responsible for <a href="https://knitnprint.com">knitnprint.com</a>, collects, uses and protects users’ personal data when they visit the website or make purchases through the online store.</p>
+            <p>This Privacy Policy describes how KnitNPrint, the company responsible for <a href="https://knitnprint.com">knitnprint.com</a>, collects, uses and protects users’ personal data when they visit the website or make purchases through the online store.</p>
             <p>By using this website, you accept the practices described in this Privacy Policy.</p>
           </div>
 

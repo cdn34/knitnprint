@@ -53,7 +53,7 @@ import {
   type OrderSummary,
   type StaffProfile,
   type StaffRecord,
-} from '@knitprint/api-client'
+} from '@knitnprint/api-client'
 import './styles.css'
 
 const api = createApiClient()
@@ -132,8 +132,8 @@ function LoginScreen({
       <section className="login-card" aria-labelledby="login-heading">
         <div className="login-brand">
           <img
-            src="/knitprint-wordmark.webp"
-            alt="KnitPrint"
+            src="/knitnprint-wordmark.webp"
+            alt="KnitNPrint"
             width="750"
             height="195"
           />
@@ -145,7 +145,7 @@ function LoginScreen({
           </div>
           <p className="login-eyebrow">Private workspace</p>
           <h1 id="login-heading">Welcome back.</h1>
-          <p>Sign in to manage the KnitPrint store.</p>
+          <p>Sign in to manage the KnitNPrint store.</p>
         </div>
         <form onSubmit={submit}>
           <label htmlFor="email">Email address</label>
@@ -253,7 +253,7 @@ function AdminShell({ profile }: Readonly<{ profile: StaffProfile }>) {
     <div className="admin-shell">
       <aside className="admin-sidebar">
         <div className="admin-brand">
-          <img src="/knitprint-wordmark.webp" alt="KnitPrint" />
+          <img src="/knitnprint-wordmark.webp" alt="KnitNPrint" />
           <span>Admin</span>
         </div>
         <nav aria-label="Admin navigation">

@@ -4,7 +4,7 @@ use axum::{
     body::{Body, to_bytes},
     http::{Request, StatusCode, header},
 };
-use knitprint_api::{
+use knitnprint_api::{
     AppState, app,
     auth::{SESSION_COOKIE, hash_password},
 };
@@ -16,7 +16,7 @@ use sqlx::{
 use tower::ServiceExt;
 use uuid::Uuid;
 
-const CUSTOMER_SESSION_COOKIE: &str = "knitprint_customer";
+const CUSTOMER_SESSION_COOKIE: &str = "knitnprint_customer";
 const CUSTOMER_PASSWORD: &str = "integration-customer-passphrase";
 
 #[tokio::test]
@@ -44,7 +44,7 @@ async fn customer_account_authentication_and_address_ownership_lifecycle() {
     insert_staff(&pool, "owner@account.test").await;
     let router = app(AppState {
         database: Some(pool.clone()),
-        email: knitprint_api::email::EmailService::development("http://127.0.0.1:3000"),
+        email: knitnprint_api::email::EmailService::development("http://127.0.0.1:3000"),
         ..AppState::default()
     });
 

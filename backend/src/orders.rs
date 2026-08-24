@@ -32,7 +32,7 @@ use crate::{
     },
 };
 
-const CART_COOKIE: &str = "knitprint_cart";
+const CART_COOKIE: &str = "knitnprint_cart";
 const ORDERS_READ: &str = "orders.read";
 const ORDERS_FULFILL: &str = "orders.fulfill";
 

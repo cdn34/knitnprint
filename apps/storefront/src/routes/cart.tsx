@@ -23,10 +23,10 @@ import { useI18n } from '../i18n'
 export const Route = createFileRoute('/cart')({
   head: () => ({
     meta: [
-      { title: 'Your cart — KnitnPrint' },
+      { title: 'Your cart — KnitNPrint' },
       {
         name: 'description',
-        content: 'Review your KnitnPrint pieces and prepare delivery details.',
+        content: 'Review your KnitNPrint pieces and prepare delivery details.',
       },
     ],
   }),

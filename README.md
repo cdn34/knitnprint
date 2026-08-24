@@ -1,6 +1,6 @@
-# KnitPrint
+# KnitNPrint
 
-KnitPrint is a craft-led ecommerce platform with a server-rendered public
+KnitNPrint is a craft-led ecommerce platform with a server-rendered public
 storefront, a private admin SPA, and a Rust API.
 
 ## Requirements
@@ -25,8 +25,8 @@ npm run db:migrate
 npm run db:seed
 npm run dev:storefront
 npm run dev:admin
-DATABASE_URL=postgres://knitprint:knitprint@localhost:5432/knitprint \
-cargo run -p knitprint-api
+DATABASE_URL=postgres://knitnprint:knitnprint@localhost:5432/knitnprint \
+cargo run -p knitnprint-api
 ```
 
 Create the first staff owner after migrating:
@@ -35,7 +35,7 @@ Create the first staff owner after migrating:
 OWNER_EMAIL=owner@example.com \
 OWNER_NAME="Store owner" \
 OWNER_PASSWORD="use-a-long-development-password" \
-DATABASE_URL=postgres://knitprint:knitprint@localhost:5432/knitprint \
+DATABASE_URL=postgres://knitnprint:knitnprint@localhost:5432/knitnprint \
 npm run admin:create-owner
 ```
 
@@ -53,7 +53,7 @@ healthy while `/api/ready` reports `503` until a database connection is ready.
 Production startup requires `DATABASE_URL` and does not run migrations. Apply
 them first with the separate migration credential in `MIGRATION_DATABASE_URL`.
 
-Local product images use the private `knitprint-media` bucket in MinIO.
+Local product images use the private `knitnprint-media` bucket in MinIO.
 `docker compose up -d` creates the bucket automatically. The API defaults to
 the local MinIO credentials in development; production requires all five
 `S3_*` values shown in `backend/.env.example`.
@@ -155,8 +155,8 @@ EMAIL_DELIVERY=ses
 STOREFRONT_BASE_URL=http://127.0.0.1:3000
 EMAIL_FROM=accounts@example.com
 AWS_REGION=eu-west-1
-AWS_PROFILE=knitprint-development
-# Optional: SES_CONFIGURATION_SET=knitprint-transactional
+AWS_PROFILE=knitnprint-development
+# Optional: SES_CONFIGURATION_SET=knitnprint-transactional
 ```
 
 `AWS_PROFILE` is intended for local development and may be omitted when the
@@ -170,7 +170,7 @@ STOREFRONT_BASE_URL=https://shop.example.com
 EMAIL_DELIVERY=ses
 EMAIL_FROM=accounts@example.com
 AWS_REGION=eu-west-1
-# Optional: SES_CONFIGURATION_SET=knitprint-transactional
+# Optional: SES_CONFIGURATION_SET=knitnprint-transactional
 ```
 
 Use the standard AWS SDK credential chain (prefer an instance/task/runtime
@@ -221,7 +221,7 @@ Run authentication cleanup from a scheduler (daily is appropriate for most
 installations):
 
 ```bash
-DATABASE_URL=postgres://knitprint:knitprint@localhost:5432/knitprint \
+DATABASE_URL=postgres://knitnprint:knitnprint@localhost:5432/knitnprint \
 npm run admin:cleanup-sessions
 ```
 
@@ -234,7 +234,7 @@ Clean abandoned product-image uploads from PostgreSQL and MinIO on the same
 daily schedule:
 
 ```bash
-DATABASE_URL=postgres://knitprint:knitprint@localhost:5432/knitprint \
+DATABASE_URL=postgres://knitnprint:knitnprint@localhost:5432/knitnprint \
 npm run admin:cleanup-media
 ```
 
@@ -246,7 +246,7 @@ and retains an immutable system audit entry.
 Run customer-retention cleanup from a daily scheduler as well:
 
 ```bash
-DATABASE_URL=postgres://knitprint:knitprint@localhost:5432/knitprint \
+DATABASE_URL=postgres://knitnprint:knitnprint@localhost:5432/knitnprint \
 npm run admin:cleanup-customers
 ```
 
@@ -262,7 +262,7 @@ runs if the expired backlog can exceed the configured batch size.
 Remove expired disposable carts on the same daily schedule:
 
 ```bash
-DATABASE_URL=postgres://knitprint:knitprint@localhost:5432/knitprint \
+DATABASE_URL=postgres://knitnprint:knitnprint@localhost:5432/knitnprint \
 npm run admin:cleanup-carts
 ```
 
@@ -274,7 +274,7 @@ address retention remains governed independently by customer cleanup.
 Run abandoned-payment cleanup frequently (for example, every five minutes):
 
 ```bash
-DATABASE_URL=postgres://knitprint:knitprint@localhost:5432/knitprint \
+DATABASE_URL=postgres://knitnprint:knitnprint@localhost:5432/knitnprint \
 npm run admin:cleanup-payments
 ```
 
@@ -288,7 +288,7 @@ Fulfillment and order emails use a durable PostgreSQL outbox. Run its delivery
 worker continuously or once per minute:
 
 ```bash
-DATABASE_URL=postgres://knitprint:knitprint@localhost:5432/knitprint \
+DATABASE_URL=postgres://knitnprint:knitnprint@localhost:5432/knitnprint \
 npm run admin:deliver-notifications
 ```
 
@@ -304,7 +304,7 @@ always uses the configured SES sender.
 Run the operational backlog check from monitoring at least every five minutes:
 
 ```bash
-DATABASE_URL=postgres://knitprint-runtime@localhost:5432/knitprint \
+DATABASE_URL=postgres://knitnprint-runtime@localhost:5432/knitnprint \
 npm run admin:check-operations
 ```
 
@@ -324,7 +324,7 @@ the checked-in contract and shared TypeScript types after changing an endpoint:
 npm run api:generate
 ```
 
-The OpenAPI document is written to `openapi/knitprint.json`, while the generated
+The OpenAPI document is written to `openapi/knitnprint.json`, while the generated
 schema types and reusable fetch client live in `packages/api-client`. A running
 API also serves the contract from `/api/openapi.json`.
 
@@ -335,7 +335,7 @@ npm run typecheck
 npm run build
 npm run api:check
 npm run test:e2e
-DATABASE_URL=postgres://knitprint:knitprint@localhost:5432/knitprint \
+DATABASE_URL=postgres://knitnprint:knitnprint@localhost:5432/knitnprint \
 npm run test:e2e:admin
 cargo fmt --check
 cargo clippy --workspace --all-targets -- -D warnings
@@ -353,9 +353,9 @@ PostgreSQL and a database-connected API. Keep the API command from the local
 setup section running, then use:
 
 ```bash
-DATABASE_URL=postgres://knitprint:knitprint@localhost:5432/knitprint \
+DATABASE_URL=postgres://knitnprint:knitnprint@localhost:5432/knitnprint \
 cargo test --test customer_account_lifecycle
-DATABASE_URL=postgres://knitprint:knitprint@localhost:5432/knitprint \
+DATABASE_URL=postgres://knitnprint:knitnprint@localhost:5432/knitnprint \
 npx playwright test tests/e2e/account.spec.ts
 ```
 

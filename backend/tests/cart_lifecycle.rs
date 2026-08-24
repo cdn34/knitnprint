@@ -4,7 +4,7 @@ use axum::{
     body::{Body, to_bytes},
     http::{Request, StatusCode, header},
 };
-use knitprint_api::{AppState, app, carts::cleanup_expired};
+use knitnprint_api::{AppState, app, carts::cleanup_expired};
 use serde_json::{Value, json};
 use sqlx::{
     PgPool,
@@ -44,7 +44,7 @@ async fn cart_prices_stock_delivery_and_retries_are_server_controlled() {
     assert_eq!(empty.status(), StatusCode::OK);
     assert_eq!(empty.headers()[header::CACHE_CONTROL], "no-store, private");
     let cart_cookie = response_cookie(&empty);
-    assert!(cart_cookie.starts_with("knitprint_cart="));
+    assert!(cart_cookie.starts_with("knitnprint_cart="));
     assert_eq!(response_json(empty).await["items"], json!([]));
 
     let added = request(

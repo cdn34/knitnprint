@@ -3,7 +3,7 @@ import {
   type Category,
   type Product,
   type Variant,
-} from '@knitprint/api-client'
+} from '@knitnprint/api-client'
 
 const configuredApiBaseUrl = process.env.API_BASE_URL
 const api = createApiClient({

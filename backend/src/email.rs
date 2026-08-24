@@ -40,8 +40,8 @@ impl OrderEmailKind {
 
     const fn subject(self) -> &'static str {
         match self {
-            Self::Confirmation => "Your KnitPrint order is confirmed",
-            Self::Fulfillment => "Your KnitPrint order is on its way",
+            Self::Confirmation => "Your KnitNPrint order is confirmed",
+            Self::Fulfillment => "Your KnitNPrint order is on its way",
         }
     }
 }
@@ -74,8 +74,8 @@ impl AccountEmailKind {
 
     fn subject(self) -> &'static str {
         match self {
-            Self::Verification => "Verify your KnitPrint email",
-            Self::PasswordReset => "Reset your KnitPrint password",
+            Self::Verification => "Verify your KnitNPrint email",
+            Self::PasswordReset => "Reset your KnitNPrint password",
         }
     }
 
@@ -140,7 +140,7 @@ impl EmailService {
     pub async fn from_env(environment: Environment) -> Result<Self, String> {
         let base_url =
             env::var("STOREFRONT_BASE_URL").unwrap_or_else(|_| "http://127.0.0.1:3000".into());
-        validate_base_url(&base_url, environment == Environment::Production)?;
+        validate_base_url(&base_url, environment.is_deployed())?;
         let storefront_base_url = base_url.trim_end_matches('/').to_owned();
 
         if delivery_mode(environment, env::var("EMAIL_DELIVERY").ok().as_deref())?
@@ -279,11 +279,11 @@ impl EmailService {
                 let (text, html) = match email.kind {
                     OrderEmailKind::Confirmation => (
                         format!(
-                            "Hello {},\n\nYour KnitPrint order {} is confirmed. Total: {}.\n\nWe will email you again when it ships.\n",
+                            "Hello {},\n\nYour KnitNPrint order {} is confirmed. Total: {}.\n\nWe will email you again when it ships.\n",
                             email.first_name, email.order_number, email.total
                         ),
                         format!(
-                            "<p>Hello {safe_name},</p><p>Your KnitPrint order <strong>{safe_order}</strong> is confirmed.</p><p>Total: {safe_total}</p><p>We will email you again when it ships.</p>"
+                            "<p>Hello {safe_name},</p><p>Your KnitNPrint order <strong>{safe_order}</strong> is confirmed.</p><p>Total: {safe_total}</p><p>We will email you again when it ships.</p>"
                         ),
                     ),
                     OrderEmailKind::Fulfillment => {
@@ -307,11 +307,11 @@ impl EmailService {
                         };
                         (
                             format!(
-                                "Hello {},\n\nYour KnitPrint order {} has shipped.{}\n",
+                                "Hello {},\n\nYour KnitNPrint order {} has shipped.{}\n",
                                 email.first_name, email.order_number, tracking_text
                             ),
                             format!(
-                                "<p>Hello {safe_name},</p><p>Your KnitPrint order <strong>{safe_order}</strong> has shipped.</p>{tracking_html}"
+                                "<p>Hello {safe_name},</p><p>Your KnitNPrint order <strong>{safe_order}</strong> has shipped.</p>{tracking_html}"
                             ),
                         )
                     }
@@ -428,9 +428,11 @@ fn delivery_mode(
     configured: Option<&str>,
 ) -> Result<EmailDeliveryMode, String> {
     match (environment, configured) {
-        (Environment::Production, None | Some("ses")) => Ok(EmailDeliveryMode::Ses),
-        (Environment::Production, Some("development")) => {
-            Err("EMAIL_DELIVERY=development is not allowed in production".into())
+        (Environment::Staging | Environment::Production, None | Some("ses")) => {
+            Ok(EmailDeliveryMode::Ses)
+        }
+        (Environment::Staging | Environment::Production, Some("development")) => {
+            Err("EMAIL_DELIVERY=development is not allowed in staging or production".into())
         }
         (Environment::Development | Environment::Test, None | Some("development")) => {
             Ok(EmailDeliveryMode::Development)
@@ -440,7 +442,7 @@ fn delivery_mode(
     }
 }
 
-fn validate_base_url(value: &str, production: bool) -> Result<(), String> {
+fn validate_base_url(value: &str, deployed: bool) -> Result<(), String> {
     let value = value.trim();
     let valid_scheme = value.starts_with("http://") || value.starts_with("https://");
     if value.is_empty()
@@ -450,8 +452,8 @@ fn validate_base_url(value: &str, production: bool) -> Result<(), String> {
     {
         return Err("STOREFRONT_BASE_URL must be an absolute HTTP(S) URL".into());
     }
-    if production && !value.starts_with("https://") {
-        return Err("STOREFRONT_BASE_URL must use HTTPS in production".into());
+    if deployed && !value.starts_with("https://") {
+        return Err("STOREFRONT_BASE_URL must use HTTPS in staging and production".into());
     }
     Ok(())
 }
@@ -501,7 +503,7 @@ mod tests {
     }
 
     #[test]
-    fn production_action_urls_require_https() {
+    fn deployed_action_urls_require_https() {
         assert!(validate_base_url("https://shop.example.com", true).is_ok());
         assert!(validate_base_url("http://shop.example.com", true).is_err());
         assert!(validate_base_url("shop.example.com", false).is_err());
@@ -535,6 +537,23 @@ mod tests {
         );
         assert!(
             delivery_mode(Environment::Production, Some("development"))
+                .unwrap_err()
+                .contains("not allowed")
+        );
+    }
+
+    #[test]
+    fn staging_defaults_to_ses_and_rejects_development_mailbox() {
+        assert_eq!(
+            delivery_mode(Environment::Staging, None).unwrap(),
+            EmailDeliveryMode::Ses
+        );
+        assert_eq!(
+            delivery_mode(Environment::Staging, Some("ses")).unwrap(),
+            EmailDeliveryMode::Ses
+        );
+        assert!(
+            delivery_mode(Environment::Staging, Some("development"))
                 .unwrap_err()
                 .contains("not allowed")
         );

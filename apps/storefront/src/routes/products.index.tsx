@@ -10,8 +10,8 @@ export const Route = createFileRoute('/products/')({
   loader: () => publishedProducts(),
   head: () => ({
     meta: [
-      { title: 'All products — KnitnPrint' },
-      { name: 'description', content: 'Browse every product currently available from KnitnPrint.' },
+      { title: 'All products — KnitNPrint' },
+      { name: 'description', content: 'Browse every product currently available from KnitNPrint.' },
     ],
   }),
   component: ProductsPage,

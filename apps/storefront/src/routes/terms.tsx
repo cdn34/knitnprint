@@ -7,8 +7,8 @@ import { termsEs, termsPt, type LegalSection } from '../i18n/terms-content'
 export const Route = createFileRoute('/terms')({
   head: () => ({
     meta: [
-      { title: 'Terms and Conditions — KnitnPrint' },
-      { name: 'description', content: 'Read the Terms and Conditions of the KnitnPrint online store.' },
+      { title: 'Terms and Conditions — KnitNPrint' },
+      { name: 'description', content: 'Read the Terms and Conditions of the KnitNPrint online store.' },
     ],
   }),
   component: TermsPage,
@@ -31,7 +31,7 @@ function TermsPage() {
               <p className="eyebrow">{t('terms.eyebrow')}</p>
               <h2 id="company-information-title">{t('terms.companyTitle')}</h2>
               <dl>
-                <div><dt>{t('terms.tradingName')}</dt><dd>KnitnPrint</dd></div>
+                <div><dt>{t('terms.tradingName')}</dt><dd>KnitNPrint</dd></div>
                 <div><dt>{t('terms.owner')}</dt><dd>Daniela Tojal</dd></div>
                 <div><dt>{t('terms.taxNumber')}</dt><dd>220666768</dd></div>
                 <div><dt>{t('terms.email')}</dt><dd><a href="mailto:support@knitnprint.com">support@knitnprint.com</a></dd></div>
@@ -45,13 +45,13 @@ function TermsPage() {
           {locale === 'en' ? <>
 
           <PolicySection number="02" title="Purpose and scope">
-            <p>KnitnPrint is an online store based in Portugal that sells personalised and other products, with the aim of meeting its customers’ needs in a variety of areas. These Terms and Conditions govern access to, browsing and use of the website <a href="https://knitnprint.com">knitnprint.com</a>, as well as the conditions applicable to purchasing products through the online store.</p>
+            <p>KnitNPrint is an online store based in Portugal that sells personalised and other products, with the aim of meeting its customers’ needs in a variety of areas. These Terms and Conditions govern access to, browsing and use of the website <a href="https://knitnprint.com">knitnprint.com</a>, as well as the conditions applicable to purchasing products through the online store.</p>
             <p>By using this website or placing an order, you fully accept these Terms and Conditions, as well as the Privacy Policy and Cookie Policy.</p>
             <p>If you do not agree with the terms described here, you must refrain from using this website.</p>
           </PolicySection>
 
           <PolicySection number="03" title="Changes to the Terms and Conditions">
-            <p>KnitnPrint reserves the right to change these Terms and Conditions at any time. Any changes will take effect once published on the website.</p>
+            <p>KnitNPrint reserves the right to change these Terms and Conditions at any time. Any changes will take effect once published on the website.</p>
           </PolicySection>
 
           <PolicySection number="04" title="Use of the website">
@@ -121,7 +121,7 @@ function TermsPage() {
             <p>Return costs are borne by the customer, except where the return results from a product defect or a delivery error.</p>
             <p>Refunds will be processed within a maximum of 14 days and, whenever possible, issued through the same payment method used for the purchase.</p>
             <p>Personalised products or products made as part of large-quantity orders cannot be returned, except in the event of a defect, production error or non-conformity with the order placed.</p>
-            <p>KnitnPrint reserves the right to refuse returns that do not meet the criteria described here.</p>
+            <p>KnitNPrint reserves the right to refuse returns that do not meet the criteria described here.</p>
             <p>If you receive a damaged or defective product, please contact us as soon as possible at <a href="mailto:support@knitnprint.com">support@knitnprint.com</a>.</p>
           </PolicySection>
 
@@ -138,7 +138,7 @@ function TermsPage() {
           </PolicySection>
 
           <PolicySection number="13" title="Data protection">
-            <p>KnitnPrint is committed to protecting its customers’ privacy and acts in accordance with the General Data Protection Regulation (GDPR — EU 2016/679).</p>
+            <p>KnitNPrint is committed to protecting its customers’ privacy and acts in accordance with the General Data Protection Regulation (GDPR — EU 2016/679).</p>
             <p>The data collected is used solely to manage orders and communicate with customers.</p>
             <p>Customers have the right to access, correct or delete their data at any time.</p>
           </PolicySection>

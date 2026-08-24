@@ -4,14 +4,14 @@ import { expect, test } from '@playwright/test'
 test('renders the branded storefront shell', async ({ page }) => {
   await page.goto('/')
 
-  await expect(page).toHaveTitle(/KnitPrint/)
+  await expect(page).toHaveTitle(/KnitNPrint/)
   await expect(
     page.getByRole('heading', {
       level: 1,
       name: 'Soft ideas, shaped into lasting objects.',
     }),
   ).toBeVisible()
-  await expect(page.getByRole('link', { name: 'KnitPrint home' })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'KnitNPrint home' })).toBeVisible()
   await expect(
     page.getByRole('heading', { name: 'Objects with a softer edge' }),
   ).toBeVisible()

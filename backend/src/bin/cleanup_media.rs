@@ -1,6 +1,6 @@
 use std::{env, process::ExitCode};
 
-use knitprint_api::media::MediaStorage;
+use knitnprint_api::media::MediaStorage;
 use sqlx::postgres::PgPoolOptions;
 use uuid::Uuid;
 

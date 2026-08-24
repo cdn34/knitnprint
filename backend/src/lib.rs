@@ -281,7 +281,7 @@ mod tests {
         let body = to_bytes(response.into_body(), 1024).await.unwrap();
         let json: Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(json["status"], "ok");
-        assert_eq!(json["service"], "knitprint-api");
+        assert_eq!(json["service"], "knitnprint-api");
     }
 
     #[tokio::test]
@@ -335,7 +335,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         let body = to_bytes(response.into_body(), 128 * 1024).await.unwrap();
         let json: Value = serde_json::from_slice(&body).unwrap();
-        assert_eq!(json["info"]["title"], "KnitPrint API");
+        assert_eq!(json["info"]["title"], "KnitNPrint API");
         assert!(json["paths"]["/api/health"].is_object());
     }
 
@@ -408,9 +408,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn production_responses_require_transport_security() {
+    async fn deployed_responses_require_transport_security() {
         let mut state = AppState::default();
-        state.security.production = true;
+        state.security.deployed = true;
         let response = app(state)
             .oneshot(
                 Request::builder()

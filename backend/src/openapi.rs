@@ -8,9 +8,9 @@ use crate::{
 #[derive(OpenApi)]
 #[openapi(
     info(
-        title = "KnitPrint API",
+        title = "KnitNPrint API",
         version = "0.1.0",
-        description = "Authoritative API for the KnitPrint storefront and admin."
+        description = "Authoritative API for the KnitNPrint storefront and admin."
     ),
     paths(
         health::health,

@@ -23,7 +23,7 @@ use crate::{
     },
 };
 
-pub const CUSTOMER_SESSION_COOKIE: &str = "knitprint_customer";
+pub const CUSTOMER_SESSION_COOKIE: &str = "knitnprint_customer";
 const CUSTOMER_SESSION_DAYS: i64 = 30;
 const ACCOUNT_EMAIL_RESEND_MINUTES: i32 = 5;
 

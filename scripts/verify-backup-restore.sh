@@ -9,7 +9,7 @@ if [[ "${DATABASE_URL}" == "${RESTORE_DATABASE_URL}" ]]; then
   exit 2
 fi
 
-backup_file="$(mktemp /tmp/knitprint-backup-XXXXXX.dump)"
+backup_file="$(mktemp /tmp/knitnprint-backup-XXXXXX.dump)"
 trap 'rm -f "${backup_file}"' EXIT
 
 pg_dump --format=custom --no-owner --no-acl --file="${backup_file}" "${DATABASE_URL}"

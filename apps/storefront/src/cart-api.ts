@@ -1,4 +1,4 @@
-import { createApiClient } from '@knitprint/api-client'
+import { createApiClient } from '@knitnprint/api-client'
 
 export const cartApi = createApiClient()
 

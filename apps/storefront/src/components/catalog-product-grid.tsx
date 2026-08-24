@@ -1,4 +1,4 @@
-import type { Product } from '@knitprint/api-client'
+import type { Product } from '@knitnprint/api-client'
 import { Heart } from 'lucide-react'
 import {
   mediaUrl,

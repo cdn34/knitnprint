@@ -1,6 +1,6 @@
 use std::{net::SocketAddr, time::Duration};
 
-use knitprint_api::{
+use knitnprint_api::{
     AppState, app,
     config::{Config, Environment},
 };
@@ -14,40 +14,34 @@ async fn main() {
         eprintln!("invalid configuration: {error}");
         std::process::exit(2);
     });
+    let deployed = config.environment.is_deployed();
     init_tracing(config.environment);
-    let database = connect_database(
-        config.database_url.as_deref(),
-        config.environment == Environment::Production,
-    )
-    .await;
-    let media_storage =
-        knitprint_api::media::MediaStorage::from_env(config.environment == Environment::Production)
-            .await
-            .unwrap_or_else(|error| {
-                eprintln!("invalid media storage configuration: {error}");
-                std::process::exit(2);
-            });
-    let media_scanner = knitprint_api::media_scanner::MediaScanner::from_env(
-        config.environment == Environment::Production,
-    )
-    .unwrap_or_else(|error| {
-        eprintln!("invalid media scanner configuration: {error}");
-        std::process::exit(2);
-    });
-    let email = knitprint_api::email::EmailService::from_env(config.environment)
+    let database = connect_database(config.database_url.as_deref(), deployed).await;
+    let media_storage = knitnprint_api::media::MediaStorage::from_env(deployed)
+        .await
+        .unwrap_or_else(|error| {
+            eprintln!("invalid media storage configuration: {error}");
+            std::process::exit(2);
+        });
+    let media_scanner = knitnprint_api::media_scanner::MediaScanner::from_env(deployed)
+        .unwrap_or_else(|error| {
+            eprintln!("invalid media scanner configuration: {error}");
+            std::process::exit(2);
+        });
+    let email = knitnprint_api::email::EmailService::from_env(config.environment)
         .await
         .unwrap_or_else(|error| {
             eprintln!("invalid email configuration: {error}");
             std::process::exit(2);
         });
-    let payments = knitprint_api::payments::PaymentService::from_env(config.environment)
+    let payments = knitnprint_api::payments::PaymentService::from_env(config.environment)
         .unwrap_or_else(|error| {
             eprintln!("invalid payment configuration: {error}");
             std::process::exit(2);
         });
 
-    if config.environment == Environment::Production && database.is_none() {
-        eprintln!("database connection is required in production");
+    if deployed && database.is_none() {
+        eprintln!("database connection is required in staging and production");
         std::process::exit(2);
     }
 
@@ -56,7 +50,7 @@ async fn main() {
         .await
         .expect("API address should be available");
 
-    info!(%address, environment = ?config.environment, "KnitPrint API listening");
+    info!(%address, environment = ?config.environment, "KnitNPrint API listening");
     axum::serve(
         listener,
         app(AppState {
@@ -66,11 +60,11 @@ async fn main() {
             email,
             payments,
             trust_proxy_headers: config.trust_proxy_headers,
-            secure_cookies: config.environment == Environment::Production,
-            manual_payments_enabled: config.environment != Environment::Production,
-            security: knitprint_api::security::SecurityPolicy {
+            secure_cookies: deployed,
+            manual_payments_enabled: !deployed,
+            security: knitnprint_api::security::SecurityPolicy {
                 allowed_origins: config.web_origins,
-                production: config.environment == Environment::Production,
+                deployed,
             },
         })
         .into_make_service_with_connect_info::<SocketAddr>(),
@@ -80,7 +74,7 @@ async fn main() {
     .expect("API server should run");
 }
 
-async fn connect_database(url: Option<&str>, production: bool) -> Option<PgPool> {
+async fn connect_database(url: Option<&str>, deployed: bool) -> Option<PgPool> {
     let Some(url) = url else {
         warn!("DATABASE_URL is not set; readiness will report unavailable");
         return None;
@@ -91,10 +85,10 @@ async fn connect_database(url: Option<&str>, production: bool) -> Option<PgPool>
         .acquire_timeout(Duration::from_secs(3))
         .after_connect(move |connection, _| {
             Box::pin(async move {
-                sqlx::query("SET application_name = 'knitprint-api'")
+                sqlx::query("SET application_name = 'knitnprint-api'")
                     .execute(&mut *connection)
                     .await?;
-                if production {
+                if deployed {
                     sqlx::query("SET statement_timeout = 15000")
                         .execute(&mut *connection)
                         .await?;
@@ -112,7 +106,7 @@ async fn connect_database(url: Option<&str>, production: bool) -> Option<PgPool>
         .await
     {
         Ok(pool) => {
-            if !production && let Err(error) = sqlx::migrate!("../migrations").run(&pool).await {
+            if !deployed && let Err(error) = sqlx::migrate!("../migrations").run(&pool).await {
                 warn!(%error, "database migrations failed");
                 return None;
             }
@@ -127,9 +121,9 @@ async fn connect_database(url: Option<&str>, production: bool) -> Option<PgPool>
 
 fn init_tracing(environment: Environment) {
     let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("knitprint_api=info,tower_http=info"));
+        .unwrap_or_else(|_| EnvFilter::new("knitnprint_api=info,tower_http=info"));
 
-    if environment == Environment::Production {
+    if environment.is_deployed() {
         tracing_subscriber::fmt()
             .with_env_filter(filter)
             .with_target(false)

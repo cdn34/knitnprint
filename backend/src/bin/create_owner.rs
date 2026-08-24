@@ -1,6 +1,6 @@
 use std::{env, process::ExitCode};
 
-use knitprint_api::auth::hash_password;
+use knitnprint_api::auth::hash_password;
 use sqlx::postgres::PgPoolOptions;
 use uuid::Uuid;
 

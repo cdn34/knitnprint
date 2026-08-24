@@ -1,6 +1,6 @@
 use std::{env, process::ExitCode};
 
-use knitprint_api::customer_retention::cleanup_expired_customer_data;
+use knitnprint_api::customer_retention::cleanup_expired_customer_data;
 use sqlx::postgres::PgPoolOptions;
 
 #[tokio::main]
@@ -25,7 +25,7 @@ async fn main() -> ExitCode {
     }
 }
 
-async fn cleanup() -> Result<knitprint_api::customer_retention::CleanupSummary, String> {
+async fn cleanup() -> Result<knitnprint_api::customer_retention::CleanupSummary, String> {
     let database_url = env::var("DATABASE_URL").map_err(|_| "DATABASE_URL is required")?;
     let batch_size = parse_batch_size(env::var("CUSTOMER_CLEANUP_BATCH_SIZE").ok())?;
     let session_retention_days =

@@ -26,16 +26,16 @@ pub enum ScanOutcome {
 }
 
 impl MediaScanner {
-    pub fn from_env(production: bool) -> Result<Self, String> {
+    pub fn from_env(deployed: bool) -> Result<Self, String> {
         Self::from_values(
-            production,
+            deployed,
             env::var("MEDIA_SCANNER_ADDRESS").ok(),
             env::var("MEDIA_SCAN_TIMEOUT_SECONDS").ok(),
         )
     }
 
     fn from_values(
-        production: bool,
+        deployed: bool,
         address: Option<String>,
         timeout_seconds: Option<String>,
     ) -> Result<Self, String> {
@@ -53,8 +53,11 @@ impl MediaScanner {
                 timeout: Duration::from_secs(timeout_seconds),
             }),
             Some(_) => Err("MEDIA_SCANNER_ADDRESS must be a host:port value".into()),
-            None if production => {
-                Err("MEDIA_SCANNER_ADDRESS is required in production so uploads fail closed".into())
+            None if deployed => {
+                Err(
+                    "MEDIA_SCANNER_ADDRESS is required in staging and production so uploads fail closed"
+                        .into(),
+                )
             }
             None => Ok(Self::Disabled),
         }

@@ -24,7 +24,7 @@ use crate::{
     settings::{PricingError, ShippingSelection, TaxSelection, evaluate as evaluate_commercial},
 };
 
-const CART_COOKIE: &str = "knitprint_cart";
+const CART_COOKIE: &str = "knitnprint_cart";
 const CART_DAYS: i64 = 30;
 
 #[derive(Deserialize, Serialize, ToSchema)]

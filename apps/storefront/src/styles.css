@@ -294,7 +294,7 @@ html[lang='pt'] .home-section-title--categories h2 {
   white-space: nowrap;
 }
 .home-section-title h2,
-.why-knitprint h2 {
+.why-knitnprint h2 {
   margin: 0;
   font: 500 clamp(2.3rem, 4vw, 4rem)/1 var(--display);
   letter-spacing: -0.035em;
@@ -909,7 +909,7 @@ html[lang='pt'] .home-section-title--categories h2 {
   line-height: 1.8;
 }
 
-.why-knitprint {
+.why-knitnprint {
   padding: clamp(5rem, 8vw, 8rem) clamp(1.25rem, 5vw, 5rem);
   border-top: 1px solid var(--border);
   background: var(--canvas);
@@ -3543,7 +3543,7 @@ html[lang='pt'] .home-section-title--categories h2 {
   .story-mark {
     width: min(100%, 720px);
   }
-  .why-knitprint {
+  .why-knitnprint {
     padding-block: 4.5rem;
   }
   .benefit-grid article {
