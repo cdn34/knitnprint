@@ -319,20 +319,18 @@ function HomePage() {
 
         <section className="story" id="story">
           <div className="story-mark" aria-hidden="true">
-            <div className="yarn-ball" />
-            <div className="story-thread" />
-            <div className="printed-cube">KP</div>
+            <img src="/knitprint-yarn-story-v6.png" alt="" />
           </div>
           <div className="story-copy">
             <p className="eyebrow">Two crafts, one point of view</p>
-            <h2>Technology can still feel human.</h2>
+            <h2>Every idea tells a story.</h2>
             <p>
-              We borrow the rhythm, softness, and patience of knitting, then
-              build each object one precise layer at a time. The result is
-              useful design with the warmth of something handmade.
+              Behind every creation is an idea, a story, and a great deal of care.
+              Discover who we are and how we turn special moments into unique products.
+              Get to know KnitnPrint better.
             </p>
             <a className="text-link" href="/about">
-              Meet KnitPrint <ArrowRight size={17} />
+              Get to know KnitnPrint <ArrowRight size={17} />
             </a>
           </div>
         </section>
@@ -340,26 +338,26 @@ function HomePage() {
         <section className="why-knitprint" aria-labelledby="why-knitprint-title">
           <div className="home-section-title home-section-title--centered">
             <p className="eyebrow">The KnitPrint difference</p>
-            <h2 id="why-knitprint-title">Made slowly, chosen thoughtfully</h2>
+            <h2 id="why-knitprint-title">Your idea, created with meaning</h2>
           </div>
           <div className="benefit-grid">
             <article>
               <Clock3 aria-hidden="true" />
-              <h3>Made in small batches</h3>
-              <p>We make only what is needed, with time for every detail and less material waste.</p>
-              <a href="/our-process">Our process <ArrowRight size={14} /></a>
+              <h3>Dedication and commitment</h3>
+              <p>We care for every order with attention, responsibility, and dedication, from your idea through to the final result.</p>
+              <a href="/our-process">Discover our process <ArrowRight size={14} /></a>
             </article>
             <article>
               <ShieldCheck aria-hidden="true" />
-              <h3>Secure from start to finish</h3>
-              <p>Your payment details stay protected and every order is carefully prepared.</p>
-              <a href="/terms">Shopping with us <ArrowRight size={14} /></a>
+              <h3>Personalization made for you</h3>
+              <p>Every creation begins with you. We turn your ideas into unique products, designed around your taste and every occasion.</p>
+              <a href="/personalized-gifts">Discover how to personalize <ArrowRight size={14} /></a>
             </article>
             <article>
               <Sparkles aria-hidden="true" />
-              <h3>Made to delight</h3>
-              <p>Designed in Portugal and finished by hand, so every piece feels a little personal.</p>
-              <a href="/personalized-gifts">Personalized gifts <ArrowRight size={14} /></a>
+              <h3>Made to surprise</h3>
+              <p>Created in Portugal and finished with care, so every piece feels special and brings a smile.</p>
+              <a href="/collections">Find the perfect gift <ArrowRight size={14} /></a>
             </article>
           </div>
         </section>

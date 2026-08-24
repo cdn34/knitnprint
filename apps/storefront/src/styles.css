@@ -510,7 +510,7 @@ main:focus {
   border: 1px solid var(--border);
   border-radius: 999px;
   color: var(--knit-dark);
-  background: var(--canvas);
+  background: var(--surface);
 }
 .shop-search input {
   width: 100%;
@@ -844,55 +844,27 @@ main:focus {
 }
 
 .story {
+  width: 100%;
+  max-width: 1440px;
   min-height: 650px;
-  padding: clamp(5rem, 9vw, 9rem) clamp(1.25rem, 9vw, 9rem);
+  margin: 0 auto;
+  padding-block: clamp(5rem, 9vw, 9rem);
+  padding-inline-start: clamp(1.25rem, 2.5vw, 2.5rem);
+  padding-inline-end: clamp(1.25rem, 5vw, 5rem);
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: clamp(3rem, 8vw, 8rem);
+  grid-template-columns: minmax(0, 800px) minmax(340px, 420px);
+  gap: clamp(1.5rem, 2vw, 2rem);
   align-items: center;
+  justify-content: start;
 }
 .story-mark {
-  height: 380px;
-  position: relative;
+  width: min(100%, 800px);
+  margin: auto;
 }
-.yarn-ball {
-  width: 260px;
-  height: 260px;
-  position: absolute;
-  left: 5%;
-  top: 10%;
-  border-radius: 50%;
-  background: repeating-radial-gradient(
-    ellipse at 30% 35%,
-    #ceb497 0 7px,
-    #ad8d6b 8px 13px
-  );
-  box-shadow: var(--shadow);
-}
-.story-thread {
-  width: 75%;
-  height: 110px;
-  position: absolute;
-  left: 18%;
-  bottom: 10%;
-  border: 11px solid var(--yarn);
-  border-top-color: transparent;
-  border-left-color: transparent;
-  border-radius: 50%;
-  transform: rotate(7deg);
-}
-.printed-cube {
-  width: 120px;
-  height: 120px;
-  position: absolute;
-  right: 6%;
-  bottom: 18%;
-  display: grid;
-  place-items: center;
-  color: #dec6ac;
-  background: var(--yarn-dark);
-  font: 600 2.2rem var(--display);
-  clip-path: polygon(50% 0, 95% 25%, 95% 75%, 50% 100%, 5% 75%, 5% 25%);
+.story-mark img {
+  width: 100%;
+  height: auto;
+  object-fit: contain;
 }
 .story-copy {
   max-width: 540px;
@@ -948,8 +920,8 @@ main:focus {
 .benefit-grid p {
   margin: 0.85rem 0 1.3rem;
   color: var(--ink-muted);
-  font-size: 0.72rem;
-  line-height: 1.7;
+  font-size: 0.84rem;
+  line-height: 1.75;
 }
 .benefit-grid a {
   margin-top: auto;
@@ -959,7 +931,7 @@ main:focus {
   gap: 0.3rem;
   border-bottom: 1px solid currentColor;
   color: var(--knit-dark);
-  font-size: 0.66rem;
+  font-size: 0.78rem;
   font-weight: 700;
 }
 
@@ -1041,12 +1013,12 @@ main:focus {
   padding-top: 1.4rem;
   border-top: 1px solid #44413f;
   display: flex;
+  justify-content: center;
+  align-items: center;
   gap: 1.5rem;
   color: #a49e99;
   font-size: 0.68rem;
-}
-.footer-bottom span:nth-child(2) {
-  margin-right: auto;
+  text-align: center;
 }
 .empty-page {
   min-height: 100vh;
@@ -2553,15 +2525,7 @@ main:focus {
     padding-block: 5rem;
   }
   .story-mark {
-    height: 300px;
-  }
-  .yarn-ball {
-    width: 210px;
-    height: 210px;
-  }
-  .printed-cube {
-    width: 95px;
-    height: 95px;
+    width: min(100%, 720px);
   }
   .why-knitprint {
     padding-block: 4.5rem;
@@ -2589,10 +2553,6 @@ main:focus {
   .footer-bottom {
     margin-top: 1rem;
     flex-wrap: wrap;
-  }
-  .footer-bottom span:nth-child(2) {
-    width: 100%;
-    order: -1;
   }
   .product-page {
     min-height: auto;
