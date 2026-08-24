@@ -64,15 +64,6 @@ export function StorefrontHeader() {
 export function StorefrontFooter() {
   return (
     <footer className="site-footer">
-      <div className="footer-lead">
-        <img
-          src="/knitprint-wordmark.webp"
-          alt="KnitPrint"
-          width="750"
-          height="195"
-        />
-        <p>Objects with the soul of craft and the precision of print.</p>
-      </div>
       <div className="footer-links">
         <div>
           <h2>About us</h2>
@@ -91,13 +82,36 @@ export function StorefrontFooter() {
           <a href="/privacy">Privacy policy</a>
           <a href="/cookies">Cookies policy</a>
           <a href="/returns">Return policy</a>
-          <a href="/complaints-book">Complaints book</a>
+          <a
+            href="https://www.livroreclamacoes.pt/Inicio/"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Complaints book
+          </a>
         </div>
         <div>
           <h2>Customer support and contacts</h2>
-          <a href="mailto:hello@knitprint.local">Our email</a>
-          <a href="/contact#phone">Phone number</a>
-          <a href="/contact#social-media">Social media</a>
+          <a href="mailto:support@knitnprint.com">support@knitnprint.com</a>
+          <a
+            className="footer-social-link"
+            href="/contact#social-media"
+            aria-label="Instagram"
+          >
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <rect x="3" y="3" width="18" height="18" rx="5" />
+              <circle cx="12" cy="12" r="4" />
+              <circle cx="17.4" cy="6.6" r="0.8" fill="currentColor" stroke="none" />
+            </svg>
+          </a>
         </div>
       </div>
       <div className="footer-bottom">
