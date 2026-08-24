@@ -981,7 +981,7 @@ main:focus {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: clamp(1.5rem, 3vw, 2.8rem);
-  justify-items: center;
+  justify-items: start;
 }
 .footer-links div {
   width: fit-content;
