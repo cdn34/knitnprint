@@ -13,7 +13,7 @@ export function ContentPage({
   className = '',
 }: Readonly<{
   eyebrow: string
-  title: string
+  title: ReactNode
   intro: string
   children: ReactNode
   className?: string
