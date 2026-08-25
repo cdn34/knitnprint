@@ -15,6 +15,7 @@ import { Route as AccountRouteImport } from './routes/account'
 import { Route as B2bRouteImport } from './routes/b2b'
 import { Route as CartRouteImport } from './routes/cart'
 import { Route as CookiesRouteImport } from './routes/cookies'
+import { Route as DiscountsRouteImport } from './routes/discounts'
 import { Route as FaqRouteImport } from './routes/faq'
 import { Route as OurProcessRouteImport } from './routes/our-process'
 import { Route as PersonalizedGiftsRouteImport } from './routes/personalized-gifts'
@@ -54,6 +55,11 @@ const CartRoute = CartRouteImport.update({
 const CookiesRoute = CookiesRouteImport.update({
   id: '/cookies',
   path: '/cookies',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DiscountsRoute = DiscountsRouteImport.update({
+  id: '/discounts',
+  path: '/discounts',
   getParentRoute: () => rootRouteImport,
 } as any)
 const FaqRoute = FaqRouteImport.update({
@@ -114,6 +120,7 @@ export interface FileRoutesByFullPath {
   '/b2b': typeof B2bRoute
   '/cart': typeof CartRoute
   '/cookies': typeof CookiesRoute
+  '/discounts': typeof DiscountsRoute
   '/faq': typeof FaqRoute
   '/our-process': typeof OurProcessRoute
   '/personalized-gifts': typeof PersonalizedGiftsRoute
@@ -132,6 +139,7 @@ export interface FileRoutesByTo {
   '/b2b': typeof B2bRoute
   '/cart': typeof CartRoute
   '/cookies': typeof CookiesRoute
+  '/discounts': typeof DiscountsRoute
   '/faq': typeof FaqRoute
   '/our-process': typeof OurProcessRoute
   '/personalized-gifts': typeof PersonalizedGiftsRoute
@@ -151,6 +159,7 @@ export interface FileRoutesById {
   '/b2b': typeof B2bRoute
   '/cart': typeof CartRoute
   '/cookies': typeof CookiesRoute
+  '/discounts': typeof DiscountsRoute
   '/faq': typeof FaqRoute
   '/our-process': typeof OurProcessRoute
   '/personalized-gifts': typeof PersonalizedGiftsRoute
@@ -171,6 +180,7 @@ export interface FileRouteTypes {
     | '/b2b'
     | '/cart'
     | '/cookies'
+    | '/discounts'
     | '/faq'
     | '/our-process'
     | '/personalized-gifts'
@@ -189,6 +199,7 @@ export interface FileRouteTypes {
     | '/b2b'
     | '/cart'
     | '/cookies'
+    | '/discounts'
     | '/faq'
     | '/our-process'
     | '/personalized-gifts'
@@ -207,6 +218,7 @@ export interface FileRouteTypes {
     | '/b2b'
     | '/cart'
     | '/cookies'
+    | '/discounts'
     | '/faq'
     | '/our-process'
     | '/personalized-gifts'
@@ -226,6 +238,7 @@ export interface RootRouteChildren {
   B2bRoute: typeof B2bRoute
   CartRoute: typeof CartRoute
   CookiesRoute: typeof CookiesRoute
+  DiscountsRoute: typeof DiscountsRoute
   FaqRoute: typeof FaqRoute
   OurProcessRoute: typeof OurProcessRoute
   PersonalizedGiftsRoute: typeof PersonalizedGiftsRoute
@@ -280,6 +293,13 @@ declare module '@tanstack/react-router' {
       path: '/cookies'
       fullPath: '/cookies'
       preLoaderRoute: typeof CookiesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/discounts': {
+      id: '/discounts'
+      path: '/discounts'
+      fullPath: '/discounts'
+      preLoaderRoute: typeof DiscountsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/faq': {
@@ -362,6 +382,7 @@ const rootRouteChildren: RootRouteChildren = {
   B2bRoute: B2bRoute,
   CartRoute: CartRoute,
   CookiesRoute: CookiesRoute,
+  DiscountsRoute: DiscountsRoute,
   FaqRoute: FaqRoute,
   OurProcessRoute: OurProcessRoute,
   PersonalizedGiftsRoute: PersonalizedGiftsRoute,
