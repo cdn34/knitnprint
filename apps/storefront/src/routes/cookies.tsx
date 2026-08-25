@@ -1,6 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
 import { ContentPage } from '../components/content-page'
+import { ContextualFaqs } from '../components/contextual-faqs'
 
 export const Route = createFileRoute('/cookies')({
   head: () => ({
@@ -164,6 +165,19 @@ function CookiesPage() {
           </PolicySection>
         </article>
       </div>
+      <ContextualFaqs
+        id="cookies-faqs"
+        eyebrow="Cookies at a glance"
+        title="Your cookie choices"
+        items={[
+          { question: 'What are cookies?', answer: 'Cookies are small files stored by a website on your browser or device to support functionality, remember preferences and understand website use.' },
+          { question: 'Which cookies does KnitnPrint use?', answer: 'The website may use necessary, preference, analytics and advertising cookies, as described in the complete Cookies Policy above.' },
+          { question: 'Can I reject optional cookies?', answer: 'Yes. Where a consent panel is available, optional cookies should remain inactive until you make a valid choice.' },
+          { question: 'How can I change my cookie preferences?', answer: 'Use the Manage Cookies option when available, or review the privacy and cookie controls in your browser settings.' },
+          { question: 'Will the website still work if I reject cookies?', answer: 'Necessary cookies support essential store functions. Rejecting optional cookies should not prevent those functions, although some additional features may be affected.' },
+        ]}
+        className="contextual-faqs--policy"
+      />
     </ContentPage>
   )
 }

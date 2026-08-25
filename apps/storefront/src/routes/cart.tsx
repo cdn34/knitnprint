@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
 import { cartApi, cartMutationKey, formatMoney } from '../cart-api'
+import { ContextualFaqs } from '../components/contextual-faqs'
 
 export const Route = createFileRoute('/cart')({
   head: () => ({
@@ -421,6 +422,20 @@ function CartPage() {
           </div>
         )}
         {message && cart && <p className="cart-notice" role="status">{message}</p>}
+        {!order && (
+          <ContextualFaqs
+            id="cart-faqs"
+            eyebrow="Before you order"
+            title="A few final details"
+            items={[
+              { question: 'Can I still change my personalisation?', answer: 'Review all personalisation details before paying. If you notice an error afterwards, contact us immediately, although changes cannot be guaranteed once production starts.' },
+              { question: 'When will my order be produced?', answer: 'Production begins after the order and any required design details are confirmed. Personalised items are made before the shipping estimate begins.' },
+              { question: 'Can I use more than one discount code?', answer: 'Unless a promotion states otherwise, discount codes cannot be combined. The cart will confirm whether a code can be applied.' },
+              { question: 'Can personalised products be returned?', answer: 'Personalised products generally cannot be returned for a change of mind, without affecting your rights when an item is faulty, damaged or not as agreed.' },
+            ]}
+            className="contextual-faqs--cart"
+          />
+        )}
       </main>
     </>
   )

@@ -1,6 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
 import { ContentPage } from '../components/content-page'
+import { ContextualFaqs } from '../components/contextual-faqs'
 
 export const Route = createFileRoute('/returns')({
   head: () => ({
@@ -105,6 +106,19 @@ function ReturnsPage() {
           </PolicySection>
         </article>
       </div>
+      <ContextualFaqs
+        id="returns-faqs"
+        eyebrow="Returns at a glance"
+        title="Quick answers about returns"
+        items={[
+          { question: 'Can I return a personalised product?', answer: 'Personalised products cannot be returned under the right of withdrawal, but this does not affect your rights when an item is faulty, damaged or not as agreed.' },
+          { question: 'What should I do if my order arrives damaged?', answer: 'Contact us within five business days with your order number, a description of the issue and clear photographs of the product and packaging.' },
+          { question: 'How do I start a return?', answer: 'Email support@knitnprint.com with your order number and reason for the return, then wait for our instructions before sending the product.' },
+          { question: 'Who pays the return shipping costs?', answer: 'Return costs are normally paid by the customer, except when the return results from a KnitnPrint error or a confirmed product defect.' },
+          { question: 'When will I receive my refund?', answer: 'Once an eligible return has been received and inspected, the refund will be processed within a maximum of 14 days.' },
+        ]}
+        className="contextual-faqs--policy"
+      />
     </ContentPage>
   )
 }

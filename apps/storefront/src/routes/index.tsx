@@ -23,6 +23,7 @@ import {
   StorefrontFooter,
   StorefrontHeader,
 } from '../components/storefront-shell'
+import { ContextualFaqs } from '../components/contextual-faqs'
 
 export const Route = createFileRoute('/')({
   loader: async () => {
@@ -361,6 +362,19 @@ function HomePage() {
             </article>
           </div>
         </section>
+
+        <ContextualFaqs
+          id="home-faqs"
+          eyebrow="Good to know"
+          title="A few things you may be wondering"
+          items={[
+            { question: 'What can I personalise?', answer: 'Selected textiles, bottles, backpacks, accessories and gifts can be made personal. Each product page shows the options available for that piece.' },
+            { question: 'How long does a personalised order take?', answer: 'Timing depends on the product and the personalisation involved. Production takes place before the shipping estimate begins.' },
+            { question: 'Will I see my design before production?', answer: 'When a digital mock-up is included, we will ask you to confirm the layout, scale and placement before production.' },
+            { question: 'Can personalised products be returned?', answer: 'Personalised products generally cannot be returned for a change of mind, but your rights still apply if an item is faulty, damaged or not as agreed.' },
+          ]}
+          className="contextual-faqs--home"
+        />
 
         <section className="reassurance" aria-label="Shopping benefits">
           <div><PackageCheck /><span><strong>Carefully packed</strong><small>Prepared in our studio</small></span></div>
