@@ -1,6 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
 import { ContentPage } from '../components/content-page'
+import { ContextualFaqs } from '../components/contextual-faqs'
 
 export const Route = createFileRoute('/privacy')({
   head: () => ({
@@ -129,6 +130,19 @@ function PrivacyPage() {
           </PolicySection>
         </article>
       </div>
+      <ContextualFaqs
+        id="privacy-faqs"
+        eyebrow="Privacy questions"
+        title="Your data, explained simply"
+        items={[
+          { question: 'What personal data do you collect?', answer: 'Depending on how you use the website, we may collect contact, order, delivery, payment-related and website usage information.' },
+          { question: 'Why do you need my information?', answer: 'We use the information needed to process orders, provide support, meet legal obligations, improve our services and, where permitted, communicate with you.' },
+          { question: 'Do you share my data with other organisations?', answer: 'Only where necessary, such as with payment, delivery, hosting or professional service providers, or where disclosure is legally required.' },
+          { question: 'How can I exercise my data protection rights?', answer: 'You may request access, correction, deletion, restriction, objection or portability where applicable under data protection law.' },
+          { question: 'How can I contact you about my data?', answer: 'Email support@knitnprint.com with your privacy question or request.' },
+        ]}
+        className="contextual-faqs--policy"
+      />
     </ContentPage>
   )
 }

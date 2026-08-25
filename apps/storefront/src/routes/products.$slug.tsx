@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { cartApi, cartMutationKey } from '../cart-api'
+import { ContextualFaqs } from '../components/contextual-faqs'
 import {
   mediaUrl,
   preferredVariant,
@@ -169,6 +170,18 @@ function ProductPage() {
             <span><ShieldCheck /> Secure checkout</span>
           </div>
         </section>
+        <ContextualFaqs
+          id="product-faqs"
+          eyebrow="About this piece"
+          title="Before you make it yours"
+          items={[
+            { question: 'How can I personalise this product?', answer: 'The options available for this piece are shown when personalisation is offered. Contact us if you have a specific idea that is not listed.' },
+            { question: 'Will I see the final layout?', answer: 'When a digital mock-up is included, you can review the scale and placement before production begins.' },
+            { question: 'How should I care for this piece?', answer: 'Follow the care information supplied with the product. Gentle cleaning and avoiding excessive heat will help preserve the finish.' },
+            { question: 'Can I return a personalised product?', answer: 'Personalised products generally cannot be returned for a change of mind. Faulty, damaged or incorrect products are assessed separately.' },
+          ]}
+          className="contextual-faqs--product"
+        />
       </main>
     </>
   )

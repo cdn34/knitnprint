@@ -83,6 +83,7 @@ export function StorefrontFooter() {
           <a href="/privacy">Privacy policy</a>
           <a href="/cookies">Cookies policy</a>
           <a href="/returns">Return policy</a>
+          <a href="/faq">FAQ's</a>
           <a
             href="https://www.livroreclamacoes.pt/Inicio/"
             target="_blank"

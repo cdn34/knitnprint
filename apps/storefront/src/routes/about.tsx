@@ -94,6 +94,13 @@ function AboutPage() {
           </p>
         </div>
       </section>
+      <section className="page-cta about-process-cta" aria-labelledby="about-process-title">
+        <div>
+          <p className="eyebrow">From your idea to the final piece</p>
+          <h2 id="about-process-title">Curious about how we make each piece?</h2>
+        </div>
+        <a className="button button--primary" href="/our-process">Discover our process</a>
+      </section>
     </ContentPage>
   )
 }

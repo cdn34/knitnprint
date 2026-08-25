@@ -6,6 +6,7 @@ import {
   Printer,
 } from 'lucide-react'
 import { ContentPage } from '../components/content-page'
+import { ContextualFaqs } from '../components/contextual-faqs'
 
 export const Route = createFileRoute('/our-process')({
   head: () => ({
@@ -119,6 +120,20 @@ function ProcessPage() {
           </article>
         ))}
       </section>
+
+      <ContextualFaqs
+        id="process-faqs"
+        eyebrow="About personalisation"
+        title="The details behind the process"
+        items={[
+          { question: 'Which personalisation techniques do you use?', answer: 'The technique depends on the product, material, design and desired finish. We select the option best suited to each piece.' },
+          { question: 'How do you choose the right technique?', answer: 'We consider the material, number of colours, level of detail, intended use and quantity before deciding how the design should be applied.' },
+          { question: 'Will I approve the design before production?', answer: 'When a digital mock-up is included, production begins only after the relevant design details have been confirmed.' },
+          { question: 'Why can colours look slightly different?', answer: 'Screens reproduce colour differently, and materials absorb or reflect colour in their own way. Small variations are therefore possible.' },
+          { question: 'How is each finished piece checked?', answer: 'We review placement, colour, finish and the overall condition of the item before it is carefully packed.' },
+        ]}
+        className="contextual-faqs--process"
+      />
 
     </ContentPage>
   )

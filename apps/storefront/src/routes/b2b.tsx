@@ -1,6 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { Send } from 'lucide-react'
 import { ContentPage } from '../components/content-page'
+import { ContextualFaqs } from '../components/contextual-faqs'
 
 export const Route = createFileRoute('/b2b')({
   head: () => ({
@@ -79,6 +80,20 @@ function B2BPage() {
           ))}
         </div>
       </section>
+
+      <ContextualFaqs
+        id="b2b-faqs"
+        eyebrow="Before your proposal"
+        title="B2B questions, answered"
+        items={[
+          { question: 'Is there a minimum order quantity?', answer: 'Yes. Minimum quantities vary according to the product and personalisation technique, and will be confirmed with your proposal.' },
+          { question: 'Can you help us choose the right products?', answer: 'Yes. We can help you consider the purpose, quantity, budget and finish before recommending a suitable solution.' },
+          { question: 'Will we receive a digital mock-up?', answer: 'Yes. You can review the composition, scale and placement before approving production.' },
+          { question: 'Which logo formats do you accept?', answer: 'You can send AI, EPS, PDF, SVG, PNG or JPG files. Vector artwork usually provides the best production result.' },
+          { question: 'How long will our order take?', answer: 'Timing depends on quantity, product availability, personalisation and the date on which the digital mock-up is approved.' },
+        ]}
+        className="contextual-faqs--b2b"
+      />
 
       <section className="b2b-contact" aria-labelledby="b2b-contact-title">
         <div className="b2b-contact-intro">

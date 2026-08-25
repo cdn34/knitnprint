@@ -1,5 +1,6 @@
 import { createFileRoute, notFound } from '@tanstack/react-router'
 import { ArrowLeft, PackageCheck, Sparkles } from 'lucide-react'
+import { ContextualFaqs } from '../components/contextual-faqs'
 import {
   mediaUrl,
   productPrice,
@@ -102,6 +103,18 @@ function CollectionPage() {
             )}
           </div>
         </section>
+        <ContextualFaqs
+          id="collection-faqs"
+          eyebrow="About this collection"
+          title="Ideas for making it personal"
+          items={[
+            { question: 'Which products can be personalised?', answer: 'Personalisation availability is shown on each product page, together with the options offered for that piece.' },
+            { question: 'Can I use the same design on different products?', answer: 'Often, yes. We may adapt the scale or placement so the design works well with each product and material.' },
+            { question: 'Can these pieces be ordered as a gift set?', answer: 'Contact us with the products you have in mind and we will let you know which combinations and presentation options are possible.' },
+            { question: 'Are larger quantities available?', answer: 'For company, association or event quantities, visit our B2B page and request a tailored proposal.' },
+          ]}
+          className="contextual-faqs--collection"
+        />
       </main>
     </>
   )
