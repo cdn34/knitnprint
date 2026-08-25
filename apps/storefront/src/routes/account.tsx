@@ -14,6 +14,11 @@ import {
   MapPin,
 } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
+import {
+  StorefrontAnnouncement,
+  StorefrontFooter,
+  StorefrontHeader,
+} from "../components/storefront-shell";
 
 export const Route = createFileRoute("/account")({
   component: AccountPage,
@@ -217,22 +222,13 @@ function AccountPage() {
 
   return (
     <>
-      <div className="announcement">Your pieces, details, and deliveries</div>
-      <header className="account-header">
-        <a className="brand" href="/" aria-label="KnitPrint home">
-          <img
-            src="/knitprint-wordmark.webp"
-            alt="KnitPrint"
-            width="750"
-            height="195"
-          />
-        </a>
-        <a className="text-link" href="/">
-          <ArrowLeft size={17} aria-hidden="true" /> Back to the shop
-        </a>
-      </header>
+      <StorefrontAnnouncement />
+      <StorefrontHeader />
 
       <main className="account-page" id="main-content" tabIndex={-1}>
+        <a className="text-link page-back-link" href="/">
+          <ArrowLeft size={17} aria-hidden="true" /> Back to the shop
+        </a>
         <section className="account-intro" aria-labelledby="account-title">
           <div className="account-mark" aria-hidden="true">
             <CircleUserRound />
@@ -296,6 +292,7 @@ function AccountPage() {
           )}
         </div>
       </main>
+      <StorefrontFooter />
     </>
   );
 }

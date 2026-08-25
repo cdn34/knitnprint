@@ -5,10 +5,10 @@ import {
   type Variant,
 } from '@knitprint/api-client'
 
+const configuredApiBaseUrl = process.env.API_BASE_URL
 const api = createApiClient({
-  baseUrl: process.env.API_BASE_URL ?? 'http://127.0.0.1:8080',
+  baseUrl: configuredApiBaseUrl ?? 'http://127.0.0.1:8080',
 })
-const apiBaseUrl = process.env.API_BASE_URL ?? 'http://127.0.0.1:8080'
 
 export async function publishedProducts(): Promise<Product[]> {
   try {
@@ -106,5 +106,7 @@ export function productStock(product: Product) {
 }
 
 export function mediaUrl(path: string) {
-  return `${apiBaseUrl.replace(/\/$/, '')}${path}`
+  if (/^https?:\/\//.test(path)) return path
+  if (!configuredApiBaseUrl) return path
+  return `${configuredApiBaseUrl.replace(/\/$/, '')}${path}`
 }
