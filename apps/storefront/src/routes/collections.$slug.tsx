@@ -1,6 +1,7 @@
 import { createFileRoute, notFound } from '@tanstack/react-router'
-import { ArrowLeft, PackageCheck, Sparkles } from 'lucide-react'
+import { ArrowLeft, PackageCheck } from 'lucide-react'
 import { ContextualFaqs } from '../components/contextual-faqs'
+import { StorefrontAnnouncement, StorefrontFooter, StorefrontHeader } from '../components/storefront-shell'
 import {
   mediaUrl,
   productPrice,
@@ -36,24 +37,12 @@ function CollectionPage() {
 
   return (
     <>
-      <div className="announcement">
-        <Sparkles size={14} aria-hidden="true" />
-        Small-batch objects, made slowly in Portugal
-      </div>
-      <header className="site-header product-header">
-        <a className="brand" href="/" aria-label="KnitPrint home">
-          <img
-            src="/knitprint-wordmark.webp"
-            alt="KnitPrint"
-            width="750"
-            height="195"
-          />
-        </a>
-        <a className="text-link" href="/collections">
+      <StorefrontAnnouncement />
+      <StorefrontHeader />
+      <main className="collection-page" id="main-content" tabIndex={-1}>
+        <a className="text-link page-back-link" href="/collections">
           <ArrowLeft size={17} /> All collections
         </a>
-      </header>
-      <main className="collection-page" id="main-content" tabIndex={-1}>
         <header className="collection-intro">
           <p className="eyebrow">KnitPrint collection</p>
           <h1>{category.name}</h1>
@@ -116,6 +105,7 @@ function CollectionPage() {
           className="contextual-faqs--collection"
         />
       </main>
+      <StorefrontFooter />
     </>
   )
 }

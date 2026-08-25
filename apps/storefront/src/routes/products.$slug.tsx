@@ -5,12 +5,12 @@ import {
   PackageCheck,
   PackageX,
   ShieldCheck,
-  Sparkles,
   TriangleAlert,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { cartApi, cartMutationKey } from '../cart-api'
 import { ContextualFaqs } from '../components/contextual-faqs'
+import { StorefrontAnnouncement, StorefrontFooter, StorefrontHeader } from '../components/storefront-shell'
 import {
   mediaUrl,
   preferredVariant,
@@ -67,17 +67,10 @@ function ProductPage() {
 
   return (
     <>
-      <div className="announcement">
-        <Sparkles size={14} aria-hidden="true" />
-        Small-batch objects, made slowly in Portugal
-      </div>
-      <header className="site-header product-header">
-        <a className="brand" href="/" aria-label="KnitPrint home">
-          <img src="/knitprint-wordmark.webp" alt="KnitPrint" width="750" height="195" />
-        </a>
-        <a className="text-link" href="/#shop"><ArrowLeft size={17} /> Back to shop</a>
-      </header>
+      <StorefrontAnnouncement />
+      <StorefrontHeader />
       <main className="product-page" id="main-content" tabIndex={-1}>
+        <a className="text-link page-back-link" href="/#shop"><ArrowLeft size={17} /> Back to shop</a>
         <div className="product-detail-art">
           {product.media[0] ? (
             <img
@@ -183,6 +176,7 @@ function ProductPage() {
           className="contextual-faqs--product"
         />
       </main>
+      <StorefrontFooter />
     </>
   )
 }

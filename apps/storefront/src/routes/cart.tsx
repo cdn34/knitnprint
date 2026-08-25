@@ -10,7 +10,6 @@ import {
   CircleCheck,
   PackageOpen,
   ReceiptText,
-  ShieldCheck,
   ShoppingBag,
   Trash2,
   TriangleAlert,
@@ -18,6 +17,7 @@ import {
 import { useEffect, useState, type FormEvent } from 'react'
 import { cartApi, cartMutationKey, formatMoney } from '../cart-api'
 import { ContextualFaqs } from '../components/contextual-faqs'
+import { StorefrontAnnouncement, StorefrontFooter, StorefrontHeader } from '../components/storefront-shell'
 
 export const Route = createFileRoute('/cart')({
   head: () => ({
@@ -253,25 +253,13 @@ function CartPage() {
 
   return (
     <>
-      <div className="announcement">
-        <ShieldCheck size={14} aria-hidden="true" />
-        Prices and availability are checked by our studio
-      </div>
-      <header className="site-header product-header">
-        <a className="brand" href="/" aria-label="KnitPrint home">
-          <img
-            src="/knitprint-wordmark.webp"
-            alt="KnitPrint"
-            width="750"
-            height="195"
-          />
-        </a>
-        <a className="text-link" href="/#shop">
-          <ArrowLeft size={17} /> Continue shopping
-        </a>
-      </header>
+      <StorefrontAnnouncement />
+      <StorefrontHeader />
 
       <main className="cart-page" id="main-content" tabIndex={-1}>
+        <a className="text-link page-back-link" href="/#shop">
+          <ArrowLeft size={17} /> Continue shopping
+        </a>
         <div className="cart-heading">
           <p className="eyebrow">Your selection</p>
           <h1>{order ? 'Order received' : 'Cart'}</h1>
@@ -437,6 +425,7 @@ function CartPage() {
           />
         )}
       </main>
+      <StorefrontFooter />
     </>
   )
 }
