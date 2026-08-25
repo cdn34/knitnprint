@@ -2048,6 +2048,161 @@ main:focus {
   font-size: 0.9rem;
   line-height: 1.8;
 }
+.discount-page {
+  --discount-blush: #eadcdf;
+  --discount-wine: #5f4652;
+}
+.discount-signup {
+  width: min(100%, 1240px);
+  min-height: 590px;
+  margin: auto;
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 1.25rem;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+.discount-offer {
+  min-height: 590px;
+  padding: clamp(2.5rem, 6vw, 5rem);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  overflow: hidden;
+  color: white;
+  background:
+    radial-gradient(circle at 18% 17%, rgb(255 255 255 / 18%) 0 5%, transparent 5.2%),
+    radial-gradient(circle at 86% 82%, rgb(255 255 255 / 11%) 0 17%, transparent 17.2%),
+    linear-gradient(145deg, #957184, var(--discount-wine));
+  text-align: center;
+}
+.discount-offer::before,
+.discount-offer::after {
+  content: '';
+  width: 190px;
+  height: 190px;
+  position: absolute;
+  border: 1px solid rgb(255 255 255 / 22%);
+  border-radius: 50%;
+}
+.discount-offer::before {
+  top: -76px;
+  right: -54px;
+}
+.discount-offer::after {
+  bottom: -106px;
+  left: -42px;
+}
+.discount-offer strong {
+  margin: 0.25rem 0;
+  font: 500 clamp(7rem, 13vw, 11.5rem)/0.9 var(--display);
+  letter-spacing: -0.08em;
+}
+.discount-offer span {
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.discount-form-panel {
+  padding: clamp(2.5rem, 6vw, 5.5rem);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.discount-form-panel h2 {
+  max-width: 620px;
+  margin: 0.75rem 0 1.25rem;
+  font: 500 clamp(2.2rem, 4vw, 4rem)/1 var(--display);
+  letter-spacing: -0.04em;
+}
+.discount-form-panel > p:not(.eyebrow) {
+  max-width: 560px;
+  margin: 0 0 2rem;
+  color: var(--ink-muted);
+  font-size: 0.86rem;
+  line-height: 1.8;
+}
+.discount-form label {
+  display: block;
+  margin-bottom: 0.65rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+.discount-form > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.65rem;
+}
+.discount-form input {
+  min-width: 0;
+  padding: 0.95rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 0.65rem;
+  color: var(--ink);
+  background: var(--canvas);
+  font: inherit;
+}
+.discount-form input:focus {
+  border-color: var(--knit);
+  outline: 2px solid rgb(138 104 119 / 16%);
+}
+.discount-form .button {
+  white-space: nowrap;
+}
+.discount-form > p {
+  margin: 0.75rem 0 0;
+  color: var(--ink-muted);
+  font-size: 0.64rem;
+  line-height: 1.6;
+}
+.discount-exclusion {
+  margin-top: 2rem;
+  padding-top: 1.2rem;
+  display: flex;
+  gap: 0.75rem;
+  border-top: 1px solid var(--border);
+  color: var(--ink-muted);
+}
+.discount-exclusion > span {
+  color: var(--knit-dark);
+  font-size: 1.25rem;
+  line-height: 1;
+}
+.discount-exclusion p {
+  margin: 0;
+  font-size: 0.72rem;
+  line-height: 1.6;
+}
+.discount-success {
+  padding: 1.5rem;
+  border: 1px solid var(--border);
+  border-radius: 0.8rem;
+  background: var(--discount-blush);
+}
+.discount-success span,
+.discount-success strong {
+  display: block;
+}
+.discount-success span {
+  margin-bottom: 0.45rem;
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.discount-success strong {
+  font: 500 1.35rem/1.2 var(--display);
+}
+.discount-success p {
+  margin: 0.7rem 0 0;
+  color: var(--ink-muted);
+  font-size: 0.72rem;
+  line-height: 1.6;
+}
 .story-builder {
   width: min(100%, 1240px);
   margin: auto;
@@ -3412,6 +3567,21 @@ main:focus {
   }
   .content-page-intro {
     margin-bottom: 3.5rem;
+  }
+  .discount-signup {
+    grid-template-columns: 1fr;
+  }
+  .discount-offer {
+    min-height: 330px;
+  }
+  .discount-form-panel {
+    padding: 2rem 1.35rem;
+  }
+  .discount-form > div {
+    grid-template-columns: 1fr;
+  }
+  .discount-form .button {
+    justify-content: center;
   }
   .video-placeholder,
   .story-description-placeholder {
