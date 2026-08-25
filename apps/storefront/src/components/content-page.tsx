@@ -14,7 +14,7 @@ export function ContentPage({
 }: Readonly<{
   eyebrow: string
   title: ReactNode
-  intro: string
+  intro: ReactNode
   children: ReactNode
   className?: string
 }>) {

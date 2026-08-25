@@ -42,6 +42,7 @@ export function StorefrontHeader() {
         <a href="/products">Shop</a>
         <a href="/collections">Collections</a>
         <a href="/about">Our story</a>
+        <a href="/b2b">B2B</a>
       </nav>
 
       <div className="header-actions">

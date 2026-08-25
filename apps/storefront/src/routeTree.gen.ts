@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as AccountRouteImport } from './routes/account'
+import { Route as B2bRouteImport } from './routes/b2b'
 import { Route as CartRouteImport } from './routes/cart'
 import { Route as CookiesRouteImport } from './routes/cookies'
 import { Route as OurProcessRouteImport } from './routes/our-process'
@@ -37,6 +38,11 @@ const AboutRoute = AboutRouteImport.update({
 const AccountRoute = AccountRouteImport.update({
   id: '/account',
   path: '/account',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const B2bRoute = B2bRouteImport.update({
+  id: '/b2b',
+  path: '/b2b',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CartRoute = CartRouteImport.update({
@@ -99,6 +105,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/account': typeof AccountRoute
+  '/b2b': typeof B2bRoute
   '/cart': typeof CartRoute
   '/cookies': typeof CookiesRoute
   '/our-process': typeof OurProcessRoute
@@ -115,6 +122,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/account': typeof AccountRoute
+  '/b2b': typeof B2bRoute
   '/cart': typeof CartRoute
   '/cookies': typeof CookiesRoute
   '/our-process': typeof OurProcessRoute
@@ -132,6 +140,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/account': typeof AccountRoute
+  '/b2b': typeof B2bRoute
   '/cart': typeof CartRoute
   '/cookies': typeof CookiesRoute
   '/our-process': typeof OurProcessRoute
@@ -150,6 +159,7 @@ export interface FileRouteTypes {
     | '/'
     | '/about'
     | '/account'
+    | '/b2b'
     | '/cart'
     | '/cookies'
     | '/our-process'
@@ -166,6 +176,7 @@ export interface FileRouteTypes {
     | '/'
     | '/about'
     | '/account'
+    | '/b2b'
     | '/cart'
     | '/cookies'
     | '/our-process'
@@ -182,6 +193,7 @@ export interface FileRouteTypes {
     | '/'
     | '/about'
     | '/account'
+    | '/b2b'
     | '/cart'
     | '/cookies'
     | '/our-process'
@@ -199,6 +211,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AboutRoute: typeof AboutRoute
   AccountRoute: typeof AccountRoute
+  B2bRoute: typeof B2bRoute
   CartRoute: typeof CartRoute
   CookiesRoute: typeof CookiesRoute
   OurProcessRoute: typeof OurProcessRoute
@@ -233,6 +246,13 @@ declare module '@tanstack/react-router' {
       path: '/account'
       fullPath: '/account'
       preLoaderRoute: typeof AccountRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/b2b': {
+      id: '/b2b'
+      path: '/b2b'
+      fullPath: '/b2b'
+      preLoaderRoute: typeof B2bRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/cart': {
@@ -319,6 +339,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
   AccountRoute: AccountRoute,
+  B2bRoute: B2bRoute,
   CartRoute: CartRoute,
   CookiesRoute: CookiesRoute,
   OurProcessRoute: OurProcessRoute,

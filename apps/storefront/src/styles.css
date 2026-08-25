@@ -8,8 +8,8 @@
   --ink: #2e2e2d;
   --ink-muted: #6e6864;
   --border: #ded4cc;
-  --display: Georgia, "Times New Roman", serif;
-  --body: Inter, ui-sans-serif, system-ui, sans-serif;
+  --body: Georgia, "Times New Roman", serif;
+  --display: var(--body);
   --shadow: 0 16px 50px rgb(66 48 39 / 9%);
   color: var(--ink);
   font-family: var(--body);
@@ -2027,8 +2027,8 @@ main:focus {
 }
 .content-page-intro h1 {
   margin: 0;
-  font: 500 clamp(3.4rem, 7.5vw, 7.2rem)/0.92 var(--display);
-  letter-spacing: -0.052em;
+  font: 500 clamp(2.3rem, 4vw, 4rem)/1 var(--display);
+  letter-spacing: -0.035em;
 }
 .process-page .content-page-intro h1 span {
   display: block;
@@ -2340,6 +2340,199 @@ main:focus {
   color: var(--ink-muted);
   font-size: 0.76rem;
   line-height: 1.7;
+}
+.b2b-page {
+  --b2b-soft: #eee5e6;
+}
+.b2b-minimum-note {
+  display: block;
+  margin-top: 0.75rem;
+}
+.b2b-hero {
+  width: min(100%, 1240px);
+  min-height: clamp(440px, 55vw, 650px);
+  margin: 0 auto clamp(5rem, 9vw, 8rem);
+  padding: clamp(2rem, 6vw, 5rem);
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  border-radius: 1.25rem;
+  background:
+    linear-gradient(90deg, rgb(39 28 34 / 70%) 0%, rgb(48 34 43 / 20%) 43%, transparent 68%),
+    url('/b2b-team.jpg') center / cover no-repeat;
+}
+.b2b-hero > div {
+  width: 38%;
+  max-width: 440px;
+  color: white;
+  transform: translateY(clamp(-2.5rem, -3vw, -1.25rem));
+}
+.b2b-hero .eyebrow {
+  color: white;
+}
+.b2b-hero h2 {
+  margin: 0.8rem 0 0;
+  font: 500 clamp(3.4rem, 7vw, 6.5rem)/0.92 var(--display);
+  letter-spacing: -0.045em;
+}
+.b2b-hero h2 span {
+  display: block;
+  white-space: nowrap;
+}
+.b2b-section {
+  width: min(100%, 1240px);
+  margin: 0 auto clamp(5rem, 9vw, 8rem);
+}
+.b2b-section-heading {
+  max-width: 680px;
+  margin: 0 auto 2.8rem;
+  text-align: center;
+}
+.b2b-section-heading h2,
+.b2b-contact-intro h2 {
+  margin: 0.7rem 0 0;
+  font: 500 clamp(2.3rem, 4vw, 4rem)/1 var(--display);
+  letter-spacing: -0.035em;
+}
+.b2b-benefits,
+.b2b-steps {
+  display: grid;
+  gap: 1rem;
+}
+.b2b-benefits {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.b2b-benefits article,
+.b2b-steps article {
+  min-width: 0;
+  padding: clamp(1.5rem, 3vw, 2.4rem);
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  background: var(--surface);
+  box-shadow: 0 12px 35px rgb(66 48 39 / 5%);
+}
+.b2b-benefits h3,
+.b2b-steps h3 {
+  margin: 0 0 0.8rem;
+  font: 500 clamp(1.35rem, 2vw, 1.75rem)/1.1 var(--display);
+}
+.b2b-benefits p,
+.b2b-steps p {
+  margin: 0;
+  color: var(--ink-muted);
+  font-size: 0.78rem;
+  line-height: 1.75;
+}
+.b2b-process {
+  padding: clamp(3rem, 6vw, 5rem);
+  border-radius: 1.25rem;
+  background: var(--b2b-soft);
+}
+.b2b-steps {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.b2b-steps article {
+  display: flex;
+  flex-direction: column;
+}
+.b2b-steps article > span {
+  margin-bottom: 2.2rem;
+  align-self: center;
+  color: var(--knit-dark);
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+}
+.b2b-steps h3 {
+  min-height: 2.2em;
+}
+.b2b-contact {
+  width: min(100%, 1120px);
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: minmax(0, 0.75fr) minmax(0, 1.25fr);
+  gap: clamp(2.5rem, 7vw, 7rem);
+  align-items: start;
+}
+.b2b-contact-intro {
+  position: sticky;
+  top: 2rem;
+}
+.b2b-contact-intro > p:not(.eyebrow) {
+  margin: 1.4rem 0;
+  color: var(--ink-muted);
+  font-size: 0.86rem;
+  line-height: 1.8;
+}
+.b2b-contact-intro > a {
+  color: var(--knit-dark);
+  text-decoration: underline;
+  text-underline-offset: 0.3em;
+}
+.b2b-form {
+  padding: clamp(1.5rem, 4vw, 3rem);
+  display: grid;
+  gap: 1.2rem;
+  border: 1px solid var(--border);
+  border-radius: 1.25rem;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+.b2b-form-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+.b2b-form label {
+  display: grid;
+  gap: 0.55rem;
+  font-size: 0.75rem;
+  letter-spacing: 0.02em;
+}
+.b2b-form input,
+.b2b-form select,
+.b2b-form textarea {
+  width: 100%;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 0.65rem;
+  color: var(--ink);
+  background: var(--canvas);
+  font: inherit;
+}
+.b2b-form textarea {
+  resize: vertical;
+  line-height: 1.5;
+}
+.b2b-form input:focus,
+.b2b-form select:focus,
+.b2b-form textarea:focus {
+  border-color: var(--knit);
+  outline: 2px solid rgb(138 104 119 / 16%);
+}
+.b2b-file-field input {
+  border-style: dashed;
+}
+.b2b-file-field input::file-selector-button {
+  margin-right: 0.8rem;
+  padding: 0.55rem 0.75rem;
+  border: 0;
+  border-radius: 0.45rem;
+  color: white;
+  background: var(--knit-dark);
+  font: inherit;
+  cursor: pointer;
+}
+.b2b-file-field > span,
+.b2b-form-note,
+.b2b-optional {
+  color: var(--ink-muted);
+  font-size: 0.66rem;
+}
+.b2b-form .button {
+  justify-self: start;
+}
+.b2b-form-note {
+  margin: -0.3rem 0 0;
 }
 .policy-layout {
   width: min(100%, 1100px);
@@ -2692,6 +2885,15 @@ main:focus {
   .process-gallery {
     grid-template-columns: 1fr 1fr;
   }
+  .b2b-steps {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .b2b-contact {
+    grid-template-columns: 1fr;
+  }
+  .b2b-contact-intro {
+    position: static;
+  }
   .collection-page-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -2912,9 +3114,6 @@ main:focus {
   .content-page-intro {
     margin-bottom: 3.5rem;
   }
-  .content-page-intro h1 {
-    font-size: clamp(3rem, 15vw, 4.8rem);
-  }
   .video-placeholder,
   .story-description-placeholder {
     min-height: 390px;
@@ -2950,6 +3149,28 @@ main:focus {
   }
   .process-gallery figure {
     min-height: 320px;
+  }
+  .b2b-hero {
+    min-height: 500px;
+    align-items: flex-end;
+    background:
+      linear-gradient(0deg, rgb(39 28 34 / 72%) 0%, rgb(48 34 43 / 10%) 65%, transparent 100%),
+      url('/b2b-team.jpg') 62% center / cover no-repeat;
+  }
+  .b2b-hero > div {
+    width: 100%;
+    transform: none;
+  }
+  .b2b-benefits,
+  .b2b-steps,
+  .b2b-form-row {
+    grid-template-columns: 1fr;
+  }
+  .b2b-process {
+    padding-inline: 1rem;
+  }
+  .b2b-steps h3 {
+    min-height: 0;
   }
   .policy-layout {
     grid-template-columns: 1fr;
