@@ -2344,13 +2344,17 @@ main:focus {
 .b2b-page {
   --b2b-soft: #eee5e6;
 }
+.b2b-minimum-note {
+  display: block;
+  margin-top: 0.75rem;
+}
 .b2b-hero {
   width: min(100%, 1240px);
   min-height: clamp(440px, 55vw, 650px);
   margin: 0 auto clamp(5rem, 9vw, 8rem);
   padding: clamp(2rem, 6vw, 5rem);
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   overflow: hidden;
   border-radius: 1.25rem;
   background:
@@ -2358,16 +2362,22 @@ main:focus {
     url('/b2b-team.jpg') center / cover no-repeat;
 }
 .b2b-hero > div {
-  max-width: 500px;
+  width: 38%;
+  max-width: 440px;
   color: white;
+  transform: translateY(clamp(-2.5rem, -3vw, -1.25rem));
 }
 .b2b-hero .eyebrow {
   color: white;
 }
 .b2b-hero h2 {
   margin: 0.8rem 0 0;
-  font: 500 clamp(2.8rem, 6vw, 5.8rem)/0.94 var(--display);
+  font: 500 clamp(3.4rem, 7vw, 6.5rem)/0.92 var(--display);
   letter-spacing: -0.045em;
+}
+.b2b-hero h2 span {
+  display: block;
+  white-space: nowrap;
 }
 .b2b-section {
   width: min(100%, 1240px);
@@ -3146,6 +3156,10 @@ main:focus {
     background:
       linear-gradient(0deg, rgb(39 28 34 / 72%) 0%, rgb(48 34 43 / 10%) 65%, transparent 100%),
       url('/b2b-team.jpg') 62% center / cover no-repeat;
+  }
+  .b2b-hero > div {
+    width: 100%;
+    transform: none;
   }
   .b2b-benefits,
   .b2b-steps,

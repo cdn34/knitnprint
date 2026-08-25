@@ -28,15 +28,24 @@ const steps = [
 function B2BPage() {
   return (
     <ContentPage
-      eyebrow="B2B"
+      eyebrow="B2B*"
       title="Tailored solutions for your business"
-      intro="Turn your identity into a recognisable brand. At KnitnPrint, we personalise clothing and corporate gifts that strengthen team spirit, elevate events and make an impression on clients and partners."
+      intro={
+        <>
+          <span>Turn your identity into a recognisable brand. At KnitnPrint, we personalise clothing and corporate gifts that strengthen team spirit, elevate events and make an impression on clients and partners.</span>
+          <span className="b2b-minimum-note">*Corporate projects are subject to minimum order quantities. Contact us for more information.</span>
+        </>
+      }
       className="b2b-page"
     >
       <section className="b2b-hero" aria-labelledby="b2b-hero-title">
         <div>
           <p className="eyebrow">Made to represent you</p>
-          <h2 id="b2b-hero-title">Your brand<br />in every detail.</h2>
+          <h2 id="b2b-hero-title">
+            <span>Your brand</span>
+            <span>in every</span>
+            <span>detail.</span>
+          </h2>
         </div>
       </section>
 
