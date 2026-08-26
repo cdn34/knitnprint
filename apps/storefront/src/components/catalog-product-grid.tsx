@@ -2,15 +2,19 @@ import type { Product } from '@knitprint/api-client'
 import { Heart } from 'lucide-react'
 import {
   mediaUrl,
-  productPrice,
   productStock,
 } from '../catalog-api'
+import { useI18n } from '../i18n'
+import { useLocalizedCatalog } from '../i18n/catalog'
 
 export function CatalogProductGrid({ products }: Readonly<{ products: Product[] }>) {
+  const { t } = useI18n()
+  const { priceForProduct, stockText } = useLocalizedCatalog()
   return (
     <div className="product-grid">
       {products.map((product, index) => {
         const stock = productStock(product)
+        const localizedStock = stock ? stockText(stock) : null
         const tone = ['mauve', 'sand', 'ink', 'clay'][index % 4]
         const form = ['vase', 'planter', 'tray', 'lamp'][index % 4]
 
@@ -20,7 +24,7 @@ export function CatalogProductGrid({ products }: Readonly<{ products: Product[] 
               <a
                 className="product-visual"
                 href={`/products/${product.slug}`}
-                aria-label={`View ${product.title}`}
+                aria-label={t('common.viewProduct', { name: product.title })}
               >
                 {product.media[0] ? (
                   <img
@@ -32,7 +36,7 @@ export function CatalogProductGrid({ products }: Readonly<{ products: Product[] 
                   <span className={`product-form product-form--${form}`} />
                 )}
               </a>
-              <button className="heart" aria-label={`Save ${product.title}`} type="button">
+              <button className="heart" aria-label={t('common.saveProduct', { name: product.title })} type="button">
                 <Heart size={19} />
               </button>
             </div>
@@ -41,11 +45,11 @@ export function CatalogProductGrid({ products }: Readonly<{ products: Product[] 
                 <h2><a href={`/products/${product.slug}`}>{product.title}</a></h2>
                 {stock && (
                   <span className={`product-stock product-stock--${stock.state}`}>
-                    {stock.label}
+                    {localizedStock?.label}
                   </span>
                 )}
               </div>
-              <p>{productPrice(product)}</p>
+              <p>{priceForProduct(product)}</p>
             </div>
           </article>
         )

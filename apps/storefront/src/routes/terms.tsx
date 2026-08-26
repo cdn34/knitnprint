@@ -1,6 +1,8 @@
 import { createFileRoute } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
 import { ContentPage } from '../components/content-page'
+import { useI18n } from '../i18n'
+import { termsEs, termsPt, type LegalSection } from '../i18n/terms-content'
 
 export const Route = createFileRoute('/terms')({
   head: () => ({
@@ -13,11 +15,12 @@ export const Route = createFileRoute('/terms')({
 })
 
 function TermsPage() {
+  const { locale, t } = useI18n()
   return (
     <ContentPage
-      eyebrow="Legal information"
-      title="Terms and Conditions"
-      intro="These terms govern the use of the KnitnPrint online store and the purchase of our products."
+      eyebrow={t('terms.eyebrow')}
+      title={t('terms.title')}
+      intro={t('terms.intro')}
       className="policy-page legal-document-page"
     >
       <div className="policy-layout">
@@ -25,19 +28,21 @@ function TermsPage() {
           <section className="company-information" aria-labelledby="company-information-title">
             <span aria-hidden="true">01</span>
             <div>
-              <p className="eyebrow">Legal information</p>
-              <h2 id="company-information-title">Company identification</h2>
+              <p className="eyebrow">{t('terms.eyebrow')}</p>
+              <h2 id="company-information-title">{t('terms.companyTitle')}</h2>
               <dl>
-                <div><dt>Trading name</dt><dd>KnitnPrint</dd></div>
-                <div><dt>Owner</dt><dd>Daniela Tojal</dd></div>
-                <div><dt>Tax identification number</dt><dd>220666768</dd></div>
-                <div><dt>Email</dt><dd><a href="mailto:support@knitnprint.com">support@knitnprint.com</a></dd></div>
-                <div><dt>Address</dt><dd>Online store</dd></div>
+                <div><dt>{t('terms.tradingName')}</dt><dd>KnitnPrint</dd></div>
+                <div><dt>{t('terms.owner')}</dt><dd>Daniela Tojal</dd></div>
+                <div><dt>{t('terms.taxNumber')}</dt><dd>220666768</dd></div>
+                <div><dt>{t('terms.email')}</dt><dd><a href="mailto:support@knitnprint.com">support@knitnprint.com</a></dd></div>
+                <div><dt>{t('terms.address')}</dt><dd>{t('terms.onlineStore')}</dd></div>
               </dl>
             </div>
           </section>
 
-          <p className="eyebrow policy-document-label">Conditions of use and purchase</p>
+          <p className="eyebrow policy-document-label">{t('terms.conditions')}</p>
+
+          {locale === 'en' ? <>
 
           <PolicySection number="02" title="Purpose and scope">
             <p>KnitnPrint is an online store based in Portugal that sells personalised and other products, with the aim of meeting its customers’ needs in a variety of areas. These Terms and Conditions govern access to, browsing and use of the website <a href="https://knitnprint.com">knitnprint.com</a>, as well as the conditions applicable to purchasing products through the online store.</p>
@@ -146,10 +151,36 @@ function TermsPage() {
             <p>These Terms and Conditions are governed by Portuguese law.</p>
             <p>In the event of a dispute, the court of the district in which the company has its registered office will have jurisdiction, without prejudice to the statutory provisions applicable to consumers.</p>
           </PolicySection>
+          </> : (
+            <LocalizedTerms sections={locale === 'pt' ? termsPt : termsEs} />
+          )}
         </article>
       </div>
     </ContentPage>
   )
+}
+
+function LocalizedTerms({ sections }: Readonly<{ sections: LegalSection[] }>) {
+  return sections.map((section) => (
+    <PolicySection number={section.number} title={section.title} key={section.number}>
+      {section.blocks.map((block, index) => block.type === 'p' ? (
+        <p key={index}>{renderLegalText(block.text)}</p>
+      ) : block.type === 'ul' ? (
+        <ul key={index}>{block.items.map((item) => <li key={item}>{renderLegalText(item)}</li>)}</ul>
+      ) : (
+        <ol key={index}>{block.items.map((item) => <li key={item}>{renderLegalText(item)}</li>)}</ol>
+      ))}
+    </PolicySection>
+  ))
+}
+
+function renderLegalText(text: string) {
+  return text.split(/(\[site\]|\[email\]|\[complaints\])/).map((part, index) => {
+    if (part === '[site]') return <a href="https://knitnprint.com" key={index}>knitnprint.com</a>
+    if (part === '[email]') return <a href="mailto:support@knitnprint.com" key={index}>support@knitnprint.com</a>
+    if (part === '[complaints]') return <a href="https://www.livroreclamacoes.pt/" key={index}>livroreclamacoes.pt</a>
+    return part
+  })
 }
 
 function PolicySection({ number, title, children }: Readonly<{

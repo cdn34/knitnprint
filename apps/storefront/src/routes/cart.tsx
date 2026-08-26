@@ -15,17 +15,18 @@ import {
   TriangleAlert,
 } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
-import { cartApi, cartMutationKey, formatMoney } from '../cart-api'
+import { cartApi, cartMutationKey } from '../cart-api'
 import { ContextualFaqs } from '../components/contextual-faqs'
 import { StorefrontAnnouncement, StorefrontFooter, StorefrontHeader } from '../components/storefront-shell'
+import { useI18n } from '../i18n'
 
 export const Route = createFileRoute('/cart')({
   head: () => ({
     meta: [
-      { title: 'Your cart — KnitPrint' },
+      { title: 'Your cart — KnitnPrint' },
       {
         name: 'description',
-        content: 'Review your KnitPrint pieces and prepare delivery details.',
+        content: 'Review your KnitnPrint pieces and prepare delivery details.',
       },
     ],
   }),
@@ -33,6 +34,7 @@ export const Route = createFileRoute('/cart')({
 })
 
 function CartPage() {
+  const { t, formatCurrency } = useI18n()
   const [cart, setCart] = useState<Cart | null>(null)
   const [loading, setLoading] = useState(true)
   const [busyLine, setBusyLine] = useState<string | null>(null)
@@ -57,7 +59,7 @@ function CartPage() {
         else setCart(resource as Cart)
       })
       .catch(() => {
-        if (active) setMessage('Your cart is temporarily unavailable.')
+        if (active) setMessage(t('cart.unavailable'))
       })
       .finally(() => {
         if (active) setLoading(false)
@@ -111,7 +113,7 @@ function CartPage() {
         ),
       )
     } catch {
-      setMessage('That quantity is no longer available.')
+      setMessage(t('cart.quantityUnavailable'))
     } finally {
       setBusyLine(null)
     }
@@ -123,7 +125,7 @@ function CartPage() {
     try {
       setCart(await cartApi.removeCartItem(lineId, cartMutationKey()))
     } catch {
-      setMessage('We couldn’t remove that item. Please try again.')
+      setMessage(t('cart.removeError'))
     } finally {
       setBusyLine(null)
     }
@@ -153,9 +155,9 @@ function CartPage() {
     try {
       const nextCart = await cartApi.setCartDelivery(input, cartMutationKey())
       setCart(nextCart)
-      setMessage('Delivery details saved.')
+      setMessage(t('cart.deliverySaved'))
     } catch {
-      setMessage('Check each required delivery field and try again.')
+      setMessage(t('cart.deliveryError'))
     }
   }
 
@@ -166,10 +168,10 @@ function CartPage() {
     const code = String(new FormData(event.currentTarget).get('discount_code') ?? '')
     try {
       setCart(await cartApi.applyCartDiscount({ code }, cartMutationKey()))
-      setMessage('Discount applied.')
+      setMessage(t('cart.discountApplied'))
       event.currentTarget.reset()
     } catch {
-      setMessage('That discount cannot be applied to this cart.')
+      setMessage(t('cart.discountError'))
     } finally {
       setDiscountBusy(false)
     }
@@ -180,9 +182,9 @@ function CartPage() {
     setMessage('')
     try {
       setCart(await cartApi.removeCartDiscount(cartMutationKey()))
-      setMessage('Discount removed.')
+      setMessage(t('cart.discountRemoved'))
     } catch {
-      setMessage('The discount could not be removed. Please try again.')
+      setMessage(t('cart.discountRemoveError'))
     } finally {
       setDiscountBusy(false)
     }
@@ -198,9 +200,9 @@ function CartPage() {
           cartMutationKey(),
         ),
       )
-      setMessage('Shipping method updated.')
+      setMessage(t('cart.shippingUpdated'))
     } catch {
-      setMessage('That shipping method is no longer available.')
+      setMessage(t('cart.shippingError'))
     } finally {
       setShippingBusy(false)
     }
@@ -226,7 +228,7 @@ function CartPage() {
         await redirectToPayment(nextOrder.id)
       }
     } catch {
-      setMessage('Your order could not be created. Review the cart and try again.')
+      setMessage(t('cart.orderError'))
       try {
         setCart(await cartApi.cart())
       } catch {
@@ -239,12 +241,12 @@ function CartPage() {
 
   async function redirectToPayment(orderId: string) {
     setSubmittingOrder(true)
-    setMessage('Opening secure card checkout…')
+    setMessage(t('cart.openingSecureCheckout'))
     try {
       const checkout = await cartApi.startOrderPayment(orderId)
       window.location.assign(checkout.checkout_url)
     } catch {
-      setMessage('Secure card checkout is temporarily unavailable. Your order is saved; retry below.')
+      setMessage(t('cart.secureCheckoutError'))
       setSubmittingOrder(false)
     }
   }
@@ -258,15 +260,15 @@ function CartPage() {
 
       <main className="cart-page" id="main-content" tabIndex={-1}>
         <a className="text-link page-back-link" href="/#shop">
-          <ArrowLeft size={17} /> Continue shopping
+          <ArrowLeft size={17} /> {t('cart.continueShopping')}
         </a>
         <div className="cart-heading">
-          <p className="eyebrow">Your selection</p>
-          <h1>{order ? 'Order received' : 'Cart'}</h1>
-          {!order && cart && <p>{cart.item_count} {cart.item_count === 1 ? 'piece' : 'pieces'}</p>}
+          <p className="eyebrow">{t('cart.eyebrow')}</p>
+          <h1>{order ? t('cart.orderReceived') : t('cart.title')}</h1>
+          {!order && cart && <p>{cart.item_count} {t(cart.item_count === 1 ? 'cart.piece' : 'cart.pieces')}</p>}
         </div>
 
-        {loading && <p className="cart-notice" role="status">Loading your cart…</p>}
+        {loading && <p className="cart-notice" role="status">{t('cart.loading')}</p>}
         {!loading && !cart && <p className="cart-notice" role="alert">{message}</p>}
 
         {order && (
@@ -280,9 +282,9 @@ function CartPage() {
         {!order && cart && cart.items.length === 0 && (
           <section className="cart-empty">
             <PackageOpen aria-hidden="true" />
-            <h2>Your cart is waiting for its first piece.</h2>
-            <p>Explore the latest small-batch objects from the studio.</p>
-            <a className="button button--primary" href="/#shop">Shop the collection</a>
+            <h2>{t('cart.emptyTitle')}</h2>
+            <p>{t('cart.emptyBody')}</p>
+            <a className="button button--primary" href="/#shop">{t('cart.shopCollection')}</a>
           </section>
         )}
 
@@ -293,14 +295,14 @@ function CartPage() {
                 <section className="cart-issues" aria-labelledby="cart-issues-title">
                   <TriangleAlert aria-hidden="true" />
                   <div>
-                    <h2 id="cart-issues-title">Your cart changed</h2>
+                    <h2 id="cart-issues-title">{t('cart.changedTitle')}</h2>
                     <ul>{cart.issues.map((issue, index) => <li key={`${issue.code}-${index}`}>{issue.message}</li>)}</ul>
                   </div>
                 </section>
               )}
 
               <section className="cart-items" aria-labelledby="cart-items-title">
-                <h2 id="cart-items-title" className="sr-only">Cart items</h2>
+                <h2 id="cart-items-title" className="sr-only">{t('cart.itemsLabel')}</h2>
                 {cart.items.map((item) => (
                   <article className="cart-item" key={item.id}>
                     <a className="cart-item-image" href={`/products/${item.product_slug}`}>
@@ -312,9 +314,9 @@ function CartPage() {
                     </a>
                     <div className="cart-item-copy">
                       <h3><a href={`/products/${item.product_slug}`}>{item.product_title}</a></h3>
-                      <p>{item.variant_title} · SKU {item.sku}</p>
+                      <p>{item.variant_title} · {t('cart.sku')} {item.sku}</p>
                       <label>
-                        <span>Quantity</span>
+                        <span>{t('cart.quantity')}</span>
                         <select
                           value={item.quantity}
                           disabled={busyLine === item.id || !item.available}
@@ -328,14 +330,14 @@ function CartPage() {
                       </label>
                     </div>
                     <div className="cart-item-actions">
-                      <strong>{formatMoney(item.line_total_minor, item.currency)}</strong>
+                      <strong>{formatCurrency(item.line_total_minor, item.currency)}</strong>
                       <button
                         className="text-button"
                         type="button"
                         disabled={busyLine === item.id}
                         onClick={() => removeItem(item.id)}
                       >
-                        <Trash2 size={16} aria-hidden="true" /> Remove
+                        <Trash2 size={16} aria-hidden="true" /> {t('cart.remove')}
                       </button>
                     </div>
                   </article>
@@ -346,26 +348,26 @@ function CartPage() {
             </div>
 
             <aside className="cart-summary" aria-labelledby="cart-summary-title">
-              <h2 id="cart-summary-title">Summary</h2>
-              <div><span>Subtotal</span><strong>{formatMoney(cart.subtotal_minor, currency)}</strong></div>
+              <h2 id="cart-summary-title">{t('cart.summary')}</h2>
+              <div><span>{t('cart.subtotal')}</span><strong>{formatCurrency(cart.subtotal_minor, currency)}</strong></div>
               {cart.discount && (
                 <div className="cart-discount-line">
                   <span>{cart.discount.code}</span>
-                  <strong>−{formatMoney(cart.discount_minor, currency)}</strong>
+                  <strong>−{formatCurrency(cart.discount_minor, currency)}</strong>
                 </div>
               )}
               {cart.shipping ? (
-                <div><span>Shipping · {cart.shipping.method_name}</span><strong>{formatMoney(cart.shipping_minor, currency)}</strong></div>
+                <div><span>{t('cart.shipping')} · {cart.shipping.method_name}</span><strong>{formatCurrency(cart.shipping_minor, currency)}</strong></div>
               ) : (
-                <div><span>Shipping</span><span>Add delivery details</span></div>
+                <div><span>{t('cart.shipping')}</span><span>{t('cart.addDelivery')}</span></div>
               )}
               {cart.tax && (
-                <div><span>Tax · {cart.tax.rate_basis_points / 100}%</span><strong>{formatMoney(cart.tax_minor, currency)}</strong></div>
+                <div><span>{t('cart.tax')} · {cart.tax.rate_basis_points / 100}%</span><strong>{formatCurrency(cart.tax_minor, currency)}</strong></div>
               )}
-              <div className="cart-total"><span>Total</span><strong>{formatMoney(cart.total_minor, currency)}</strong></div>
+              <div className="cart-total"><span>{t('cart.total')}</span><strong>{formatCurrency(cart.total_minor, currency)}</strong></div>
               {cart.shipping_methods.length > 1 && cart.shipping && (
                 <label className="cart-shipping-select">
-                  Shipping method
+                  {t('cart.shippingMethod')}
                   <select
                     value={cart.shipping.id}
                     disabled={shippingBusy}
@@ -373,21 +375,21 @@ function CartPage() {
                   >
                     {cart.shipping_methods.map((method) => (
                       <option value={method.id} key={method.id}>
-                        {method.method_name} · {formatMoney(method.amount_minor, method.currency)}
+                        {method.method_name} · {formatCurrency(method.amount_minor, method.currency)}
                       </option>
                     ))}
                   </select>
                 </label>
               )}
               {cart.discount ? (
-                <button className="text-button cart-discount-remove" type="button" disabled={discountBusy} onClick={removeDiscount}>Remove discount</button>
+                <button className="text-button cart-discount-remove" type="button" disabled={discountBusy} onClick={removeDiscount}>{t('cart.removeDiscount')}</button>
               ) : (
                 <form className="cart-discount-form" onSubmit={applyDiscount}>
-                  <label htmlFor="discount-code">Discount code</label>
-                  <div><input id="discount-code" name="discount_code" minLength={3} maxLength={32} required autoCapitalize="characters" /><button type="submit" disabled={discountBusy}>{discountBusy ? 'Applying…' : 'Apply'}</button></div>
+                  <label htmlFor="discount-code">{t('cart.discountCode')}</label>
+                  <div><input id="discount-code" name="discount_code" minLength={3} maxLength={32} required autoCapitalize="characters" /><button type="submit" disabled={discountBusy}>{t(discountBusy ? 'cart.applying' : 'cart.apply')}</button></div>
                 </form>
               )}
-              <p>Shipping, tax, prices, and final availability are recalculated by the server before the order is created.</p>
+              <p>{t('cart.recalculationNote')}</p>
               <button
                 className="button button--primary"
                 type="button"
@@ -395,16 +397,16 @@ function CartPage() {
                 onClick={createOrder}
               >
                 {submittingOrder
-                  ? 'Opening checkout…'
+                  ? t('cart.openingCheckout')
                   : paymentOptions?.stripe
-                    ? 'Pay securely'
-                    : 'Create order'}
+                    ? t('cart.paySecurely')
+                    : t('cart.createOrder')}
               </button>
               <span className="cart-ready-state">
                 {cart.checkout_ready ? <CircleCheck aria-hidden="true" /> : <TriangleAlert aria-hidden="true" />}
                 {cart.checkout_ready
-                  ? 'Cart and delivery details are ready.'
-                  : 'Resolve cart changes and add delivery details.'}
+                  ? t('cart.ready')
+                  : t('cart.notReady')}
               </span>
             </aside>
           </div>
@@ -413,13 +415,13 @@ function CartPage() {
         {!order && (
           <ContextualFaqs
             id="cart-faqs"
-            eyebrow="Before you order"
-            title="A few final details"
+            eyebrow={t('cart.faqEyebrow')}
+            title={t('cart.faqTitle')}
             items={[
-              { question: 'Can I still change my personalisation?', answer: 'Review all personalisation details before paying. If you notice an error afterwards, contact us immediately, although changes cannot be guaranteed once production starts.' },
-              { question: 'When will my order be produced?', answer: 'Production begins after the order and any required design details are confirmed. Personalised items are made before the shipping estimate begins.' },
-              { question: 'Can I use more than one discount code?', answer: 'Unless a promotion states otherwise, discount codes cannot be combined. The cart will confirm whether a code can be applied.' },
-              { question: 'Can personalised products be returned?', answer: 'Personalised products generally cannot be returned for a change of mind, without affecting your rights when an item is faulty, damaged or not as agreed.' },
+              { question: t('cart.faq1Question'), answer: t('cart.faq1Answer') },
+              { question: t('cart.faq2Question'), answer: t('cart.faq2Answer') },
+              { question: t('cart.faq3Question'), answer: t('cart.faq3Answer') },
+              { question: t('cart.faq4Question'), answer: t('cart.faq4Answer') },
             ]}
             className="contextual-faqs--cart"
           />
@@ -439,6 +441,7 @@ function OrderConfirmation({
   busy: boolean
   onResumePayment: (orderId: string) => Promise<void>
 }>) {
+  const { t, formatCurrency } = useI18n()
   const stripePending =
     order.payment.provider === 'stripe' && order.payment_status === 'pending'
   const paid = order.payment_status === 'paid'
@@ -449,36 +452,36 @@ function OrderConfirmation({
       <p className="eyebrow">{order.order_number}</p>
       <h2 id="order-confirmation-title">
         {thankCustomer
-          ? `Thank you, ${order.customer.first_name}.`
-          : 'Your order is reserved.'}
+          ? t('order.thankYou', { name: order.customer.first_name })
+          : t('order.reserved')}
       </h2>
       <p>
         {paid
-          ? 'Payment is confirmed and the studio can prepare your pieces.'
+          ? t('order.paidBody')
           : stripePending
-            ? 'Card payment has not been confirmed yet. Continue to secure checkout to complete the order.'
-            : order.payment.failure_message ?? 'The order is awaiting manual payment confirmation.'}
-        {' '}Keep the order number above for reference.
+            ? t('order.pendingBody')
+            : order.payment.failure_message ?? t('order.manualBody')}
+        {' '}{t('order.reference')}
       </p>
       <dl className="order-confirmation-summary">
-        <div><dt>Status</dt><dd>{order.order_status}</dd></div>
-        <div><dt>Payment</dt><dd>{order.payment_status}</dd></div>
-        <div><dt>Subtotal</dt><dd>{formatMoney(order.subtotal_minor, order.currency)}</dd></div>
-        {order.discount && <div><dt>Discount ({order.discount.code})</dt><dd>−{formatMoney(order.discount_minor, order.currency)}</dd></div>}
-        <div><dt>Shipping ({order.shipping.method_name})</dt><dd>{formatMoney(order.shipping_minor, order.currency)}</dd></div>
-        <div><dt>Tax ({order.tax.rate_basis_points / 100}%)</dt><dd>{formatMoney(order.tax_minor, order.currency)}</dd></div>
-        <div><dt>Total</dt><dd>{formatMoney(order.total_minor, order.currency)}</dd></div>
+        <div><dt>{t('order.status')}</dt><dd>{order.order_status}</dd></div>
+        <div><dt>{t('order.payment')}</dt><dd>{order.payment_status}</dd></div>
+        <div><dt>{t('cart.subtotal')}</dt><dd>{formatCurrency(order.subtotal_minor, order.currency)}</dd></div>
+        {order.discount && <div><dt>{t('order.discount')} ({order.discount.code})</dt><dd>−{formatCurrency(order.discount_minor, order.currency)}</dd></div>}
+        <div><dt>{t('cart.shipping')} ({order.shipping.method_name})</dt><dd>{formatCurrency(order.shipping_minor, order.currency)}</dd></div>
+        <div><dt>{t('cart.tax')} ({order.tax.rate_basis_points / 100}%)</dt><dd>{formatCurrency(order.tax_minor, order.currency)}</dd></div>
+        <div><dt>{t('cart.total')}</dt><dd>{formatCurrency(order.total_minor, order.currency)}</dd></div>
       </dl>
       <div className="order-confirmation-lines">
         {order.lines.map((line) => (
           <div key={line.id}>
             <span>{line.quantity} × {line.product_title} · {line.variant_title}</span>
-            <strong>{formatMoney(line.line_total_minor, line.currency)}</strong>
+            <strong>{formatCurrency(line.line_total_minor, line.currency)}</strong>
           </div>
         ))}
       </div>
       <address>
-        <strong>Deliver to {order.shipping_address.recipient_name}</strong>
+        <strong>{t('order.deliverTo', { name: order.shipping_address.recipient_name })}</strong>
         <span>{order.shipping_address.line1}</span>
         {order.shipping_address.line2 && <span>{order.shipping_address.line2}</span>}
         <span>{order.shipping_address.postal_code} {order.shipping_address.city}</span>
@@ -491,10 +494,10 @@ function OrderConfirmation({
           disabled={busy}
           onClick={() => onResumePayment(order.id)}
         >
-          {busy ? 'Opening checkout…' : 'Continue secure payment'}
+          {busy ? t('cart.openingCheckout') : t('order.continuePayment')}
         </button>
       )}
-      <a className="button button--primary" href="/#shop">Continue shopping</a>
+      <a className="button button--primary" href="/#shop">{t('cart.continueShopping')}</a>
     </section>
   )
 }
@@ -506,34 +509,35 @@ function DeliveryForm({
   cart: Cart
   onSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>
 }>) {
+  const { t } = useI18n()
   const delivery = cart.delivery
   return (
     <section className="cart-delivery" aria-labelledby="delivery-title">
       <div>
-        <p className="eyebrow">Checkout preparation</p>
-        <h2 id="delivery-title">Contact and delivery</h2>
-        <p>These details stay attached to this cart and will be revalidated when an order is created.</p>
+        <p className="eyebrow">{t('delivery.eyebrow')}</p>
+        <h2 id="delivery-title">{t('delivery.title')}</h2>
+        <p>{t('delivery.intro')}</p>
       </div>
       <form className="delivery-form" onSubmit={onSubmit}>
-        <label>Email<input required type="email" name="email" defaultValue={delivery?.email} /></label>
+        <label>{t('delivery.email')}<input required type="email" name="email" defaultValue={delivery?.email} /></label>
         <div className="field-row">
-          <label>First name<input required name="first_name" defaultValue={delivery?.first_name} /></label>
-          <label>Last name<input required name="last_name" defaultValue={delivery?.last_name} /></label>
+          <label>{t('delivery.firstName')}<input required name="first_name" defaultValue={delivery?.first_name} /></label>
+          <label>{t('delivery.lastName')}<input required name="last_name" defaultValue={delivery?.last_name} /></label>
         </div>
-        <label>Contact phone<input name="phone" defaultValue={delivery?.phone} /></label>
-        <label>Recipient<input required name="recipient_name" defaultValue={delivery?.address.recipient_name} /></label>
-        <label>Address<input required name="line1" defaultValue={delivery?.address.line1} /></label>
-        <label>Apartment, suite, or studio<input name="line2" defaultValue={delivery?.address.line2} /></label>
+        <label>{t('delivery.contactPhone')}<input name="phone" defaultValue={delivery?.phone} /></label>
+        <label>{t('delivery.recipient')}<input required name="recipient_name" defaultValue={delivery?.address.recipient_name} /></label>
+        <label>{t('delivery.address')}<input required name="line1" defaultValue={delivery?.address.line1} /></label>
+        <label>{t('delivery.addressExtra')}<input name="line2" defaultValue={delivery?.address.line2} /></label>
         <div className="field-row">
-          <label>City<input required name="city" defaultValue={delivery?.address.city} /></label>
-          <label>Region<input name="region" defaultValue={delivery?.address.region} /></label>
+          <label>{t('delivery.city')}<input required name="city" defaultValue={delivery?.address.city} /></label>
+          <label>{t('delivery.region')}<input name="region" defaultValue={delivery?.address.region} /></label>
         </div>
         <div className="field-row field-row--postal">
-          <label>Postal code<input required name="postal_code" defaultValue={delivery?.address.postal_code} /></label>
-          <label>Country code<input required name="country_code" minLength={2} maxLength={2} defaultValue={delivery?.address.country_code ?? 'PT'} /></label>
+          <label>{t('delivery.postalCode')}<input required name="postal_code" defaultValue={delivery?.address.postal_code} /></label>
+          <label>{t('delivery.countryCode')}<input required name="country_code" minLength={2} maxLength={2} defaultValue={delivery?.address.country_code ?? 'PT'} /></label>
         </div>
-        <label>Delivery phone<input name="address_phone" defaultValue={delivery?.address.phone} /></label>
-        <button className="button button--secondary" type="submit">Save delivery details</button>
+        <label>{t('delivery.phone')}<input name="address_phone" defaultValue={delivery?.address.phone} /></label>
+        <button className="button button--secondary" type="submit">{t('delivery.save')}</button>
       </form>
     </section>
   )

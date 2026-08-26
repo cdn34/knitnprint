@@ -1,3 +1,5 @@
+import { useI18n } from '../i18n'
+
 export type ContextualFaq = Readonly<{
   question: string
   answer: string
@@ -16,6 +18,7 @@ export function ContextualFaqs({
   items: readonly ContextualFaq[]
   className?: string
 }>) {
+  const { t } = useI18n()
   return (
     <section
       className={`contextual-faqs ${className}`.trim()}
@@ -24,7 +27,7 @@ export function ContextualFaqs({
       <div className="contextual-faqs-heading">
         <p className="eyebrow">{eyebrow}</p>
         <h2 id={`${id}-title`}>{title}</h2>
-        <a className="text-link" href="/faq">View all FAQs</a>
+        <a className="text-link" href="/faq">{t('common.viewAllFaqs')}</a>
       </div>
       <div className="contextual-faqs-list">
         {items.map(({ question, answer }) => (

@@ -7,86 +7,56 @@ import {
 } from 'lucide-react'
 import { ContentPage } from '../components/content-page'
 import { ContextualFaqs } from '../components/contextual-faqs'
+import { useI18n } from '../i18n'
 
 export const Route = createFileRoute('/our-process')({
   head: () => ({
     meta: [
-      { title: 'Our process — KnitPrint' },
+      { title: 'Our process — KnitnPrint' },
       { name: 'description', content: 'Discover how a KnitnPrint idea becomes a personalised piece, made with care from first detail to final delivery.' },
     ],
   }),
   component: ProcessPage,
 })
 
-const processSteps = [
-  {
-    icon: Lightbulb,
-    title: 'Your idea',
-    copy: 'It begins with what matters to you: a name, a drawing, a message or a memory worth keeping close.',
-  },
-  {
-    icon: Palette,
-    title: 'The design',
-    copy: 'We shape your idea into a composition that suits the product, balancing colour, scale and placement.',
-  },
-  {
-    icon: Printer,
-    title: 'Made\u00a0personal',
-    copy: 'Your design is carefully applied using the technique best suited to the material and the desired finish.',
-  },
-  {
-    icon: PackageCheck,
-    title: 'Ready\u00a0for\u00a0you',
-    copy: 'Every detail is checked before your piece is carefully packed and prepared for its journey to you.',
-  },
-]
-
-const craftDetails = [
-  {
-    label: 'Textiles',
-    title: 'Designed to belong',
-    copy: 'T-shirts, sweatshirts and fabric pieces become a canvas for ideas that feel close to you.',
-    image: '/process-textiles.jpg',
-    imageAlt: 'Hands smoothing a cream T-shirt with a delicate plum botanical print',
-  },
-  {
-    label: 'Everyday objects',
-    title: 'Made meaningful',
-    copy: 'Bottles, backpacks and gifts are transformed into objects with a story and a purpose.',
-    image: '/process-everyday-objects.jpg',
-    imageAlt: 'Personalised bottle, canvas backpack and gift box in a warm studio setting',
-  },
-  {
-    label: 'Finishing',
-    title: 'Checked with care',
-    copy: 'Placement, colour and finish are reviewed so the final piece feels considered from every angle.',
-    image: '/process-finishing.jpg',
-    imageAlt: 'Hands tying a plum ribbon around a kraft gift box beside a folded personalised textile',
-  },
-]
-
 function ProcessPage() {
+  const { t } = useI18n()
+  const processSteps = [
+    { icon: Lightbulb, title: t('process.step1Title'), copy: t('process.step1Body') },
+    { icon: Palette, title: t('process.step2Title'), copy: t('process.step2Body') },
+    { icon: Printer, title: t('process.step3Title').replace(' ', '\u00a0'), copy: t('process.step3Body') },
+    { icon: PackageCheck, title: t('process.step4Title').replaceAll(' ', '\u00a0'), copy: t('process.step4Body') },
+  ]
+  const craftDetails = [
+    { label: t('process.craft1Label'), title: t('process.craft1Title'), copy: t('process.craft1Body'), image: '/process-textiles.jpg', imageAlt: t('process.craft1Alt') },
+    { label: t('process.craft2Label'), title: t('process.craft2Title'), copy: t('process.craft2Body'), image: '/process-everyday-objects.jpg', imageAlt: t('process.craft2Alt') },
+    { label: t('process.craft3Label'), title: t('process.craft3Title'), copy: t('process.craft3Body'), image: '/process-finishing.jpg', imageAlt: t('process.craft3Alt') },
+  ]
+  const manifestoLines = [
+    t('process.manifestoLine1'),
+    t('process.manifestoLine2'),
+    t('process.manifestoLine3'),
+    t('process.manifestoLine4'),
+    t('process.manifestoLine5'),
+  ].filter(Boolean)
+
   return (
     <ContentPage
-      eyebrow="From idea to object"
-      title={<><span>Your idea,</span><span>made tangible.</span></>}
-      intro="Personalisation is more than adding a name. It is a thoughtful process that turns your inspiration into something made to be part of your story."
+      eyebrow={t('process.eyebrow')}
+      title={<><span>{t('process.title1')}</span>{' '}<span>{t('process.title2')}</span></>}
+      intro={t('process.intro')}
       className="process-page"
     >
       <section className="process-manifesto" aria-labelledby="process-manifesto-title">
         <div>
           <h2 id="process-manifesto-title">
-            No two<br />
-            stories<br />
-            are<br />
-            exactly<br />
-            alike.
+            {manifestoLines.map((line, index) => <span key={line}>{line}{index < manifestoLines.length - 1 && <br />}</span>)}
           </h2>
-          <p className="eyebrow">A gift for every occasion</p>
+          <p className="eyebrow">{t('process.gift')}</p>
         </div>
       </section>
 
-      <section className="process-steps" aria-label="How personalisation works">
+      <section className="process-steps" aria-label={t('process.stepsLabel')}>
         {processSteps.map(({ icon: Icon, title, copy }) => (
           <article key={title}>
             <Icon className="process-step-icon" aria-hidden="true" />
@@ -100,13 +70,13 @@ function ProcessPage() {
 
       <section className="page-cta" aria-labelledby="process-cta-title">
         <div>
-          <p className="eyebrow">Begin with an idea</p>
-          <h2 id="process-cta-title">What will you make yours?</h2>
+          <p className="eyebrow">{t('process.ctaEyebrow')}</p>
+          <h2 id="process-cta-title">{t('process.ctaTitle')}</h2>
         </div>
-        <a className="button button--primary" href="/products">Explore our products</a>
+        <a className="button button--primary" href="/products">{t('process.ctaButton')}</a>
       </section>
 
-      <section className="process-gallery" aria-label="Craft and finishing details">
+      <section className="process-gallery" aria-label={t('process.galleryLabel')}>
         {craftDetails.map(({ label, title, copy, image, imageAlt }) => (
           <article className="process-craft-card" key={title}>
             <div className="process-craft-visual">
@@ -123,14 +93,14 @@ function ProcessPage() {
 
       <ContextualFaqs
         id="process-faqs"
-        eyebrow="About personalisation"
-        title="The details behind the process"
+        eyebrow={t('process.faqEyebrow')}
+        title={t('process.faqTitle')}
         items={[
-          { question: 'Which personalisation techniques do you use?', answer: 'The technique depends on the product, material, design and desired finish. We select the option best suited to each piece.' },
-          { question: 'How do you choose the right technique?', answer: 'We consider the material, number of colours, level of detail, intended use and quantity before deciding how the design should be applied.' },
-          { question: 'Will I approve the design before production?', answer: 'When a digital mock-up is included, production begins only after the relevant design details have been confirmed.' },
-          { question: 'Why can colours look slightly different?', answer: 'Screens reproduce colour differently, and materials absorb or reflect colour in their own way. Small variations are therefore possible.' },
-          { question: 'How is each finished piece checked?', answer: 'We review placement, colour, finish and the overall condition of the item before it is carefully packed.' },
+          { question: t('process.faq1Question'), answer: t('process.faq1Answer') },
+          { question: t('process.faq2Question'), answer: t('process.faq2Answer') },
+          { question: t('process.faq3Question'), answer: t('process.faq3Answer') },
+          { question: t('process.faq4Question'), answer: t('process.faq4Answer') },
+          { question: t('process.faq5Question'), answer: t('process.faq5Answer') },
         ]}
         className="contextual-faqs--process"
       />

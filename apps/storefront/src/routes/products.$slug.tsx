@@ -15,9 +15,10 @@ import {
   mediaUrl,
   preferredVariant,
   publishedProduct,
-  variantPrice,
   variantStock,
 } from '../catalog-api'
+import { useI18n } from '../i18n'
+import { useLocalizedCatalog } from '../i18n/catalog'
 
 export const Route = createFileRoute('/products/$slug')({
   loader: async ({ params }) => {
@@ -27,7 +28,7 @@ export const Route = createFileRoute('/products/$slug')({
   },
   head: ({ loaderData }) => ({
     meta: [
-      { title: loaderData ? `${loaderData.title} — KnitPrint` : 'KnitPrint' },
+      { title: loaderData ? `${loaderData.title} — KnitnPrint` : 'KnitnPrint' },
       { name: 'description', content: loaderData?.description ?? '' },
     ],
   }),
@@ -36,6 +37,8 @@ export const Route = createFileRoute('/products/$slug')({
 
 function ProductPage() {
   const product = Route.useLoaderData()
+  const { t } = useI18n()
+  const { priceForVariant, stockText } = useLocalizedCatalog()
   const defaultVariant = preferredVariant(product)
   const [selectedVariantId, setSelectedVariantId] = useState(
     defaultVariant?.id ?? '',
@@ -44,6 +47,7 @@ function ProductPage() {
     product.variants.find(({ id }) => id === selectedVariantId) ??
     defaultVariant
   const stock = variant ? variantStock(variant) : null
+  const localizedStock = stock ? stockText(stock) : null
   const [cartState, setCartState] = useState<
     'idle' | 'adding' | 'added' | 'error'
   >('idle')
@@ -70,7 +74,7 @@ function ProductPage() {
       <StorefrontAnnouncement />
       <StorefrontHeader />
       <main className="product-page" id="main-content" tabIndex={-1}>
-        <a className="text-link page-back-link" href="/#shop"><ArrowLeft size={17} /> Back to shop</a>
+        <a className="text-link page-back-link" href="/#shop"><ArrowLeft size={17} /> {t('product.backToShop')}</a>
         <div className="product-detail-art">
           {product.media[0] ? (
             <img
@@ -82,23 +86,24 @@ function ProductPage() {
             <span
               className="product-form product-form--planter"
               role="img"
-              aria-label={`${product.title} product illustration`}
+              aria-label={t('product.illustration', { name: product.title })}
             />
           )}
         </div>
         <section className="product-detail-copy">
-          <p className="eyebrow">KnitPrint collection</p>
+          <p className="eyebrow">{t('product.collection')}</p>
           <h1>{product.title}</h1>
           <p className="product-detail-price">
-            {variant ? variantPrice(variant) : 'Price unavailable'}
+            {priceForVariant(variant)}
           </p>
           <p className="product-detail-description">{product.description}</p>
           {product.variants.length > 0 && (
             <fieldset className="variant-picker">
-              <legend>Choose an option</legend>
+              <legend>{t('product.chooseOption')}</legend>
               <div className="variant-options">
                 {product.variants.map((option) => {
                   const optionStock = variantStock(option)
+                  const localizedOptionStock = stockText(optionStock)
                   const selected = option.id === variant?.id
                   return (
                     <label
@@ -115,9 +120,9 @@ function ProductPage() {
                       />
                       <span>
                         <strong>{option.title}</strong>
-                        <small>{variantPrice(option)} · SKU {option.sku}</small>
+                        <small>{priceForVariant(option)} · {t('product.sku')} {option.sku}</small>
                       </span>
-                      <em>{optionStock.label}</em>
+                      <em>{localizedOptionStock.label}</em>
                     </label>
                   )
                 })}
@@ -133,7 +138,7 @@ function ProductPage() {
               {stock.state === 'available' && <CircleCheck aria-hidden="true" />}
               {stock.state === 'low' && <TriangleAlert aria-hidden="true" />}
               {stock.state === 'sold-out' && <PackageX aria-hidden="true" />}
-              <span><strong>{stock.label}</strong><small>{stock.detail}</small></span>
+              <span><strong>{localizedStock?.label}</strong><small>{localizedStock?.detail}</small></span>
             </div>
           )}
           <button
@@ -143,35 +148,35 @@ function ProductPage() {
             onClick={addToCart}
           >
             {stock?.state === 'sold-out'
-              ? 'Currently unavailable'
+              ? t('product.unavailable')
               : !hydrated
-                ? 'Preparing cart…'
+                ? t('product.preparingCart')
                 : cartState === 'adding'
-                  ? 'Adding…'
+                  ? t('product.adding')
                   : cartState === 'added'
-                    ? 'Added to cart'
-                    : 'Add to cart'}
+                    ? t('product.added')
+                    : t('product.addToCart')}
           </button>
           <div className="cart-action-status" aria-live="polite">
-            {cartState === 'added' && <a href="/cart">View your cart</a>}
+            {cartState === 'added' && <a href="/cart">{t('product.viewCart')}</a>}
             {cartState === 'error' && (
-              <span>We couldn’t update your cart. Please try again.</span>
+              <span>{t('product.cartError')}</span>
             )}
           </div>
           <div className="product-promises">
-            <span><PackageCheck /> Made in small batches</span>
-            <span><ShieldCheck /> Secure checkout</span>
+            <span><PackageCheck /> {t('product.smallBatches')}</span>
+            <span><ShieldCheck /> {t('product.secureCheckout')}</span>
           </div>
         </section>
         <ContextualFaqs
           id="product-faqs"
-          eyebrow="About this piece"
-          title="Before you make it yours"
+          eyebrow={t('product.faqEyebrow')}
+          title={t('product.faqTitle')}
           items={[
-            { question: 'How can I personalise this product?', answer: 'The options available for this piece are shown when personalisation is offered. Contact us if you have a specific idea that is not listed.' },
-            { question: 'Will I see the final layout?', answer: 'When a digital mock-up is included, you can review the scale and placement before production begins.' },
-            { question: 'How should I care for this piece?', answer: 'Follow the care information supplied with the product. Gentle cleaning and avoiding excessive heat will help preserve the finish.' },
-            { question: 'Can I return a personalised product?', answer: 'Personalised products generally cannot be returned for a change of mind. Faulty, damaged or incorrect products are assessed separately.' },
+            { question: t('product.faq1Question'), answer: t('product.faq1Answer') },
+            { question: t('product.faq2Question'), answer: t('product.faq2Answer') },
+            { question: t('product.faq3Question'), answer: t('product.faq3Answer') },
+            { question: t('product.faq4Question'), answer: t('product.faq4Answer') },
           ]}
           className="contextual-faqs--product"
         />
