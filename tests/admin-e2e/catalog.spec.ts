@@ -84,6 +84,11 @@ test('lets an owner manage commercial settings and complete an order journey', a
   await expect(discountRecord).toContainText('10% off')
   await expect(discountRecord).toContainText('active')
 
+  const categoryName = `Homewares ${unique}`
+  const categorySlug = `homewares-${unique}`
+  await page.request.post('/api/admin/categories', {
+    data: { name: categoryName, slug: categorySlug, description: '' },
+  })
   await page.getByRole('link', { name: 'Products' }).click()
 
   const catalog = page.getByRole('region', { name: 'Products' })
@@ -98,6 +103,7 @@ test('lets an owner manage commercial settings and complete an order journey', a
   await catalog.getByLabel('SKU').fill(sku)
   await catalog.getByLabel('Price').fill('42.00')
   await catalog.getByLabel('Stock').fill('5')
+  await catalog.getByLabel(categoryName).check()
   await catalog.getByRole('button', { name: 'Create draft' }).click()
 
   const product = catalog.getByRole('article').filter({ hasText: slug })
@@ -107,17 +113,11 @@ test('lets an owner manage commercial settings and complete an order journey', a
   await expect(catalog.getByLabel('SKU')).toHaveValue(sku)
   await expect(catalog.getByLabel('Stock')).toHaveValue('5')
   await catalog.getByRole('button', { name: 'Save product' }).click()
-  const categoryName = `Homewares ${unique}`
-  const categorySlug = `homewares-${unique}`
   const adminProducts = await page.request.get(`/api/admin/products?q=${slug}`)
   const [createdProduct] = await adminProducts.json()
-  const categoryResponse = await page.request.post('/api/admin/categories', {
-    data: { name: categoryName, slug: categorySlug, description: '' },
-  })
-  const category = await categoryResponse.json()
-  await page.request.post(`/api/admin/products/${createdProduct.id}/categories`, {
-    data: { category_ids: [category.id] },
-  })
+  expect(createdProduct.categories).toEqual(
+    expect.arrayContaining([expect.objectContaining({ slug: categorySlug })]),
+  )
   for (const variant of [
     { title: 'Plum', sku: plumSku, price_minor: 4600 },
     { title: 'Oat', sku: oatSku, price_minor: 4800 },

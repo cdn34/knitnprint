@@ -1699,6 +1699,7 @@ function CatalogManagement({
   const [productSku, setProductSku] = useState('')
   const [productPrice, setProductPrice] = useState('')
   const [productQuantity, setProductQuantity] = useState('0')
+  const [productCategoryIds, setProductCategoryIds] = useState<string[]>([])
   const editorDirty = useMemo(() => {
     if (!preview) {
       return Boolean(productTitle || productSlug || productDescription || productKeywords || productSku || productPrice || productQuantity !== '0')
@@ -1729,7 +1730,12 @@ function CatalogManagement({
     queryFn: api.listCategories,
   })
   const createProduct = useMutation({
-    mutationFn: api.createProduct,
+    mutationFn: async ({ categoryIds, ...input }: Parameters<typeof api.createProduct>[0] & { categoryIds: string[] }) => {
+      const product = await api.createProduct(input)
+      return categoryIds.length > 0
+        ? api.assignProductCategories(product.id, { category_ids: categoryIds })
+        : product
+    },
     onMutate: async () => {
       await client.cancelQueries({ queryKey: productsKey })
     },
@@ -1747,8 +1753,10 @@ function CatalogManagement({
     },
   })
   const updateProduct = useMutation({
-    mutationFn: ({ id, ...input }: { id: string; title: string; slug: string; description: string; search_keywords: string; sku: string; price_minor: number; currency: string; available_quantity: number }) =>
-      api.updateProduct(id, input),
+    mutationFn: async ({ id, categoryIds, ...input }: { id: string; categoryIds: string[]; title: string; slug: string; description: string; search_keywords: string; sku: string; price_minor: number; currency: string; available_quantity: number }) => {
+      const product = await api.updateProduct(id, input)
+      return api.assignProductCategories(product.id, { category_ids: categoryIds })
+    },
     onSuccess: (product) => {
       client.invalidateQueries({ queryKey: productsKey })
       client.invalidateQueries({ queryKey: inventoryKey })
@@ -1864,6 +1872,7 @@ function CatalogManagement({
     if (preview) {
       updateProduct.mutate({
         id: preview.id,
+        categoryIds: productCategoryIds,
         title: productTitle,
         slug: productSlug,
         description: productDescription,
@@ -1891,6 +1900,7 @@ function CatalogManagement({
             available_quantity: Number(productQuantity),
           },
         ],
+        categoryIds: productCategoryIds,
       },
     )
   }
@@ -1906,6 +1916,7 @@ function CatalogManagement({
     setProductSku(base?.sku ?? '')
     setProductPrice(base ? String(base.price_minor / 100) : '')
     setProductQuantity(String(base?.available_quantity ?? 0))
+    setProductCategoryIds(product.categories.map(({ id }) => id))
   }
 
   function clearEditor() {
@@ -1918,6 +1929,7 @@ function CatalogManagement({
     setProductSku('')
     setProductPrice('')
     setProductQuantity('0')
+    setProductCategoryIds([])
   }
 
   function submitVariant(event: FormEvent<HTMLFormElement>) {
@@ -2174,6 +2186,25 @@ function CatalogManagement({
                 <input id="product-quantity" name="product-quantity" type="number" min="0" step="1" value={productQuantity} onChange={(event) => setProductQuantity(event.target.value)} required />
               </div>
             </div>
+            <fieldset className="product-categories">
+              <legend>Categories</legend>
+              {categories.isPending && <span>Loading categories…</span>}
+              {categories.data?.length === 0 && <span>No categories have been created yet.</span>}
+              {categories.data?.map((category) => (
+                <label key={category.id}>
+                  <input
+                    type="checkbox"
+                    checked={productCategoryIds.includes(category.id)}
+                    onChange={(event) => setProductCategoryIds((current) =>
+                      event.target.checked
+                        ? [...current, category.id]
+                        : current.filter((id) => id !== category.id)
+                    )}
+                  />
+                  <span><strong>{category.name}</strong><small>/{category.slug}</small></span>
+                </label>
+              ))}
+            </fieldset>
             {(createProduct.isError || updateProduct.isError || deleteProduct.isError) && (
               <p className="panel-error" role="alert">
                 {(createProduct.error ?? updateProduct.error ?? deleteProduct.error)?.message ?? 'The product could not be saved.'}
