@@ -53,6 +53,14 @@ healthy while `/api/ready` reports `503` until a database connection is ready.
 Production startup requires `DATABASE_URL` and does not run migrations. Apply
 them first with the separate migration credential in `MIGRATION_DATABASE_URL`.
 
+The backend container defaults to `/usr/local/bin/knitnprint-api` and also
+contains the operational binaries `migrate`, `create_owner`,
+`deliver_notifications`, `cleanup_sessions`, `cleanup_customers`,
+`cleanup_carts`, `cleanup_media`, `cleanup_payments`, and `check_operations`.
+Because the image uses `CMD` rather than a fixed entrypoint, an ECS task can
+select one by overriding its command with the absolute binary path. The
+development `seed` utility is intentionally excluded from the runtime image.
+
 Local product images use the private `knitnprint-media` bucket in MinIO.
 `docker compose up -d` creates the bucket automatically. The API defaults to
 the local MinIO credentials in development; production requires all five

@@ -3,14 +3,35 @@ WORKDIR /build
 COPY Cargo.toml Cargo.lock ./
 COPY backend ./backend
 COPY migrations ./migrations
-RUN cargo build --locked --release -p knitnprint-api --bin knitnprint-api
+RUN cargo build --locked --release -p knitnprint-api \
+    --bin knitnprint-api \
+    --bin migrate \
+    --bin create_owner \
+    --bin deliver_notifications \
+    --bin cleanup_sessions \
+    --bin cleanup_customers \
+    --bin cleanup_carts \
+    --bin cleanup_media \
+    --bin cleanup_payments \
+    --bin check_operations
 
 FROM debian:bookworm-slim@sha256:abd67ffcfa541b485a3dff59865ab629aa048a6c613e639d36e7456b0b229241
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --system --uid 10001 --no-create-home knitnprint
-COPY --from=build /build/target/release/knitnprint-api /usr/local/bin/knitnprint-api
+COPY --from=build \
+    /build/target/release/knitnprint-api \
+    /build/target/release/migrate \
+    /build/target/release/create_owner \
+    /build/target/release/deliver_notifications \
+    /build/target/release/cleanup_sessions \
+    /build/target/release/cleanup_customers \
+    /build/target/release/cleanup_carts \
+    /build/target/release/cleanup_media \
+    /build/target/release/cleanup_payments \
+    /build/target/release/check_operations \
+    /usr/local/bin/
 USER 10001:10001
 EXPOSE 8080
-ENTRYPOINT ["/usr/local/bin/knitnprint-api"]
+CMD ["/usr/local/bin/knitnprint-api"]
