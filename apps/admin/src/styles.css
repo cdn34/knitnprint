@@ -130,8 +130,8 @@ h1 { margin: .25rem 0 0; font: 500 2rem Georgia, serif; }
 .product-categories > span { color: #6e6864; font-size: .62rem; }
 .product-categories label { padding: .55rem .6rem; display: flex; align-items: center; gap: .55rem; border: 1px solid #e5dcd5; border-radius: .45rem; cursor: pointer; }
 .product-categories label:has(input:checked) { border-color: #a88897; background: #f5eff2; }
-.product-categories input { accent-color: #5f4652; }
-.product-categories label span { display: flex; flex-direction: column; gap: .12rem; }
+.product-categories input { width: 16px; height: 16px; margin: 0; flex: 0 0 16px; accent-color: #5f4652; }
+.product-categories label span { min-width: 0; display: flex; flex-direction: column; gap: .12rem; text-align: left; }
 .product-categories strong { font-size: .68rem; }
 .product-categories small { color: #6e6864; font-size: .58rem; }
 .variant-heading { margin-top: 1rem; padding-top: .9rem; border-top: 1px solid #ede6e1; color: #765c47; font-size: .65rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
