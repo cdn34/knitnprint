@@ -1743,7 +1743,7 @@ function CatalogManagement({
       )
       client.invalidateQueries({ queryKey: productsKey })
       client.invalidateQueries({ queryKey: inventoryKey })
-      setPreview(product)
+      loadProduct(product)
     },
   })
   const updateProduct = useMutation({
@@ -1860,7 +1860,6 @@ function CatalogManagement({
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    const formElement = event.currentTarget
     const price = Number(productPrice)
     if (preview) {
       updateProduct.mutate({
@@ -1892,20 +1891,6 @@ function CatalogManagement({
             available_quantity: Number(productQuantity),
           },
         ],
-      },
-      {
-        onSuccess: () => {
-          formElement.reset()
-          setProductTitle('')
-          setProductSlug('')
-          setProductSlugEdited(false)
-          setProductDescription('')
-          setProductKeywords('')
-          setProductSku('')
-          setProductPrice('')
-          setProductQuantity('0')
-          setPreview(null)
-        },
       },
     )
   }

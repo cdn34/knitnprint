@@ -142,8 +142,8 @@ h1 { margin: .25rem 0 0; font: 500 2rem Georgia, serif; }
 .product-preview h3 { margin: 0; font: 500 2rem Georgia, serif; }
 .product-preview span { margin-top: .7rem; color: #6e6864; font-size: .75rem; line-height: 1.6; }
 .product-preview strong { margin-top: 1rem; font: 500 1.2rem Georgia, serif; }
-.catalog-editor { margin-top: 1.2rem; display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem; align-items: start; }
-.catalog-editor { display: none; }
+.catalog-editor { margin-top: 1.2rem; display: grid; grid-template-columns: 1fr; gap: 1.2rem; align-items: start; }
+.catalog-editor > section:first-child { display: none; }
 .catalog-editor > section { padding: 1.2rem; }
 .variant-list { margin: 0 0 1rem; padding: 0; list-style: none; border-top: 1px solid #ede6e1; }
 .variant-list li { padding: .7rem 0; display: flex; align-items: center; justify-content: space-between; gap: 1rem; border-bottom: 1px solid #ede6e1; }
