@@ -63,6 +63,23 @@ the local Rust API. Both processes must be running. After signing in, refreshing
 the browser preserves the server-side session; use the sign-out button beside
 the staff profile to revoke it.
 
+The production admin build is a static SPA intended for a private S3 origin
+behind CloudFront. Configure the distribution's default behavior to serve
+`index.html`, and map origin `403` and `404` responses to `/index.html` with a
+`200` response so client-side routes remain loadable. A higher-priority
+`/api/*` behavior must forward all required HTTP methods, cookies, query
+strings, and the `Origin` and CSRF headers to the API without caching mutable
+responses. Attach a response-headers policy that adds:
+
+```text
+X-Robots-Tag: noindex, nofollow
+```
+
+The build also contains a matching robots meta tag and a `robots.txt` that
+disallows all crawlers. These are defense in depth; the CloudFront header is
+the authoritative indexing policy. Keep the admin S3 bucket private and grant
+read access only through CloudFront Origin Access Control.
+
 The storefront also proxies `/api` to the local Rust API and provides optional
 registered customer accounts at http://localhost:3000/account. Customers can
 register, sign in, preserve their session across reloads, view their contact
