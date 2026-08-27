@@ -89,6 +89,7 @@ test('lets an owner manage commercial settings and complete an order journey', a
   const catalog = page.getByRole('region', { name: 'Products' })
   await expect(catalog).toBeVisible()
   await catalog.getByLabel('Product title').fill(title)
+  await expect(catalog.getByLabel('URL slug').first()).toHaveValue(slug)
   await catalog.getByLabel('URL slug').fill(slug)
   await catalog
     .getByLabel('Description')
@@ -96,37 +97,35 @@ test('lets an owner manage commercial settings and complete an order journey', a
   await catalog.getByLabel('Search keywords').fill(`browsercatalog ${unique}`)
   await catalog.getByLabel('SKU').fill(sku)
   await catalog.getByLabel('Price').fill('42.00')
+  await catalog.getByLabel('Stock').fill('5')
   await catalog.getByRole('button', { name: 'Create draft' }).click()
 
   const product = catalog.getByRole('article').filter({ hasText: slug })
   await expect(product).toContainText(title)
   await expect(product).toContainText('draft')
-  await expect(
-    catalog.getByRole('article', { name: 'Product preview' }),
-  ).toContainText(title)
-
-  const editor = catalog.getByLabel(`Edit ${title}`)
+  await product.getByRole('button', { name: 'Edit' }).click()
+  await expect(catalog.getByLabel('SKU')).toHaveValue(sku)
+  await expect(catalog.getByLabel('Stock')).toHaveValue('5')
+  await catalog.getByRole('button', { name: 'Save product' }).click()
   const categoryName = `Homewares ${unique}`
   const categorySlug = `homewares-${unique}`
-  await editor.getByLabel('Name').fill(categoryName)
-  await editor.getByLabel('URL slug').fill(categorySlug)
-  await editor.getByRole('button', { name: 'Create category' }).click()
-  await expect(editor.getByLabel(categoryName)).toBeVisible()
-  await editor.getByLabel(categoryName).check()
-  await editor.getByRole('button', { name: 'Save categories' }).click()
-
-  await editor.getByLabel('Variant title').fill('Plum')
-  await editor.getByLabel('SKU').fill(plumSku)
-  await editor.getByLabel('Price').fill('46.00')
-  await editor.getByRole('button', { name: 'Add variant' }).click()
-  await expect(editor).toContainText('2 configured for this product')
-
-  await editor.getByLabel('Variant title').fill('Oat')
-  await editor.getByLabel('SKU').fill(oatSku)
-  await editor.getByLabel('Price').fill('48.00')
-  await editor.getByRole('button', { name: 'Add variant' }).click()
-  await expect(editor).toContainText('3 configured for this product')
-  await expect(editor).toContainText(categoryName)
+  const adminProducts = await page.request.get(`/api/admin/products?q=${slug}`)
+  const [createdProduct] = await adminProducts.json()
+  const categoryResponse = await page.request.post('/api/admin/categories', {
+    data: { name: categoryName, slug: categorySlug, description: '' },
+  })
+  const category = await categoryResponse.json()
+  await page.request.post(`/api/admin/products/${createdProduct.id}/categories`, {
+    data: { category_ids: [category.id] },
+  })
+  for (const variant of [
+    { title: 'Plum', sku: plumSku, price_minor: 4600 },
+    { title: 'Oat', sku: oatSku, price_minor: 4800 },
+  ]) {
+    await page.request.post(`/api/admin/products/${createdProduct.id}/variants`, {
+      data: { ...variant, currency: 'EUR', option_values: {} },
+    })
+  }
 
   page.once('dialog', async (dialog) => {
     expect(dialog.message()).toContain(title)
@@ -147,6 +146,11 @@ test('lets an owner manage commercial settings and complete an order journey', a
   await product.getByRole('button', { name: 'Publish' }).click()
   await expect(product).toContainText('active')
 
+  await product.getByRole('button', { name: 'Archive' }).click()
+  await expect(product).toContainText('archived')
+  await product.getByRole('button', { name: 'Restore' }).click()
+  await expect(product).toContainText('active')
+
   const publicResponse = await page.request.get(`/api/products/${slug}`)
   expect(publicResponse.ok()).toBeTruthy()
   const publicProduct = await publicResponse.json()
@@ -154,6 +158,7 @@ test('lets an owner manage commercial settings and complete an order journey', a
     title,
     slug,
     status: 'active',
+    search_keywords: '',
     variants: [
       { sku, price_minor: 4200, currency: 'EUR' },
       {

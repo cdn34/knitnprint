@@ -95,6 +95,22 @@ pub struct CreateVariantRequest {
     pub currency: String,
     #[serde(default = "empty_object")]
     pub option_values: Value,
+    #[serde(default)]
+    pub available_quantity: i64,
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct UpdateProductRequest {
+    pub title: String,
+    pub slug: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub search_keywords: String,
+    pub sku: String,
+    pub price_minor: i64,
+    pub currency: String,
+    pub available_quantity: i64,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -238,6 +254,7 @@ pub async fn create(
         return database_write_error(error);
     }
     for (position, variant) in input.variants.iter().enumerate() {
+        let variant_id = Uuid::now_v7();
         if let Err(error) = sqlx::query(
             r#"
             INSERT INTO product_variants (
@@ -246,7 +263,7 @@ pub async fn create(
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             "#,
         )
-        .bind(Uuid::now_v7())
+        .bind(variant_id)
         .bind(product_id)
         .bind(variant.title.trim())
         .bind(variant.sku.trim())
@@ -258,6 +275,20 @@ pub async fn create(
         .await
         {
             return database_write_error(error);
+        }
+        if variant.available_quantity > 0 {
+            if sqlx::query("UPDATE inventory_items SET available_quantity = $2 WHERE variant_id = $1")
+                .bind(variant_id)
+                .bind(variant.available_quantity)
+                .execute(&mut *transaction)
+                .await
+                .is_err()
+                || sqlx::query("INSERT INTO inventory_movements (id, variant_id, actor_staff_user_id, movement_type, quantity_delta, resulting_available_quantity, reason) VALUES ($1, $2, $3, 'adjustment', $4, $4, 'Initial product stock')")
+                    .bind(Uuid::now_v7()).bind(variant_id).bind(actor.id).bind(variant.available_quantity)
+                    .execute(&mut *transaction).await.is_err()
+            {
+                return unavailable();
+            }
         }
     }
     if audit(
@@ -276,6 +307,132 @@ pub async fn create(
     let mut response = product_by_id(&pool, product_id).await;
     *response.status_mut() = StatusCode::CREATED;
     response
+}
+
+#[utoipa::path(
+    put,
+    path = "/api/admin/products/{product_id}",
+    params(("product_id" = Uuid, Path)),
+    tag = "admin catalog",
+    request_body = UpdateProductRequest,
+    responses((status = 200, body = Product), (status = 404, body = ErrorBody), (status = 409, body = ErrorBody), (status = 422, body = ErrorBody))
+)]
+pub async fn update(
+    State(state): State<AppState>,
+    actor: AuthenticatedStaff,
+    Path(product_id): Path<Uuid>,
+    Json(input): Json<UpdateProductRequest>,
+) -> Response {
+    if let Err(response) = require_capability(&actor, CATALOG_WRITE) {
+        return response.into_response();
+    }
+    let variant = CreateVariantRequest {
+        title: "Default".into(),
+        sku: input.sku.clone(),
+        price_minor: input.price_minor,
+        currency: input.currency.clone(),
+        option_values: empty_object(),
+        available_quantity: input.available_quantity,
+    };
+    if input.title.trim().is_empty()
+        || input.title.trim().len() > 200
+        || !valid_slug(input.slug.trim())
+        || input.description.len() > 50_000
+        || input.search_keywords.len() > 2_000
+        || !valid_variant(&variant)
+    {
+        return invalid_input();
+    }
+    let Some(pool) = state.database else {
+        return unavailable();
+    };
+    let mut tx = match pool.begin().await {
+        Ok(tx) => tx,
+        Err(_) => return unavailable(),
+    };
+    let base = sqlx::query_as::<_, (Uuid, i64)>("SELECT variant.id, inventory.available_quantity FROM product_variants variant JOIN inventory_items inventory ON inventory.variant_id=variant.id WHERE variant.product_id=$1 ORDER BY variant.position, variant.id LIMIT 1 FOR UPDATE OF inventory")
+        .bind(product_id).fetch_optional(&mut *tx).await;
+    let Some((variant_id, old_quantity)) = (match base {
+        Ok(value) => value,
+        Err(_) => return unavailable(),
+    }) else {
+        return not_found();
+    };
+    if let Err(error) = sqlx::query("UPDATE products SET title=$2, slug=$3, description=$4, search_keywords=$5, updated_at=now() WHERE id=$1")
+        .bind(product_id).bind(input.title.trim()).bind(input.slug.trim()).bind(input.description.trim()).bind(input.search_keywords.trim()).execute(&mut *tx).await { return database_write_error(error); }
+    if let Err(error) = sqlx::query("UPDATE product_variants SET sku=$2, price_minor=$3, currency=$4, updated_at=now() WHERE id=$1")
+        .bind(variant_id).bind(input.sku.trim()).bind(input.price_minor).bind(input.currency.trim()).execute(&mut *tx).await { return database_write_error(error); }
+    if old_quantity != input.available_quantity {
+        let delta = input.available_quantity - old_quantity;
+        if sqlx::query("UPDATE inventory_items SET available_quantity=$2, updated_at=now() WHERE variant_id=$1").bind(variant_id).bind(input.available_quantity).execute(&mut *tx).await.is_err()
+            || sqlx::query("INSERT INTO inventory_movements (id, variant_id, actor_staff_user_id, movement_type, quantity_delta, resulting_available_quantity, reason) VALUES ($1,$2,$3,'adjustment',$4,$5,'Product editor stock correction')")
+                .bind(Uuid::now_v7()).bind(variant_id).bind(actor.id).bind(delta).bind(input.available_quantity).execute(&mut *tx).await.is_err() { return unavailable(); }
+    }
+    if audit(&mut tx, actor.id, "product.update", product_id, None)
+        .await
+        .is_err()
+        || tx.commit().await.is_err()
+    {
+        return unavailable();
+    }
+    product_by_id(&pool, product_id).await
+}
+
+#[utoipa::path(delete, path = "/api/admin/products/{product_id}", params(("product_id" = Uuid, Path)), tag = "admin catalog", responses((status = 204), (status = 404, body = ErrorBody), (status = 409, body = ErrorBody)))]
+pub async fn delete(
+    State(state): State<AppState>,
+    actor: AuthenticatedStaff,
+    Path(product_id): Path<Uuid>,
+) -> Response {
+    if let Err(response) = require_capability(&actor, CATALOG_WRITE) {
+        return response.into_response();
+    }
+    let Some(pool) = state.database else {
+        return unavailable();
+    };
+    let sold = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM order_lines WHERE product_id=$1)",
+    )
+    .bind(product_id)
+    .fetch_one(&pool)
+    .await;
+    match sold {
+        Ok(true) => {
+            return (
+                StatusCode::CONFLICT,
+                Json(ErrorBody::new(
+                    "product_has_sales",
+                    "Products with sales history cannot be deleted. Archive this product instead.",
+                )),
+            )
+                .into_response();
+        }
+        Err(_) => return unavailable(),
+        _ => {}
+    }
+    let mut tx = match pool.begin().await {
+        Ok(tx) => tx,
+        Err(_) => return unavailable(),
+    };
+    if audit(&mut tx, actor.id, "product.delete", product_id, None)
+        .await
+        .is_err()
+    {
+        return unavailable();
+    }
+    match sqlx::query("DELETE FROM products WHERE id=$1")
+        .bind(product_id)
+        .execute(&mut *tx)
+        .await
+    {
+        Ok(result) if result.rows_affected() == 0 => return not_found(),
+        Ok(_) => {}
+        Err(_) => return unavailable(),
+    }
+    if tx.commit().await.is_err() {
+        return unavailable();
+    }
+    StatusCode::NO_CONTENT.into_response()
 }
 
 #[utoipa::path(
@@ -634,7 +791,7 @@ pub async fn public_list(
     )
     .await
     {
-        Ok(rows) => products_response(&pool, rows).await,
+        Ok(rows) => public_products_response(&pool, rows).await,
         Err(_) => unavailable(),
     }
 }
@@ -692,7 +849,7 @@ pub async fn public_detail(State(state): State<AppState>, Path(slug): Path<Strin
     .fetch_optional(&pool)
     .await;
     match row {
-        Ok(Some(row)) => product_response(&pool, row).await,
+        Ok(Some(row)) => public_product_response(&pool, row).await,
         Ok(None) => not_found(),
         Err(_) => unavailable(),
     }
@@ -716,7 +873,12 @@ async fn product_rows(
           AND (
             $2 = '' OR
             search_document @@ websearch_to_tsquery('simple', $2) OR
-            slug ILIKE '%' || $2 || '%'
+            slug ILIKE '%' || $2 || '%' OR
+            EXISTS (
+              SELECT 1 FROM product_variants variant
+              WHERE variant.product_id = products.id
+                AND variant.sku ILIKE '%' || $2 || '%'
+            )
           )
           AND (
             $3 = '' OR EXISTS (
@@ -750,6 +912,30 @@ async fn products_response(pool: &PgPool, rows: Vec<ProductRow>) -> Response {
         }
     }
     Json(products).into_response()
+}
+
+async fn public_products_response(pool: &PgPool, rows: Vec<ProductRow>) -> Response {
+    let mut products = Vec::with_capacity(rows.len());
+    for row in rows {
+        match hydrate_product(pool, row).await {
+            Ok(mut product) => {
+                product.search_keywords.clear();
+                products.push(product);
+            }
+            Err(_) => return unavailable(),
+        }
+    }
+    Json(products).into_response()
+}
+
+async fn public_product_response(pool: &PgPool, row: ProductRow) -> Response {
+    match hydrate_product(pool, row).await {
+        Ok(mut product) => {
+            product.search_keywords.clear();
+            Json(product).into_response()
+        }
+        Err(_) => unavailable(),
+    }
 }
 
 async fn product_by_id(pool: &PgPool, id: Uuid) -> Response {
@@ -875,6 +1061,7 @@ fn valid_variant(variant: &CreateVariantRequest) -> bool {
             .chars()
             .all(|character| character.is_ascii_uppercase())
         && variant.option_values.is_object()
+        && variant.available_quantity >= 0
 }
 
 fn valid_slug(slug: &str) -> bool {

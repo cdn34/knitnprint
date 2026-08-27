@@ -219,6 +219,29 @@ async fn staff_authorization_and_audit_lifecycle() {
     assert_eq!(adjusted_body["available_quantity"], 8);
     assert_eq!(adjusted_body["low_stock"], false);
 
+    let updated = request(
+        &router,
+        "PUT",
+        &format!("/api/admin/products/{product_id}"),
+        Some(&owner_cookie),
+        Some(json!({
+            "title": "Woven Planter",
+            "slug": "woven-planter",
+            "description": "A tactile home for printed forms.",
+            "search_keywords": "stitch private-keyword",
+            "sku": "PLANTER-001",
+            "price_minor": 4200,
+            "currency": "EUR",
+            "available_quantity": 8
+        })),
+    )
+    .await;
+    assert_eq!(updated.status(), StatusCode::OK);
+    assert_eq!(
+        response_json(updated).await["search_keywords"],
+        "stitch private-keyword"
+    );
+
     let rejected_adjustment = request(
         &router,
         "POST",
@@ -349,10 +372,9 @@ async fn staff_authorization_and_audit_lifecycle() {
 
     let public_detail = request(&router, "GET", "/api/products/woven-planter", None, None).await;
     assert_eq!(public_detail.status(), StatusCode::OK);
-    assert_eq!(
-        response_json(public_detail).await["variants"][0]["available_quantity"],
-        8
-    );
+    let public_body = response_json(public_detail).await;
+    assert_eq!(public_body["variants"][0]["available_quantity"], 8);
+    assert_eq!(public_body["search_keywords"], "");
 
     let archived = request(
         &router,
@@ -365,6 +387,28 @@ async fn staff_authorization_and_audit_lifecycle() {
     assert_eq!(archived.status(), StatusCode::OK);
     let archived_detail = request(&router, "GET", "/api/products/woven-planter", None, None).await;
     assert_eq!(archived_detail.status(), StatusCode::NOT_FOUND);
+
+    let disposable = request(
+        &router,
+        "POST",
+        "/api/admin/products",
+        Some(&owner_cookie),
+        Some(product_fixture("disposable-product", "DISPOSABLE-001")),
+    )
+    .await;
+    let disposable_id = response_json(disposable).await["id"]
+        .as_str()
+        .expect("disposable product should contain an ID")
+        .to_owned();
+    let deleted = request(
+        &router,
+        "DELETE",
+        &format!("/api/admin/products/{disposable_id}"),
+        Some(&owner_cookie),
+        None,
+    )
+    .await;
+    assert_eq!(deleted.status(), StatusCode::NO_CONTENT);
 
     let catalog_audit: Vec<(String, Uuid, Option<String>)> = sqlx::query_as(
         r#"
@@ -382,6 +426,7 @@ async fn staff_authorization_and_audit_lifecycle() {
         catalog_audit,
         vec![
             ("product.create".into(), owner_id, None),
+            ("product.update".into(), owner_id, None),
             ("product.variant_add".into(), owner_id, None),
             ("product.categories_assign".into(), owner_id, None),
             (

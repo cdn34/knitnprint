@@ -83,6 +83,7 @@ export type {
   TaxRuleInput,
   TaxSelection,
   UpdateCommercialSettingsRequest,
+  UpdateProductRequest,
   Variant,
   UpdateCartItemRequest,
 } from './schema'
@@ -140,6 +141,7 @@ import type {
   StaffProfile,
   StaffRecord,
   UpdateCommercialSettingsRequest,
+  UpdateProductRequest,
   UpdateCartItemRequest,
 } from './schema'
 
@@ -435,6 +437,14 @@ export function createApiClient(options: ApiClientOptions = {}) {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(input),
       }),
+    updateProduct: (productId: string, input: UpdateProductRequest) =>
+      send<Product>(`/api/admin/products/${productId}`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(input),
+      }),
+    deleteProduct: (productId: string) =>
+      send<void>(`/api/admin/products/${productId}`, { method: 'DELETE' }),
     changeProductStatus: (
       productId: string,
       input: ChangeProductStatusRequest,

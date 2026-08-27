@@ -122,9 +122,17 @@ h1 { margin: .25rem 0 0; font: 500 2rem Georgia, serif; }
 .product-form > label, .price-fields label { display: block; margin: .7rem 0 .35rem; color: #4f4b48; font-size: .67rem; font-weight: 600; }
 .product-form input, .product-form select, .product-form textarea { width: 100%; padding: .6rem .68rem; border: 1px solid #cfc4bc; border-radius: .45rem; color: #2e2e2d; background: #fff; }
 .product-form textarea { resize: vertical; }
+.field-help { display: block; margin-top: .3rem; color: #6e6864; font-size: .6rem; line-height: 1.4; }
+.field-count { display: block; margin-top: .25rem; color: #8b837e; font-size: .56rem; text-align: right; }
+.url-preview { display: block; margin-top: .35rem; padding: .38rem .5rem; overflow: hidden; border-radius: .35rem; color: #5f4652; background: #f5eff2; font: 600 .58rem ui-monospace, monospace; text-overflow: ellipsis; white-space: nowrap; }
 .variant-heading { margin-top: 1rem; padding-top: .9rem; border-top: 1px solid #ede6e1; color: #765c47; font-size: .65rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
 .price-fields { display: grid; grid-template-columns: 1fr 90px; gap: .6rem; }
 .primary-button { width: 100%; height: 42px; margin-top: 1rem; border: 0; border-radius: .45rem; color: white; background: #5f4652; font-size: .72rem; font-weight: 600; cursor: pointer; }
+.secondary-button, .danger-button { width: 100%; height: 38px; margin-top: .55rem; border: 1px solid #ded4cc; border-radius: .45rem; background: transparent; font-size: .68rem; font-weight: 600; cursor: pointer; }
+.secondary-button { color: #5f4652; }
+.danger-button { color: #7a2f3c; border-color: #d9b8be; }
+.secondary-button:hover { background: #f1e9ed; }
+.danger-button:hover { background: #f8e8eb; }
 .product-preview { margin-top: 1.2rem; padding: 1.2rem; position: relative; display: grid; grid-template-columns: minmax(180px, .7fr) 1.3fr; gap: 1.5rem; }
 .product-preview > button { position: absolute; right: .75rem; top: .75rem; border: 0; color: #5f4652; background: transparent; font-size: 1.3rem; cursor: pointer; }
 .preview-art { min-height: 220px; display: grid; place-items: center; border-radius: .7rem; color: #d9c5cf; background: repeating-linear-gradient(100deg, #5f4652 0 9px, #765968 9px 15px); font: 600 2.5rem Georgia, serif; }
@@ -135,6 +143,7 @@ h1 { margin: .25rem 0 0; font: 500 2rem Georgia, serif; }
 .product-preview span { margin-top: .7rem; color: #6e6864; font-size: .75rem; line-height: 1.6; }
 .product-preview strong { margin-top: 1rem; font: 500 1.2rem Georgia, serif; }
 .catalog-editor { margin-top: 1.2rem; display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem; align-items: start; }
+.catalog-editor { display: none; }
 .catalog-editor > section { padding: 1.2rem; }
 .variant-list { margin: 0 0 1rem; padding: 0; list-style: none; border-top: 1px solid #ede6e1; }
 .variant-list li { padding: .7rem 0; display: flex; align-items: center; justify-content: space-between; gap: 1rem; border-bottom: 1px solid #ede6e1; }
