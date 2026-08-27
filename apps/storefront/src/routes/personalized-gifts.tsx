@@ -1,51 +1,52 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { ArrowRight, Gift, Heart, Palette } from 'lucide-react'
 import { ContentPage } from '../components/content-page'
+import { useI18n } from '../i18n'
 
 export const Route = createFileRoute('/personalized-gifts')({
   head: () => ({
     meta: [
-      { title: 'Personalized gifts — KnitPrint' },
-      { name: 'description', content: 'Personalized KnitPrint gift inspiration.' },
+      { title: 'Personalized gifts — KnitnPrint' },
+      { name: 'description', content: 'Personalized KnitnPrint gift inspiration.' },
     ],
   }),
   component: PersonalizedGiftsPage,
 })
 
-const inspirations = [
-  { icon: Gift, title: 'A gift for a milestone', tone: 'mauve' },
-  { icon: Palette, title: 'A piece in their colours', tone: 'sand' },
-  { icon: Heart, title: 'A detail made personal', tone: 'clay' },
-]
-
 function PersonalizedGiftsPage() {
+  const { t } = useI18n()
+  const inspirations = [
+    { icon: Gift, title: t('gifts.card1'), tone: 'mauve' },
+    { icon: Palette, title: t('gifts.card2'), tone: 'sand' },
+    { icon: Heart, title: t('gifts.card3'), tone: 'clay' },
+  ]
   return (
     <ContentPage
-      eyebrow="Made especially for someone"
-      title="Personal gifts, shaped around your idea."
-      intro="This page will become a gallery of finished custom pieces, helping customers imagine what we can create together."
+      eyebrow={t('gifts.eyebrow')}
+      title={t('gifts.title')}
+      intro={t('gifts.intro')}
       className="gifts-page"
     >
-      <section className="inspiration-grid" aria-label="Personalized gift inspiration placeholders">
+      <section className="inspiration-grid" aria-label={t('gifts.label')}>
         {inspirations.map(({ icon: Icon, title, tone }) => (
           <article key={title}>
             <div className={`inspiration-visual tone--${tone}`}>
               <Icon aria-hidden="true" />
-              <span>Example image</span>
+              <span>{t('gifts.example')}</span>
             </div>
-            <p className="eyebrow">Inspiration</p>
+            <p className="eyebrow">{t('gifts.inspiration')}</p>
             <h2>{title}</h2>
-            <p>A personalized product and its story can be presented here later.</p>
+            <p>{t('gifts.cardBody')}</p>
           </article>
         ))}
       </section>
       <aside className="page-cta">
         <div>
-          <p className="eyebrow">Start with the collection</p>
-          <h2>Choose a piece to make your own.</h2>
+          <p className="eyebrow">{t('gifts.ctaEyebrow')}</p>
+          <h2>{t('gifts.ctaTitle')}</h2>
         </div>
         <a className="button button--primary" href="/products">
-          Browse all pieces <ArrowRight size={17} />
+          {t('gifts.ctaButton')} <ArrowRight size={17} />
         </a>
       </aside>
     </ContentPage>

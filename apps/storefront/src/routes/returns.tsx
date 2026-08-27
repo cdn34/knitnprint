@@ -2,6 +2,8 @@ import { createFileRoute } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
 import { ContentPage } from '../components/content-page'
 import { ContextualFaqs } from '../components/contextual-faqs'
+import { useI18n } from '../i18n'
+import { returnsEs, returnsPt } from '../i18n/returns-content'
 
 export const Route = createFileRoute('/returns')({
   head: () => ({
@@ -17,17 +19,21 @@ export const Route = createFileRoute('/returns')({
 })
 
 function ReturnsPage() {
+  const { locale, t } = useI18n()
+  const localized = locale === 'pt' ? returnsPt : returnsEs
+
   return (
     <ContentPage
-      eyebrow="After your order arrives"
-      title="Exchanges, Returns and Refunds Policy"
-      intro="Learn how to request an exchange, return or refund for a KnitnPrint order."
+      eyebrow={t('returns.eyebrow')}
+      title={t('returns.title')}
+      intro={t('returns.intro')}
       className="policy-page legal-document-page"
     >
       <div className="policy-layout">
         <article className="policy-document">
-          <p className="eyebrow policy-document-label">Returns, exchanges and refunds</p>
+          <p className="eyebrow policy-document-label">{t('returns.label')}</p>
 
+          {locale === 'en' ? <>
           <PolicySection number="01" title="Scope">
             <p>This Exchanges, Returns and Refunds Policy applies to all purchases made from KnitnPrint and sets out the conditions under which customers may request the return or exchange of a product, as well as the corresponding refund.</p>
           </PolicySection>
@@ -104,23 +110,42 @@ function ReturnsPage() {
           <PolicySection number="07" title="Changes to this Policy">
             <p>KnitnPrint reserves the right to update or amend this Policy at any time. Any changes will be published on the website and will take effect from their date of publication.</p>
           </PolicySection>
+          </> : <LocalizedReturns sections={localized.sections} />}
         </article>
       </div>
       <ContextualFaqs
         id="returns-faqs"
-        eyebrow="Returns at a glance"
-        title="Quick answers about returns"
-        items={[
+        eyebrow={t('returns.faqEyebrow')}
+        title={t('returns.faqTitle')}
+        items={locale === 'en' ? [
           { question: 'Can I return a personalised product?', answer: 'Personalised products cannot be returned under the right of withdrawal, but this does not affect your rights when an item is faulty, damaged or not as agreed.' },
           { question: 'What should I do if my order arrives damaged?', answer: 'Contact us within five business days with your order number, a description of the issue and clear photographs of the product and packaging.' },
           { question: 'How do I start a return?', answer: 'Email support@knitnprint.com with your order number and reason for the return, then wait for our instructions before sending the product.' },
           { question: 'Who pays the return shipping costs?', answer: 'Return costs are normally paid by the customer, except when the return results from a KnitnPrint error or a confirmed product defect.' },
           { question: 'When will I receive my refund?', answer: 'Once an eligible return has been received and inspected, the refund will be processed within a maximum of 14 days.' },
-        ]}
+        ] : localized.faqs}
         className="contextual-faqs--policy"
       />
     </ContentPage>
   )
+}
+
+function LocalizedReturns({ sections }: Readonly<{
+  sections: typeof returnsPt.sections
+}>) {
+  return sections.map((section) => (
+    <PolicySection key={section.number} number={section.number} title={section.title}>
+      {section.blocks.map((block, index) => {
+        const key = `${section.number}-${index}`
+        if (block.type === 'p') {
+          const parts = block.text.split('support@knitnprint.com')
+          return <p key={key}>{parts.map((part, partIndex) => <span key={`${key}-${partIndex}`}>{part}{partIndex < parts.length - 1 && <a href="mailto:support@knitnprint.com">support@knitnprint.com</a>}</span>)}</p>
+        }
+        const List = block.type === 'ol' ? 'ol' : 'ul'
+        return <List key={key}>{block.items.map((item) => <li key={item}>{item}</li>)}</List>
+      })}
+    </PolicySection>
+  ))
 }
 
 function PolicySection({ number, title, children }: Readonly<{

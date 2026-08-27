@@ -122,6 +122,10 @@ main:focus {
 .footer-links a {
   transition: color 0.2s ease;
 }
+.desktop-nav a[href="/b2b"] {
+  font-size: 1.05rem;
+  font-weight: 700;
+}
 .desktop-nav a:hover,
 .footer-links a:hover {
   color: var(--knit-dark);
@@ -131,6 +135,23 @@ main:focus {
   display: flex;
   gap: 0.2rem;
   align-items: center;
+}
+.language-selector {
+  margin-right: 0.35rem;
+  position: relative;
+}
+.language-selector select {
+  height: 36px;
+  padding: 0 1.75rem 0 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--ink);
+  background: var(--surface);
+  font: 700 0.65rem/1 var(--body);
+  cursor: pointer;
+}
+.language-selector select:hover {
+  border-color: var(--knit);
 }
 .icon-button {
   width: 40px;
@@ -265,6 +286,12 @@ main:focus {
 .home-section-title--centered {
   margin-inline: auto;
   text-align: center;
+}
+html[lang='pt'] .home-section-title--categories {
+  max-width: none;
+}
+html[lang='pt'] .home-section-title--categories h2 {
+  white-space: nowrap;
 }
 .home-section-title h2,
 .why-knitprint h2 {
@@ -2029,7 +2056,7 @@ main:focus {
   background: var(--canvas);
 }
 .content-page-intro {
-  width: min(100%, 900px);
+  width: min(100%, 1240px);
   margin: 0 auto clamp(3.5rem, 7vw, 6.5rem);
   text-align: center;
 }
@@ -2038,8 +2065,28 @@ main:focus {
   font: 500 clamp(2.3rem, 4vw, 4rem)/1 var(--display);
   letter-spacing: -0.035em;
 }
+.legal-document-page .content-page-intro h1 {
+  font-size: clamp(2.1rem, 3.5vw, 3.5rem);
+}
+@media (min-width: 1100px) {
+  .content-page-intro h1 {
+    white-space: nowrap;
+  }
+}
+.about-page--pt .content-page-intro {
+  width: min(100%, 1240px);
+}
+.about-page--pt .content-page-intro h1 {
+  white-space: nowrap;
+}
+.process-page .content-page-intro {
+  width: min(100%, 1240px);
+}
+.process-page .content-page-intro h1 {
+  white-space: nowrap;
+}
 .process-page .content-page-intro h1 span {
-  display: block;
+  display: inline;
 }
 .content-page-intro > p:last-child {
   max-width: 680px;
@@ -2310,6 +2357,14 @@ main:focus {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 1.25rem;
 }
+.about-page .page-feature-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.about-page .page-feature-grid article {
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
 .page-feature-grid article,
 .process-steps article {
   min-height: 280px;
@@ -2326,6 +2381,9 @@ main:focus {
   height: 30px;
   margin: auto 0 1.4rem;
   color: var(--knit);
+}
+.about-page .page-feature-grid article > svg {
+  margin: 0 auto 1.4rem;
 }
 .page-feature-grid article > span,
 .process-steps article > span {
@@ -2370,6 +2428,9 @@ main:focus {
   color: var(--ink);
   font: 500 clamp(2.4rem, 5vw, 4.8rem)/0.96 var(--display);
   letter-spacing: -0.045em;
+}
+.story-closing h2 span {
+  display: block;
 }
 .story-closing > div {
   display: grid;
@@ -2507,6 +2568,15 @@ main:focus {
 .b2b-page {
   --b2b-soft: #eee5e6;
 }
+.b2b-page .content-page-intro {
+  width: min(100%, 1240px);
+}
+.b2b-page .content-page-intro > .eyebrow {
+  font-size: 1.05rem;
+}
+.b2b-page .content-page-intro h1 {
+  white-space: nowrap;
+}
 .b2b-minimum-note {
   display: block;
   margin-top: 0.75rem;
@@ -2577,6 +2647,7 @@ main:focus {
 .b2b-benefits h3,
 .b2b-steps h3 {
   margin: 0 0 0.8rem;
+  text-align: center;
   font: 500 clamp(1.35rem, 2vw, 1.75rem)/1.1 var(--display);
 }
 .b2b-benefits p,
@@ -3354,6 +3425,15 @@ main:focus {
 }
 
 @media (max-width: 760px) {
+  .b2b-page .content-page-intro h1 {
+    white-space: normal;
+  }
+  .process-page .content-page-intro h1 {
+    white-space: normal;
+  }
+  .about-page--pt .content-page-intro h1 {
+    white-space: normal;
+  }
   .announcement {
     font-size: 0.6rem;
   }
@@ -3364,6 +3444,11 @@ main:focus {
   }
   .brand {
     width: 134px;
+  }
+  .language-selector select {
+    width: 48px;
+    padding-inline: 0.55rem;
+    text-overflow: clip;
   }
   .desktop-nav {
     display: none;
@@ -3423,6 +3508,9 @@ main:focus {
   }
   .section-heading h2 {
     font-size: 2.7rem;
+  }
+  html[lang='pt'] .home-section-title--categories h2 {
+    font-size: clamp(1.35rem, 6.2vw, 2.7rem);
   }
   .product-grid {
     gap: 0.7rem;
@@ -3603,6 +3691,9 @@ main:focus {
   .process-steps,
   .inspiration-grid,
   .process-gallery {
+    grid-template-columns: 1fr;
+  }
+  .about-page .page-feature-grid {
     grid-template-columns: 1fr;
   }
   .process-manifesto {

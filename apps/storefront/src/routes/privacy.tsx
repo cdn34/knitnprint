@@ -2,6 +2,9 @@ import { createFileRoute } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
 import { ContentPage } from '../components/content-page'
 import { ContextualFaqs } from '../components/contextual-faqs'
+import { useI18n } from '../i18n'
+import { privacyEs, privacyPt } from '../i18n/privacy-content'
+import type { LegalSection } from '../i18n/terms-content'
 
 export const Route = createFileRoute('/privacy')({
   head: () => ({
@@ -14,11 +17,13 @@ export const Route = createFileRoute('/privacy')({
 })
 
 function PrivacyPage() {
+  const { locale, t } = useI18n()
+  const localized = locale === 'pt' ? privacyPt : privacyEs
   return (
     <ContentPage
-      eyebrow="Your information"
-      title="Privacy Policy"
-      intro="This Privacy Policy explains how KnitnPrint collects, uses and protects your personal data when you visit our website or shop online."
+      eyebrow={t('privacy.eyebrow')}
+      title={t('privacy.title')}
+      intro={t('privacy.intro')}
       className="policy-page legal-document-page"
     >
       <div className="policy-layout">
@@ -26,24 +31,25 @@ function PrivacyPage() {
           <section className="company-information" aria-labelledby="data-controller-title">
             <span aria-hidden="true">01</span>
             <div>
-              <p className="eyebrow">Legal information</p>
-              <h2 id="data-controller-title">Data controller</h2>
+              <p className="eyebrow">{t('terms.eyebrow')}</p>
+              <h2 id="data-controller-title">{t('privacy.controller')}</h2>
               <dl>
-                <div><dt>Trading name</dt><dd>KnitnPrint</dd></div>
-                <div><dt>Owner</dt><dd>Daniela Tojal</dd></div>
-                <div><dt>Tax identification number</dt><dd>220666768</dd></div>
-                <div><dt>Email</dt><dd><a href="mailto:support@knitnprint.com">support@knitnprint.com</a></dd></div>
-                <div><dt>Address</dt><dd>Online store</dd></div>
+                <div><dt>{t('terms.tradingName')}</dt><dd>KnitnPrint</dd></div>
+                <div><dt>{t('terms.owner')}</dt><dd>Daniela Tojal</dd></div>
+                <div><dt>{t('terms.taxNumber')}</dt><dd>220666768</dd></div>
+                <div><dt>{t('terms.email')}</dt><dd><a href="mailto:support@knitnprint.com">support@knitnprint.com</a></dd></div>
+                <div><dt>{t('terms.address')}</dt><dd>{t('terms.onlineStore')}</dd></div>
               </dl>
             </div>
           </section>
 
+          {locale === 'en' ? <>
           <div className="policy-opening">
             <p>This Privacy Policy describes how KnitnPrint, the company responsible for <a href="https://knitnprint.com">knitnprint.com</a>, collects, uses and protects users’ personal data when they visit the website or make purchases through the online store.</p>
             <p>By using this website, you accept the practices described in this Privacy Policy.</p>
           </div>
 
-          <p className="eyebrow policy-document-label">How we handle your data</p>
+          <p className="eyebrow policy-document-label">{t('privacy.label')}</p>
 
           <PolicySection number="02" title="Data we collect">
             <p>When you visit our online store, we collect certain information so that we can improve our services and serve our customers more effectively.</p>
@@ -128,23 +134,59 @@ function PrivacyPage() {
           <PolicySection number="10" title="Contact us">
             <p>If you have any questions about this Privacy Policy or how we process your personal data, please contact us at <a href="mailto:support@knitnprint.com">support@knitnprint.com</a>.</p>
           </PolicySection>
+          </> : <LocalizedPrivacy content={localized} label={t('privacy.label')} />}
         </article>
       </div>
       <ContextualFaqs
         id="privacy-faqs"
-        eyebrow="Privacy questions"
-        title="Your data, explained simply"
-        items={[
+        eyebrow={t('privacy.faqEyebrow')}
+        title={t('privacy.faqTitle')}
+        items={locale === 'en' ? [
           { question: 'What personal data do you collect?', answer: 'Depending on how you use the website, we may collect contact, order, delivery, payment-related and website usage information.' },
           { question: 'Why do you need my information?', answer: 'We use the information needed to process orders, provide support, meet legal obligations, improve our services and, where permitted, communicate with you.' },
           { question: 'Do you share my data with other organisations?', answer: 'Only where necessary, such as with payment, delivery, hosting or professional service providers, or where disclosure is legally required.' },
           { question: 'How can I exercise my data protection rights?', answer: 'You may request access, correction, deletion, restriction, objection or portability where applicable under data protection law.' },
           { question: 'How can I contact you about my data?', answer: 'Email support@knitnprint.com with your privacy question or request.' },
-        ]}
+        ] : localized.faqs}
         className="contextual-faqs--policy"
       />
     </ContentPage>
   )
+}
+
+function LocalizedPrivacy({ content, label }: Readonly<{
+  content: typeof privacyPt
+  label: string
+}>) {
+  return <>
+    <div className="policy-opening">
+      {content.opening.map((paragraph) => <p key={paragraph}>{renderPrivacyText(paragraph)}</p>)}
+    </div>
+    <p className="eyebrow policy-document-label">{label}</p>
+    <LocalizedSections sections={content.sections} />
+  </>
+}
+
+function LocalizedSections({ sections }: Readonly<{ sections: LegalSection[] }>) {
+  return sections.map((section) => (
+    <PolicySection number={section.number} title={section.title} key={section.number}>
+      {section.blocks.map((block, index) => block.type === 'p' ? (
+        <p key={index}>{renderPrivacyText(block.text)}</p>
+      ) : block.type === 'ul' ? (
+        <ul key={index}>{block.items.map((item) => <li key={item}>{item}</li>)}</ul>
+      ) : (
+        <ol key={index}>{block.items.map((item) => <li key={item}>{item}</li>)}</ol>
+      ))}
+    </PolicySection>
+  ))
+}
+
+function renderPrivacyText(text: string) {
+  return text.split(/(\[site\]|\[email\])/).map((part, index) => {
+    if (part === '[site]') return <a href="https://knitnprint.com" key={index}>knitnprint.com</a>
+    if (part === '[email]') return <a href="mailto:support@knitnprint.com" key={index}>support@knitnprint.com</a>
+    return part
+  })
 }
 
 function PolicySection({ number, title, children }: Readonly<{

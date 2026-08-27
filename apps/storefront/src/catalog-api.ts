@@ -74,6 +74,7 @@ export function preferredVariant(product: Product) {
 
 export type StockPresentation = {
   state: 'available' | 'low' | 'sold-out'
+  quantity: number
   label: string
   detail: string
 }
@@ -82,6 +83,7 @@ export function variantStock(variant: Variant): StockPresentation {
   if (variant.available_quantity <= 0) {
     return {
       state: 'sold-out',
+      quantity: variant.available_quantity,
       label: 'Sold out',
       detail: 'This option is currently unavailable.',
     }
@@ -89,12 +91,14 @@ export function variantStock(variant: Variant): StockPresentation {
   if (variant.low_stock) {
     return {
       state: 'low',
+      quantity: variant.available_quantity,
       label: `Only ${variant.available_quantity} left`,
       detail: 'A small number remains in the studio.',
     }
   }
   return {
     state: 'available',
+    quantity: variant.available_quantity,
     label: 'In stock',
     detail: 'Available from our studio inventory.',
   }

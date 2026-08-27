@@ -1,13 +1,10 @@
 import { createFileRoute, notFound } from '@tanstack/react-router'
 import { ArrowLeft, PackageCheck } from 'lucide-react'
 import { ContextualFaqs } from '../components/contextual-faqs'
+import { CatalogProductGrid } from '../components/catalog-product-grid'
 import { StorefrontAnnouncement, StorefrontFooter, StorefrontHeader } from '../components/storefront-shell'
-import {
-  mediaUrl,
-  productPrice,
-  productStock,
-  publishedCollection,
-} from '../catalog-api'
+import { publishedCollection } from '../catalog-api'
+import { useI18n } from '../i18n'
 
 export const Route = createFileRoute('/collections/$slug')({
   loader: async ({ params }) => {
@@ -19,8 +16,8 @@ export const Route = createFileRoute('/collections/$slug')({
     meta: [
       {
         title: loaderData
-          ? `${loaderData.category?.name} collection — KnitPrint`
-          : 'KnitPrint',
+          ? `${loaderData.category?.name} collection — KnitnPrint`
+          : 'KnitnPrint',
       },
       {
         name: 'description',
@@ -33,6 +30,7 @@ export const Route = createFileRoute('/collections/$slug')({
 
 function CollectionPage() {
   const { category, products } = Route.useLoaderData()
+  const { t } = useI18n()
   if (!category) return null
 
   return (
@@ -41,66 +39,31 @@ function CollectionPage() {
       <StorefrontHeader />
       <main className="collection-page" id="main-content" tabIndex={-1}>
         <a className="text-link page-back-link" href="/collections">
-          <ArrowLeft size={17} /> All collections
+          <ArrowLeft size={17} /> {t('collection.allCollections')}
         </a>
         <header className="collection-intro">
-          <p className="eyebrow">KnitPrint collection</p>
+          <p className="eyebrow">{t('collections.collectionLabel')}</p>
           <h1>{category.name}</h1>
           {category.description && <p>{category.description}</p>}
         </header>
-        <section aria-label={`${category.name} products`}>
-          <div className="product-grid">
-            {products.map((product, index) => {
-              const stock = productStock(product)
-              return <article className="product-card" key={product.id}>
-                <div
-                  className={`product-image tone--${['mauve', 'sand', 'ink', 'clay'][index % 4]}`}
-                >
-                  <a
-                    className="product-visual"
-                    href={`/products/${product.slug}`}
-                    aria-label={`View ${product.title}`}
-                  >
-                    {product.media[0] ? (
-                      <img
-                        className="catalog-product-photo"
-                        src={mediaUrl(product.media[0].card_url)}
-                        alt={product.media[0].alt_text}
-                      />
-                    ) : (
-                      <span className="product-form product-form--planter" />
-                    )}
-                  </a>
-                </div>
-                <div className="product-info">
-                  <div>
-                    <h2>
-                      <a href={`/products/${product.slug}`}>{product.title}</a>
-                    </h2>
-                    {stock && <span className={`product-stock product-stock--${stock.state}`}>{stock.label}</span>}
-                  </div>
-                  <p>{productPrice(product)}</p>
-                </div>
-              </article>
-            })}
-            {products.length === 0 && (
-              <div className="storefront-empty">
-                <PackageCheck aria-hidden="true" />
-                <h2>This collection is taking shape.</h2>
-                <p>Fresh pieces will appear here as soon as they leave the studio.</p>
-              </div>
-            )}
-          </div>
+        <section aria-label={t('collection.productsLabel', { name: category.name })}>
+          {products.length > 0 ? <CatalogProductGrid products={products} /> : (
+            <div className="storefront-empty">
+              <PackageCheck aria-hidden="true" />
+              <h2>{t('collection.emptyTitle')}</h2>
+              <p>{t('collection.emptyBody')}</p>
+            </div>
+          )}
         </section>
         <ContextualFaqs
           id="collection-faqs"
-          eyebrow="About this collection"
-          title="Ideas for making it personal"
+          eyebrow={t('collection.faqEyebrow')}
+          title={t('collection.faqTitle')}
           items={[
-            { question: 'Which products can be personalised?', answer: 'Personalisation availability is shown on each product page, together with the options offered for that piece.' },
-            { question: 'Can I use the same design on different products?', answer: 'Often, yes. We may adapt the scale or placement so the design works well with each product and material.' },
-            { question: 'Can these pieces be ordered as a gift set?', answer: 'Contact us with the products you have in mind and we will let you know which combinations and presentation options are possible.' },
-            { question: 'Are larger quantities available?', answer: 'For company, association or event quantities, visit our B2B page and request a tailored proposal.' },
+            { question: t('collection.faq1Question'), answer: t('collection.faq1Answer') },
+            { question: t('collection.faq2Question'), answer: t('collection.faq2Answer') },
+            { question: t('collection.faq3Question'), answer: t('collection.faq3Answer') },
+            { question: t('collection.faq4Question'), answer: t('collection.faq4Answer') },
           ]}
           className="contextual-faqs--collection"
         />

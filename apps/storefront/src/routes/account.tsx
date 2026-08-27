@@ -19,15 +19,16 @@ import {
   StorefrontFooter,
   StorefrontHeader,
 } from "../components/storefront-shell";
+import { useI18n } from "../i18n";
 
 export const Route = createFileRoute("/account")({
   component: AccountPage,
   head: () => ({
     meta: [
-      { title: "Your account — KnitPrint" },
+      { title: "Your account — KnitnPrint" },
       {
         name: "description",
-        content: "Manage your KnitPrint profile and delivery addresses.",
+        content: "Manage your KnitnPrint profile and delivery addresses.",
       },
     ],
   }),
@@ -37,12 +38,13 @@ const api = createApiClient();
 
 type Mode = "login" | "register" | "forgot" | "reset";
 
-function messageFor(error: unknown) {
+function messageFor(error: unknown, fallback: string) {
   if (error instanceof ApiError) return error.body.error.message;
-  return "Something went wrong. Please try again.";
+  return fallback;
 }
 
 function AccountPage() {
+  const { t } = useI18n();
   const [profile, setProfile] = useState<CustomerAccountProfile | null>(null);
   const [checkingSession, setCheckingSession] = useState(true);
   const [mode, setMode] = useState<Mode>("login");
@@ -63,7 +65,7 @@ function AccountPage() {
       try {
         if (verificationToken) {
           await api.confirmCustomerVerification({ token: verificationToken });
-          setNotice("Your email address is verified.");
+          setNotice(t("account.emailVerified"));
         }
         if (passwordToken) {
           setResetToken(passwordToken);
@@ -74,7 +76,7 @@ function AccountPage() {
         if (active) setProfile(account);
       } catch (cause) {
         if (active && !(cause instanceof ApiError && cause.status === 401)) {
-          setError(messageFor(cause));
+          setError(messageFor(cause, t("account.genericError")));
         }
       } finally {
         if (active) setCheckingSession(false);
@@ -109,11 +111,11 @@ function AccountPage() {
       setProfile(account);
       setNotice(
         mode === "register"
-          ? "Your account is ready. Check your email to verify your address."
-          : "Welcome back.",
+          ? t("account.registered")
+          : t("account.welcomeBack"),
       );
     } catch (cause) {
-      setError(messageFor(cause));
+      setError(messageFor(cause, t("account.genericError")));
     } finally {
       setPending(false);
     }
@@ -130,10 +132,10 @@ function AccountPage() {
         email: String(values.get("email") ?? ""),
       });
       setNotice(
-        "If an account exists for that address, a password-reset email is on its way.",
+        t("account.resetSent"),
       );
     } catch (cause) {
-      setError(messageFor(cause));
+      setError(messageFor(cause, t("account.genericError")));
     } finally {
       setPending(false);
     }
@@ -153,9 +155,9 @@ function AccountPage() {
       setResetToken("");
       setMode("login");
       window.history.replaceState({}, "", window.location.pathname);
-      setNotice("Your password has been changed. Sign in with the new password.");
+      setNotice(t("account.passwordChanged"));
     } catch (cause) {
-      setError(messageFor(cause));
+      setError(messageFor(cause, t("account.genericError")));
     } finally {
       setPending(false);
     }
@@ -167,9 +169,9 @@ function AccountPage() {
     setPending(true);
     try {
       await api.requestCustomerVerification();
-      setNotice("Verification email requested. Please check your inbox.");
+      setNotice(t("account.verificationSent"));
     } catch (cause) {
-      setError(messageFor(cause));
+      setError(messageFor(cause, t("account.genericError")));
     } finally {
       setPending(false);
     }
@@ -196,9 +198,9 @@ function AccountPage() {
       });
       setProfile(await api.customerAccount());
       form.reset();
-      setNotice("Address saved.");
+      setNotice(t("account.addressSaved"));
     } catch (cause) {
-      setError(messageFor(cause));
+      setError(messageFor(cause, t("account.genericError")));
     } finally {
       setPending(false);
     }
@@ -212,9 +214,9 @@ function AccountPage() {
       await api.logoutCustomer();
       setProfile(null);
       setMode("login");
-      setNotice("You have signed out.");
+      setNotice(t("account.signedOut"));
     } catch (cause) {
-      setError(messageFor(cause));
+      setError(messageFor(cause, t("account.genericError")));
     } finally {
       setPending(false);
     }
@@ -227,22 +229,22 @@ function AccountPage() {
 
       <main className="account-page" id="main-content" tabIndex={-1}>
         <a className="text-link page-back-link" href="/">
-          <ArrowLeft size={17} aria-hidden="true" /> Back to the shop
+          <ArrowLeft size={17} aria-hidden="true" /> {t("account.backToShop")}
         </a>
         <section className="account-intro" aria-labelledby="account-title">
           <div className="account-mark" aria-hidden="true">
             <CircleUserRound />
           </div>
-          <p className="eyebrow">KnitPrint account</p>
+          <p className="eyebrow">{t("account.eyebrow")}</p>
           <h1 id="account-title">
             {profile
-              ? `Welcome, ${profile.first_name}.`
-              : "A home for your details."}
+              ? t("account.welcomeName", { name: profile.first_name })
+              : t("account.guestTitle")}
           </h1>
           <p>
             {profile
-              ? "Keep your contact and delivery information ready for your next studio piece."
-              : "Sign in or create an account to save delivery addresses. Guest checkout will always remain available."}
+              ? t("account.memberIntro")
+              : t("account.guestIntro")}
           </p>
         </section>
 
@@ -266,7 +268,7 @@ function AccountPage() {
               className="account-panel account-loading"
               aria-live="polite"
             >
-              <p>Finding your account…</p>
+              <p>{t("account.finding")}</p>
             </section>
           ) : profile ? (
             <AuthenticatedAccount
@@ -312,6 +314,7 @@ function GuestAccount({
   onForgotPassword: (event: FormEvent<HTMLFormElement>) => void;
   onResetPassword: (event: FormEvent<HTMLFormElement>) => void;
 }>) {
+  const { t } = useI18n();
   if (mode === "forgot" || mode === "reset") {
     return (
       <section className="account-panel" aria-labelledby="access-title">
@@ -319,14 +322,14 @@ function GuestAccount({
           <KeyRound />
         </div>
         <div className="account-panel-heading">
-          <p className="eyebrow">Secure account access</p>
+          <p className="eyebrow">{t("account.secureAccess")}</p>
           <h2 id="access-title">
-            {mode === "forgot" ? "Reset your password" : "Choose a new password"}
+            {t(mode === "forgot" ? "account.resetPassword" : "account.choosePassword")}
           </h2>
           <p className="account-panel-copy">
             {mode === "forgot"
-              ? "Enter your account email. We’ll send a one-hour reset link if the address is registered."
-              : "Your new password must contain at least 12 characters."}
+              ? t("account.forgotIntro")
+              : t("account.newPasswordIntro")}
           </p>
         </div>
         <form
@@ -335,14 +338,14 @@ function GuestAccount({
         >
           {mode === "forgot" ? (
             <Field
-              label="Email address"
+              label={t("account.emailAddress")}
               name="email"
               type="email"
               autoComplete="email"
             />
           ) : (
             <Field
-              label="New password"
+              label={t("account.newPassword")}
               name="password"
               type="password"
               autoComplete="new-password"
@@ -355,10 +358,10 @@ function GuestAccount({
             type="submit"
           >
             {pending
-              ? "Please wait…"
+              ? t("account.pleaseWait")
               : mode === "forgot"
-                ? "Send reset link"
-                : "Change password"}
+                ? t("account.sendReset")
+                : t("account.changePassword")}
           </button>
           <button
             className="account-secondary-action"
@@ -366,7 +369,7 @@ function GuestAccount({
             type="button"
             onClick={() => onModeChange("login")}
           >
-            Back to sign in
+            {t("account.backToSignIn")}
           </button>
         </form>
       </section>
@@ -375,53 +378,53 @@ function GuestAccount({
 
   return (
     <section className="account-panel" aria-labelledby="access-title">
-      <div className="account-tabs" role="group" aria-label="Account access">
+      <div className="account-tabs" role="group" aria-label={t("account.accessLabel")}>
         <button
           type="button"
           aria-pressed={mode === "login"}
           onClick={() => onModeChange("login")}
         >
-          Sign in
+          {t("account.signIn")}
         </button>
         <button
           type="button"
           aria-pressed={mode === "register"}
           onClick={() => onModeChange("register")}
         >
-          Create account
+          {t("account.createAccount")}
         </button>
       </div>
       <div className="account-panel-heading">
         <p className="eyebrow">
-          {mode === "login" ? "Welcome back" : "Join KnitPrint"}
+          {t(mode === "login" ? "account.welcomeBack" : "account.join")}
         </p>
         <h2 id="access-title">
-          {mode === "login" ? "Sign in to your account" : "Create your account"}
+          {t(mode === "login" ? "account.signInTitle" : "account.createTitle")}
         </h2>
       </div>
       <form className="account-form" onSubmit={onSubmit}>
         {mode === "register" && (
           <div className="account-form-row">
             <Field
-              label="First name"
+              label={t("account.firstName")}
               name="first_name"
               autoComplete="given-name"
             />
             <Field
-              label="Last name"
+              label={t("account.lastName")}
               name="last_name"
               autoComplete="family-name"
             />
           </div>
         )}
         <Field
-          label="Email address"
+          label={t("account.emailAddress")}
           name="email"
           type="email"
           autoComplete="email"
         />
         <Field
-          label="Password"
+          label={t("account.password")}
           name="password"
           type="password"
           autoComplete={mode === "login" ? "current-password" : "new-password"}
@@ -429,7 +432,7 @@ function GuestAccount({
         />
         {mode === "register" && (
           <Field
-            label="Phone (optional)"
+            label={t("account.phoneOptional")}
             name="phone"
             type="tel"
             autoComplete="tel"
@@ -442,10 +445,10 @@ function GuestAccount({
           type="submit"
         >
           {pending
-            ? "Please wait…"
+            ? t("account.pleaseWait")
             : mode === "login"
-              ? "Sign in"
-              : "Create account"}
+              ? t("account.signIn")
+              : t("account.createAccount")}
         </button>
         {mode === "login" && (
           <button
@@ -454,7 +457,7 @@ function GuestAccount({
             type="button"
             onClick={() => onModeChange("forgot")}
           >
-            Forgot your password?
+            {t("account.forgotPassword")}
           </button>
         )}
       </form>
@@ -475,6 +478,7 @@ function AuthenticatedAccount({
   onLogout: () => void;
   onRequestVerification: () => void;
 }>) {
+  const { t } = useI18n();
   return (
     <div className="account-authenticated">
       <section
@@ -483,7 +487,7 @@ function AuthenticatedAccount({
       >
         <div className="account-panel-heading account-panel-heading--action">
           <div>
-            <p className="eyebrow">Contact details</p>
+            <p className="eyebrow">{t("account.contactDetails")}</p>
             <h2 id="profile-title">
               {profile.first_name} {profile.last_name}
             </h2>
@@ -494,17 +498,17 @@ function AuthenticatedAccount({
             type="button"
             onClick={onLogout}
           >
-            <LogOut size={17} aria-hidden="true" /> Sign out
+            <LogOut size={17} aria-hidden="true" /> {t("account.signOut")}
           </button>
         </div>
         <dl className="account-contact">
           <div>
-            <dt>Email</dt>
+            <dt>{t("account.email")}</dt>
             <dd>{profile.email}</dd>
           </div>
           {profile.phone && (
             <div>
-              <dt>Phone</dt>
+              <dt>{t("account.phone")}</dt>
               <dd>{profile.phone}</dd>
             </div>
           )}
@@ -516,13 +520,13 @@ function AuthenticatedAccount({
           <div>
             <strong>
               {profile.email_verified
-                ? "Email address verified"
-                : "Email verification needed"}
+                ? t("account.emailVerifiedTitle")
+                : t("account.emailVerificationNeeded")}
             </strong>
             <p>
               {profile.email_verified
-                ? "Your account email is ready for secure order updates."
-                : "Verify this address before using it for account recovery and future order updates."}
+                ? t("account.emailVerifiedBody")
+                : t("account.emailVerificationBody")}
             </p>
           </div>
           {!profile.email_verified && (
@@ -532,7 +536,7 @@ function AuthenticatedAccount({
               type="button"
               onClick={onRequestVerification}
             >
-              Send another link
+              {t("account.sendAnotherLink")}
             </button>
           )}
         </div>
@@ -543,15 +547,21 @@ function AuthenticatedAccount({
         aria-labelledby="addresses-title"
       >
         <div className="account-panel-heading">
-          <p className="eyebrow">Saved places</p>
-          <h2 id="addresses-title">Delivery addresses</h2>
+          <p className="eyebrow">{t("account.savedPlaces")}</p>
+          <h2 id="addresses-title">{t("account.deliveryAddresses")}</h2>
         </div>
         {profile.addresses.length ? (
           <div className="address-grid">
             {profile.addresses.map((address) => (
               <article className="address-card" key={address.id}>
                 <span className="address-kind">
-                  <MapPin size={15} aria-hidden="true" /> {address.address_type}
+                  <MapPin size={15} aria-hidden="true" />{
+                    address.address_type === "delivery"
+                      ? t("account.delivery")
+                      : address.address_type === "billing"
+                        ? t("account.billing")
+                        : address.address_type
+                  }
                 </span>
                 <h3>{address.recipient_name}</h3>
                 <address>
@@ -579,44 +589,44 @@ function AuthenticatedAccount({
         ) : (
           <div className="address-empty">
             <Home aria-hidden="true" />
-            <p>No saved addresses yet.</p>
+            <p>{t("account.noAddresses")}</p>
           </div>
         )}
       </section>
 
       <section className="account-panel" aria-labelledby="new-address-title">
         <div className="account-panel-heading">
-          <p className="eyebrow">A new destination</p>
-          <h2 id="new-address-title">Add an address</h2>
+          <p className="eyebrow">{t("account.newDestination")}</p>
+          <h2 id="new-address-title">{t("account.addAddress")}</h2>
         </div>
         <form className="account-form" onSubmit={onAddAddress}>
           <label className="account-field">
-            <span>Address type</span>
+            <span>{t("account.addressType")}</span>
             <select name="address_type" defaultValue="delivery">
-              <option value="delivery">Delivery</option>
-              <option value="billing">Billing</option>
+              <option value="delivery">{t("account.delivery")}</option>
+              <option value="billing">{t("account.billing")}</option>
             </select>
           </label>
           <Field
-            label="Recipient name"
+            label={t("account.recipientName")}
             name="recipient_name"
             autoComplete="name"
           />
           <Field
-            label="Address line 1"
+            label={t("account.addressLine1")}
             name="line1"
             autoComplete="address-line1"
           />
           <Field
-            label="Address line 2 (optional)"
+            label={t("account.addressLine2")}
             name="line2"
             autoComplete="address-line2"
             required={false}
           />
           <div className="account-form-row account-form-row--location">
-            <Field label="City" name="city" autoComplete="address-level2" />
+            <Field label={t("account.city")} name="city" autoComplete="address-level2" />
             <Field
-              label="Region (optional)"
+              label={t("account.region")}
               name="region"
               autoComplete="address-level1"
               required={false}
@@ -624,12 +634,12 @@ function AuthenticatedAccount({
           </div>
           <div className="account-form-row account-form-row--location">
             <Field
-              label="Postal code"
+              label={t("account.postalCode")}
               name="postal_code"
               autoComplete="postal-code"
             />
             <Field
-              label="Country code"
+              label={t("account.countryCode")}
               name="country_code"
               autoComplete="country"
               minLength={2}
@@ -637,7 +647,7 @@ function AuthenticatedAccount({
             />
           </div>
           <Field
-            label="Delivery phone (optional)"
+            label={t("account.deliveryPhone")}
             name="address_phone"
             type="tel"
             autoComplete="tel"
@@ -648,7 +658,7 @@ function AuthenticatedAccount({
             disabled={pending}
             type="submit"
           >
-            {pending ? "Saving…" : "Save address"}
+            {t(pending ? "account.saving" : "account.saveAddress")}
           </button>
         </form>
       </section>

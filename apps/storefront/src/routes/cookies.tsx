@@ -2,6 +2,8 @@ import { createFileRoute } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
 import { ContentPage } from '../components/content-page'
 import { ContextualFaqs } from '../components/contextual-faqs'
+import { useI18n } from '../i18n'
+import { cookiesEs, cookiesPt } from '../i18n/cookies-content'
 
 export const Route = createFileRoute('/cookies')({
   head: () => ({
@@ -14,21 +16,24 @@ export const Route = createFileRoute('/cookies')({
 })
 
 function CookiesPage() {
+  const { locale, t } = useI18n()
+  const localized = locale === 'pt' ? cookiesPt : cookiesEs
   return (
     <ContentPage
-      eyebrow="Browsing KnitPrint"
-      title="Cookies Policy"
-      intro="This policy explains how KnitnPrint uses cookies and similar technologies, and the choices available to you."
+      eyebrow={t('cookies.eyebrow')}
+      title={t('cookies.title')}
+      intro={t('cookies.intro')}
       className="policy-page legal-document-page"
     >
       <div className="policy-layout">
         <article className="policy-document">
+          {locale === 'en' ? <>
           <div className="policy-opening policy-opening--first">
             <p>This Cookies Policy explains how KnitnPrint uses cookies and similar technologies on its website, as well as the choices available to users regarding their use.</p>
             <p>This Policy should be read together with our Privacy Policy, where you can find further information about how we process and protect your personal data.</p>
           </div>
 
-          <p className="eyebrow policy-document-label">Cookies and your choices</p>
+          <p className="eyebrow policy-document-label">{t('cookies.label')}</p>
 
           <PolicySection number="01" title="What are cookies?">
             <p>Cookies are small information files stored on the computer, smartphone, tablet or other device used to access a website.</p>
@@ -163,23 +168,51 @@ function CookiesPage() {
           <PolicySection number="13" title="Contact us">
             <p>For any questions about this Cookies Policy or the protection of your personal data, please contact KnitnPrint at <a href="mailto:support@knitnprint.com">support@knitnprint.com</a>.</p>
           </PolicySection>
+          </> : <LocalizedCookies content={localized} label={t('cookies.label')} />}
         </article>
       </div>
       <ContextualFaqs
         id="cookies-faqs"
-        eyebrow="Cookies at a glance"
-        title="Your cookie choices"
-        items={[
+        eyebrow={t('cookies.faqEyebrow')}
+        title={t('cookies.faqTitle')}
+        items={locale === 'en' ? [
           { question: 'What are cookies?', answer: 'Cookies are small files stored by a website on your browser or device to support functionality, remember preferences and understand website use.' },
           { question: 'Which cookies does KnitnPrint use?', answer: 'The website may use necessary, preference, analytics and advertising cookies, as described in the complete Cookies Policy above.' },
           { question: 'Can I reject optional cookies?', answer: 'Yes. Where a consent panel is available, optional cookies should remain inactive until you make a valid choice.' },
           { question: 'How can I change my cookie preferences?', answer: 'Use the Manage Cookies option when available, or review the privacy and cookie controls in your browser settings.' },
           { question: 'Will the website still work if I reject cookies?', answer: 'Necessary cookies support essential store functions. Rejecting optional cookies should not prevent those functions, although some additional features may be affected.' },
-        ]}
+        ] : localized.faqs}
         className="contextual-faqs--policy"
       />
     </ContentPage>
   )
+}
+
+function LocalizedCookies({ content, label }: Readonly<{
+  content: typeof cookiesPt
+  label: string
+}>) {
+  return <>
+    <div className="policy-opening policy-opening--first">
+      {content.opening.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
+    </div>
+    <p className="eyebrow policy-document-label">{label}</p>
+    {content.sections.map((section) => (
+      <PolicySection number={section.number} title={section.title} key={section.number}>
+        {section.blocks.map((block, index) => block.type === 'p' ? (
+          <p key={index}>{renderCookieText(block.text)}</p>
+        ) : block.type === 'h3' ? (
+          <h3 key={index}>{block.text}</h3>
+        ) : (
+          <ul key={index}>{block.items.map((item) => <li key={item}>{item}</li>)}</ul>
+        ))}
+      </PolicySection>
+    ))}
+  </>
+}
+
+function renderCookieText(text: string) {
+  return text.split('[email]').map((part, index) => index === 0 ? part : <span key={index}><a href="mailto:support@knitnprint.com">support@knitnprint.com</a>{part}</span>)
 }
 
 function PolicySection({ number, title, children }: Readonly<{

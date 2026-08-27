@@ -1,11 +1,13 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useMemo, useState } from 'react'
 import { ContentPage } from '../components/content-page'
+import { faqGroupsEs, faqGroupsPt } from '../i18n/faq-content'
+import { useI18n } from '../i18n'
 
 export const Route = createFileRoute('/faq')({
   head: () => ({
     meta: [
-      { title: 'Frequently asked questions — KnitPrint' },
+      { title: 'Frequently asked questions — KnitnPrint' },
       { name: 'description', content: 'Answers about KnitnPrint personalisation, products, orders, delivery, returns and B2B projects.' },
     ],
   }),
@@ -94,11 +96,13 @@ const faqGroups = [
 ]
 
 function FaqPage() {
+  const { locale, t } = useI18n()
+  const activeFaqGroups = locale === 'pt' ? faqGroupsPt : locale === 'es' ? faqGroupsEs : faqGroups
   const [query, setQuery] = useState('')
   const filteredGroups = useMemo(() => {
     const term = query.trim().toLowerCase()
-    if (!term) return faqGroups
-    return faqGroups
+    if (!term) return activeFaqGroups
+    return activeFaqGroups
       .map((group) => ({
         ...group,
         questions: group.questions.filter(({ question, answer }) =>
@@ -106,31 +110,31 @@ function FaqPage() {
         ),
       }))
       .filter((group) => group.questions.length > 0)
-  }, [query])
+  }, [activeFaqGroups, query])
   const resultCount = filteredGroups.reduce((total, group) => total + group.questions.length, 0)
 
   return (
     <ContentPage
-      eyebrow="Here to help"
-      title="Frequently asked questions"
-      intro="Everything you need to know about personalisation, orders, delivery and caring for your KnitnPrint pieces."
+      eyebrow={t('faq.eyebrow')}
+      title={t('faq.title')}
+      intro={t('faq.intro')}
       className="faq-page"
     >
-      <section className="faq-tools" aria-label="Find an answer">
-        <label htmlFor="faq-search">What can we help you find?</label>
+      <section className="faq-tools" aria-label={t('faq.findLabel')}>
+        <label htmlFor="faq-search">{t('faq.searchLabel')}</label>
         <input
           id="faq-search"
           type="search"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search questions and answers"
+          placeholder={t('faq.searchPlaceholder')}
         />
-        <p aria-live="polite">{query ? `${resultCount} ${resultCount === 1 ? 'answer' : 'answers'} found` : 'Browse by topic'}</p>
+        <p aria-live="polite">{query ? t('faq.found', { count: resultCount, label: t(resultCount === 1 ? 'faq.answer' : 'faq.answers') }) : t('faq.browse')}</p>
       </section>
 
       {!query && (
-        <nav className="faq-category-nav" aria-label="FAQ topics">
-          {faqGroups.map((group) => <a href={`#${group.id}`} key={group.id}>{group.title}</a>)}
+        <nav className="faq-category-nav" aria-label={t('faq.topics')}>
+          {activeFaqGroups.map((group) => <a href={`#${group.id}`} key={group.id}>{group.title}</a>)}
         </nav>
       )}
 
@@ -138,7 +142,7 @@ function FaqPage() {
         {filteredGroups.map((group) => (
           <section className="faq-group" id={group.id} key={group.id} aria-labelledby={`${group.id}-title`}>
             <div className="faq-group-heading">
-              <span>{String(faqGroups.findIndex((item) => item.id === group.id) + 1).padStart(2, '0')}</span>
+              <span>{String(activeFaqGroups.findIndex((item) => item.id === group.id) + 1).padStart(2, '0')}</span>
               <h2 id={`${group.id}-title`}>{group.title}</h2>
             </div>
             <div className="faq-accordion">
@@ -153,22 +157,22 @@ function FaqPage() {
         ))}
         {filteredGroups.length === 0 && (
           <div className="faq-empty">
-            <h2>No answers found</h2>
-            <p>Try a different search or contact us and we will be happy to help.</p>
-            <button type="button" className="text-link" onClick={() => setQuery('')}>Clear search</button>
+            <h2>{t('faq.emptyTitle')}</h2>
+            <p>{t('faq.emptyBody')}</p>
+            <button type="button" className="text-link" onClick={() => setQuery('')}>{t('faq.clear')}</button>
           </div>
         )}
       </div>
 
       <section className="faq-contact" aria-labelledby="faq-contact-title">
         <div>
-          <p className="eyebrow">Still need help?</p>
-          <h2 id="faq-contact-title">We’re here to help.</h2>
-          <p>If you could not find the answer you were looking for, send us a message and we will be happy to help.</p>
+          <p className="eyebrow">{t('faq.contactEyebrow')}</p>
+          <h2 id="faq-contact-title">{t('faq.contactTitle')}</h2>
+          <p>{t('faq.contactBody')}</p>
         </div>
         <div className="faq-contact-actions">
-          <a className="button button--primary" href="mailto:support@knitnprint.com">Email support</a>
-          <a className="text-link" href="/b2b">Request a B2B proposal</a>
+          <a className="button button--primary" href="mailto:support@knitnprint.com">{t('faq.email')}</a>
+          <a className="text-link" href="/b2b">{t('faq.b2b')}</a>
         </div>
       </section>
     </ContentPage>

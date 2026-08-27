@@ -2,58 +2,55 @@ import { createFileRoute } from '@tanstack/react-router'
 import { Send } from 'lucide-react'
 import { ContentPage } from '../components/content-page'
 import { ContextualFaqs } from '../components/contextual-faqs'
+import { useI18n } from '../i18n'
 
 export const Route = createFileRoute('/b2b')({
   head: () => ({
     meta: [
-      { title: 'B2B — KnitPrint' },
+      { title: 'B2B — KnitnPrint' },
       { name: 'description', content: 'Personalised clothing and corporate gifts for businesses, associations, teams and events.' },
     ],
   }),
   component: B2BPage,
 })
 
-const benefits = [
-  { title: 'Dedicated guidance', copy: 'A close point of contact to help you choose the right products, finishes and personalisation for your goals.' },
-  { title: 'Flexibility', copy: 'Solutions shaped around your quantities, timings and budget, whether for a team, an event or a complete kit.' },
-  { title: 'Precision and quality', copy: 'Careful production and quality checks ensure every piece represents your organisation with confidence.' },
-]
-
-const steps = [
-  { number: '01', title: 'Proposal request', copy: 'Tell us what you need, the intended quantity and the occasion or purpose behind the project.' },
-  { number: '02', title: 'Digital mock-up', copy: 'We prepare a visual proposal so you can see the placement, scale and overall result before production.' },
-  { number: '03', title: 'Approval and production', copy: 'Once every detail is approved, we carefully personalise each item and check the final finish.' },
-  { number: '04', title: 'Delivery', copy: 'Your order is securely packed and prepared to reach your business, association or event on time.' },
-]
-
 function B2BPage() {
+  const { t } = useI18n()
+  const heroLines = [t('b2b.hero1'), t('b2b.hero2'), t('b2b.hero3'), t('b2b.hero4')].filter(Boolean)
+  const benefits = [1, 2, 3].map((number) => ({
+    title: t(`b2b.benefit${number}Title` as 'b2b.benefit1Title'),
+    copy: t(`b2b.benefit${number}Body` as 'b2b.benefit1Body'),
+  }))
+  const steps = [1, 2, 3, 4].map((number) => ({
+    number: String(number).padStart(2, '0'),
+    title: t(`b2b.step${number}Title` as 'b2b.step1Title'),
+    copy: t(`b2b.step${number}Body` as 'b2b.step1Body'),
+  }))
   return (
     <ContentPage
       eyebrow="B2B*"
-      title="Tailored solutions for your business"
+      title={t('b2b.title')}
       intro={
         <>
-          <span>Turn your identity into a recognisable brand. At KnitnPrint, we personalise clothing and corporate gifts that strengthen team spirit, elevate events and make an impression on clients and partners.</span>
-          <span className="b2b-minimum-note">*Corporate projects are subject to minimum order quantities. Contact us for more information.</span>
+          <span>{t('b2b.intro')}</span>
+          <span className="b2b-minimum-note">{t('b2b.minimum')}</span>
         </>
       }
       className="b2b-page"
     >
       <section className="b2b-hero" aria-labelledby="b2b-hero-title">
         <div>
-          <p className="eyebrow">Made to represent you</p>
+          <p className="eyebrow">{t('b2b.heroEyebrow')}</p>
           <h2 id="b2b-hero-title">
-            <span>Your brand</span>
-            <span>in every</span>
-            <span>detail.</span>
+            {heroLines.map((line) => <span key={line}>{line}</span>)}
           </h2>
         </div>
       </section>
 
       <section className="b2b-section" aria-labelledby="b2b-benefits-title">
         <div className="b2b-section-heading">
-          <p className="eyebrow">A trusted partner</p>
-          <h2 id="b2b-benefits-title">Why KnitnPrint?</h2>
+          <p className="eyebrow">{t('b2b.partner')}</p>
+          <h2 id="b2b-benefits-title">{t('b2b.why')}</h2>
         </div>
         <div className="b2b-benefits">
           {benefits.map(({ title, copy }) => (
@@ -67,8 +64,8 @@ function B2BPage() {
 
       <section className="b2b-section b2b-process" aria-labelledby="b2b-process-title">
         <div className="b2b-section-heading">
-          <p className="eyebrow">From brief to delivery</p>
-          <h2 id="b2b-process-title">How it works</h2>
+          <p className="eyebrow">{t('b2b.fromBrief')}</p>
+          <h2 id="b2b-process-title">{t('b2b.how')}</h2>
         </div>
         <div className="b2b-steps">
           {steps.map(({ number, title, copy }) => (
@@ -83,58 +80,58 @@ function B2BPage() {
 
       <ContextualFaqs
         id="b2b-faqs"
-        eyebrow="Before your proposal"
-        title="B2B questions, answered"
+        eyebrow={t('b2b.faqEyebrow')}
+        title={t('b2b.faqTitle')}
         items={[
-          { question: 'Is there a minimum order quantity?', answer: 'Yes. Minimum quantities vary according to the product and personalisation technique, and will be confirmed with your proposal.' },
-          { question: 'Can you help us choose the right products?', answer: 'Yes. We can help you consider the purpose, quantity, budget and finish before recommending a suitable solution.' },
-          { question: 'Will we receive a digital mock-up?', answer: 'Yes. You can review the composition, scale and placement before approving production.' },
-          { question: 'Which logo formats do you accept?', answer: 'You can send AI, EPS, PDF, SVG, PNG or JPG files. Vector artwork usually provides the best production result.' },
-          { question: 'How long will our order take?', answer: 'Timing depends on quantity, product availability, personalisation and the date on which the digital mock-up is approved.' },
+          { question: t('b2b.faq1Q'), answer: t('b2b.faq1A') },
+          { question: t('b2b.faq2Q'), answer: t('b2b.faq2A') },
+          { question: t('b2b.faq3Q'), answer: t('b2b.faq3A') },
+          { question: t('b2b.faq4Q'), answer: t('b2b.faq4A') },
+          { question: t('b2b.faq5Q'), answer: t('b2b.faq5A') },
         ]}
         className="contextual-faqs--b2b"
       />
 
       <section className="b2b-contact" aria-labelledby="b2b-contact-title">
         <div className="b2b-contact-intro">
-          <p className="eyebrow">Let’s create together</p>
-          <h2 id="b2b-contact-title">Request a tailored proposal</h2>
-          <p>Share the essentials below and we will have the right information to understand your project and prepare the next steps.</p>
+          <p className="eyebrow">{t('b2b.createTogether')}</p>
+          <h2 id="b2b-contact-title">{t('b2b.requestTitle')}</h2>
+          <p>{t('b2b.requestIntro')}</p>
           <a href="mailto:support@knitnprint.com">support@knitnprint.com</a>
         </div>
 
         <form className="b2b-form">
           <div className="b2b-form-row">
-            <label>Company or organisation<input name="company" type="text" autoComplete="organization" required /></label>
-            <label>Contact name<input name="contactName" type="text" autoComplete="name" required /></label>
+            <label>{t('b2b.company')}<input name="company" type="text" autoComplete="organization" required /></label>
+            <label>{t('b2b.contactName')}<input name="contactName" type="text" autoComplete="name" required /></label>
           </div>
           <div className="b2b-form-row">
-            <label>Email<input name="email" type="email" autoComplete="email" required /></label>
-            <label>Phone number<input name="phone" type="tel" autoComplete="tel" required /></label>
+            <label>{t('b2b.email')}<input name="email" type="email" autoComplete="email" required /></label>
+            <label>{t('b2b.phone')}<input name="phone" type="tel" autoComplete="tel" required /></label>
           </div>
           <label>
-            Product type
+            {t('b2b.productType')}
             <select name="productType" defaultValue="" required>
-              <option value="" disabled>Select an option</option>
-              <option value="clothing">Clothing</option>
-              <option value="bottles">Bottles</option>
-              <option value="backpacks">Backpacks</option>
-              <option value="complete-kit">Complete kit</option>
-              <option value="other">Other</option>
+              <option value="" disabled>{t('b2b.select')}</option>
+              <option value="clothing">{t('b2b.clothing')}</option>
+              <option value="bottles">{t('b2b.bottles')}</option>
+              <option value="backpacks">{t('b2b.backpacks')}</option>
+              <option value="complete-kit">{t('b2b.completeKit')}</option>
+              <option value="other">{t('b2b.other')}</option>
             </select>
           </label>
-          <label>Estimated quantity<input name="quantity" type="number" min="1" inputMode="numeric" required /></label>
+          <label>{t('b2b.quantity')}<input name="quantity" type="number" min="1" inputMode="numeric" required /></label>
           <label className="b2b-file-field">
-            Brand logo or vector file
+            {t('b2b.file')}
             <input name="brandFile" type="file" accept=".ai,.eps,.pdf,.svg,.png,.jpg,.jpeg" required />
             <span>AI, EPS, PDF, SVG, PNG or JPG</span>
           </label>
           <label>
-            Project notes <span className="b2b-optional">Optional</span>
-            <textarea name="notes" rows={4} placeholder="Tell us about timings, colours, placement or any other useful details." />
+            {t('b2b.notes')} <span className="b2b-optional">{t('b2b.optional')}</span>
+            <textarea name="notes" rows={4} placeholder={t('b2b.notesPlaceholder')} />
           </label>
-          <button className="button button--primary" type="submit">Request a proposal <Send size={15} aria-hidden="true" /></button>
-          <p className="b2b-form-note">We will only use these details to respond to your enquiry.</p>
+          <button className="button button--primary" type="submit">{t('b2b.requestButton')} <Send size={15} aria-hidden="true" /></button>
+          <p className="b2b-form-note">{t('b2b.formNote')}</p>
         </form>
       </section>
     </ContentPage>

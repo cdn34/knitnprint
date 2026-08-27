@@ -5,6 +5,7 @@ import {
   ShoppingBag,
   Sparkles,
 } from 'lucide-react'
+import { localeLabels, supportedLocales, useI18n, type Locale } from '../i18n'
 
 function IconButton({
   label,
@@ -18,42 +19,56 @@ function IconButton({
 }
 
 export function StorefrontAnnouncement() {
+  const { t } = useI18n()
   return (
     <div className="announcement">
       <Sparkles size={14} aria-hidden="true" />
-      Small-batch objects, made slowly in Portugal
+      {t('shell.announcement')}
     </div>
   )
 }
 
 export function StorefrontHeader() {
+  const { locale, setLocale, t } = useI18n()
   return (
     <header className="site-header">
-      <a className="brand" href="/" aria-label="KnitPrint home">
+      <a className="brand" href="/" aria-label={t('shell.homeLabel')}>
         <img
           src="/knitprint-wordmark.webp"
-          alt="KnitPrint"
+          alt="KnitnPrint"
           width="750"
           height="195"
         />
       </a>
 
-      <nav className="desktop-nav" aria-label="Main navigation">
-        <a href="/products">Shop</a>
-        <a href="/collections">Collections</a>
-        <a href="/about">Our story</a>
+      <nav className="desktop-nav" aria-label={t('shell.mainNavigation')}>
+        <a href="/products">{t('shell.shop')}</a>
+        <a href="/collections">{t('shell.collections')}</a>
+        <a href="/about">{t('shell.ourStory')}</a>
         <a href="/b2b">B2B</a>
       </nav>
 
       <div className="header-actions">
-        <a className="icon-button" aria-label="Account" href="/account">
+        <label className="language-selector">
+          <span className="sr-only">{t('shell.language')}</span>
+          <select
+            aria-label={t('shell.language')}
+            value={locale}
+            onChange={(event) => setLocale(event.target.value as Locale)}
+          >
+            {supportedLocales.map((option) => (
+              <option value={option} key={option}>{localeLabels[option]}</option>
+            ))}
+          </select>
+        </label>
+        <a className="icon-button" aria-label={t('shell.account')} href="/account">
           <CircleUserRound />
         </a>
-        <a className="icon-button" aria-label="View cart" href="/cart">
+        <a className="icon-button" aria-label={t('shell.viewCart')} href="/cart">
           <ShoppingBag />
         </a>
         <span className="mobile-action">
-          <IconButton label="Open menu">
+          <IconButton label={t('shell.openMenu')}>
             <Menu />
           </IconButton>
         </span>
@@ -63,37 +78,38 @@ export function StorefrontHeader() {
 }
 
 export function StorefrontFooter() {
+  const { t } = useI18n()
   return (
     <footer className="site-footer">
       <div className="footer-links">
         <div>
-          <h2>About us</h2>
-          <a href="/about">About us</a>
-          <a href="/discounts">Discount code</a>
-          <a href="/personalized-gifts">Personalized gifts</a>
+          <h2>{t('shell.aboutUs')}</h2>
+          <a href="/about">{t('shell.aboutUs')}</a>
+          <a href="/discounts">{t('shell.discountCode')}</a>
+          <a href="/personalized-gifts">{t('shell.personalizedGifts')}</a>
         </div>
         <div>
-          <h2>Shop</h2>
-          <a href="/products">All pieces</a>
-          <a href="/collections">Collections</a>
+          <h2>{t('shell.shop')}</h2>
+          <a href="/products">{t('shell.allPieces')}</a>
+          <a href="/collections">{t('shell.collections')}</a>
         </div>
         <div>
-          <h2>Help</h2>
-          <a href="/terms">Terms and conditions</a>
-          <a href="/privacy">Privacy policy</a>
-          <a href="/cookies">Cookies policy</a>
-          <a href="/returns">Return policy</a>
-          <a href="/faq">FAQ's</a>
+          <h2>{t('shell.help')}</h2>
+          <a href="/terms">{t('shell.terms')}</a>
+          <a href="/privacy">{t('shell.privacy')}</a>
+          <a href="/cookies">{t('shell.cookies')}</a>
+          <a href="/returns">{t('shell.returns')}</a>
+          <a href="/faq">{t('shell.faqs')}</a>
           <a
             href="https://www.livroreclamacoes.pt/Inicio/"
             target="_blank"
             rel="noreferrer"
           >
-            Complaints book
+            {t('shell.complaintsBook')}
           </a>
         </div>
         <div>
-          <h2>Customer support and contacts</h2>
+          <h2>{t('shell.support')}</h2>
           <a href="mailto:support@knitnprint.com">support@knitnprint.com</a>
           <a
             className="footer-social-link"
@@ -117,8 +133,8 @@ export function StorefrontFooter() {
         </div>
       </div>
       <div className="footer-bottom">
-        <span>© 2026 KnitPrint</span>
-        <span>Made with care in Portugal</span>
+        <span>© 2026 KnitnPrint</span>
+        <span>{t('shell.madeInPortugal')}</span>
       </div>
     </footer>
   )
