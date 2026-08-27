@@ -70,6 +70,31 @@ details and owned delivery addresses, add an address, and sign out. Customer
 sessions and staff sessions are separate, and guest checkout data remains
 independent of registered accounts.
 
+For a production storefront build, set `API_BASE_URL` at runtime to the API's
+internal origin, including its scheme and port but no `/api` suffix. It is used
+only by server-side rendering; browser requests and media URLs remain
+same-origin under `/api`. Build and run the Node output directly with:
+
+```bash
+npm run build --workspace=@knitnprint/storefront
+API_BASE_URL=http://127.0.0.1:8080 \
+npm run start --workspace=@knitnprint/storefront
+```
+
+The production server listens on `HOST` and `PORT` (defaults in the container
+are `0.0.0.0:3000`) and exposes an unauthenticated `GET /health` endpoint. The
+same output is packaged as a non-root container with:
+
+```bash
+docker build -f apps/storefront/Dockerfile -t knitnprint-storefront .
+docker run --rm -p 3000:3000 \
+  -e API_BASE_URL=http://host.docker.internal:8080 \
+  knitnprint-storefront
+```
+
+Do not pass secrets as Docker build arguments. `API_BASE_URL` is runtime
+configuration and should resolve only from the storefront container or task.
+
 The storefront cart at http://localhost:3000/cart persists for 30 days. Its
 opaque browser token is stored only as a SHA-256 hash, every mutation requires
 an idempotency key, and prices, publication state, and available stock are

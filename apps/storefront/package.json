@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "vite dev --port 3000",
     "build": "vite build",
+    "start": "node .output/server/index.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -12,6 +13,7 @@
     "@tanstack/react-router": "latest",
     "@tanstack/react-start": "latest",
     "lucide-react": "latest",
+    "nitro": "npm:nitro-nightly@3.0.1-20260821-005124-e36e7a60",
     "react": "latest",
     "react-dom": "latest"
   },

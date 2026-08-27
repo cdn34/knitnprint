@@ -6,12 +6,12 @@ export type LegalSection = { number: string; title: string; blocks: LegalBlock[]
 
 export const termsPt: LegalSection[] = [
   { number: '02', title: 'Objeto e âmbito', blocks: [
-    { type: 'p', text: 'A KnitnPrint é uma loja online sediada em Portugal que comercializa produtos personalizados e outros artigos, procurando responder às necessidades dos seus clientes em diversas áreas. Os presentes Termos e Condições regulam o acesso, navegação e utilização do website [site], bem como as condições aplicáveis à compra de produtos através da loja online.' },
+    { type: 'p', text: 'A KnitNPrint é uma loja online sediada em Portugal que comercializa produtos personalizados e outros artigos, procurando responder às necessidades dos seus clientes em diversas áreas. Os presentes Termos e Condições regulam o acesso, navegação e utilização do website [site], bem como as condições aplicáveis à compra de produtos através da loja online.' },
     { type: 'p', text: 'Ao utilizar este website ou efetuar uma encomenda, aceita integralmente os presentes Termos e Condições, bem como a Política de Privacidade e a Política de Cookies.' },
     { type: 'p', text: 'Se não concordar com os termos aqui descritos, deverá abster-se de utilizar este website.' },
   ] },
   { number: '03', title: 'Alterações aos Termos e Condições', blocks: [
-    { type: 'p', text: 'A KnitnPrint reserva-se o direito de alterar os presentes Termos e Condições a qualquer momento. As alterações produzem efeitos após a sua publicação no website.' },
+    { type: 'p', text: 'A KnitNPrint reserva-se o direito de alterar os presentes Termos e Condições a qualquer momento. As alterações produzem efeitos após a sua publicação no website.' },
   ] },
   { number: '04', title: 'Utilização do website', blocks: [
     { type: 'p', text: 'Ao aceder e utilizar este website, compromete-se a:' },
@@ -54,7 +54,7 @@ export const termsPt: LegalSection[] = [
     { type: 'p', text: 'Os custos de devolução são suportados pelo cliente, salvo quando a devolução resulte de defeito do produto ou erro de entrega.' },
     { type: 'p', text: 'Os reembolsos serão processados no prazo máximo de 14 dias e, sempre que possível, através do mesmo método de pagamento utilizado na compra.' },
     { type: 'p', text: 'Os produtos personalizados ou produzidos no âmbito de encomendas de grande quantidade não podem ser devolvidos, salvo em caso de defeito, erro de produção ou desconformidade com a encomenda efetuada.' },
-    { type: 'p', text: 'A KnitnPrint reserva-se o direito de recusar devoluções que não cumpram os critérios aqui descritos.' },
+    { type: 'p', text: 'A KnitNPrint reserva-se o direito de recusar devoluções que não cumpram os critérios aqui descritos.' },
     { type: 'p', text: 'Se receber um produto danificado ou defeituoso, contacte-nos o mais rapidamente possível através de [email].' },
   ] },
   { number: '12', title: 'Garantia', blocks: [
@@ -64,7 +64,7 @@ export const termsPt: LegalSection[] = [
     { type: 'ul', items: ['Desgaste normal decorrente da utilização do produto;', 'Utilização indevida ou inadequada;', 'Alterações, modificações ou intervenções realizadas pelo cliente;', 'Variações naturais ou pequenas irregularidades inerentes ao processo de produção artesanal e às características da pele natural, como diferenças de tonalidade, textura ou grão, que não são consideradas defeitos de fabrico.'] },
   ] },
   { number: '13', title: 'Proteção de dados', blocks: [
-    { type: 'p', text: 'A KnitnPrint compromete-se a proteger a privacidade dos seus clientes e atua em conformidade com o Regulamento Geral sobre a Proteção de Dados (RGPD — UE 2016/679).' },
+    { type: 'p', text: 'A KnitNPrint compromete-se a proteger a privacidade dos seus clientes e atua em conformidade com o Regulamento Geral sobre a Proteção de Dados (RGPD — UE 2016/679).' },
     { type: 'p', text: 'Os dados recolhidos são utilizados exclusivamente para gerir encomendas e comunicar com os clientes.' },
     { type: 'p', text: 'Os clientes têm o direito de aceder, corrigir ou eliminar os seus dados a qualquer momento.' },
   ] },
@@ -79,11 +79,11 @@ export const termsPt: LegalSection[] = [
 
 export const termsEs: LegalSection[] = [
   { number: '02', title: 'Objeto y ámbito', blocks: [
-    { type: 'p', text: 'KnitnPrint es una tienda online con sede en Portugal que vende productos personalizados y otros artículos para responder a las necesidades de sus clientes en distintas áreas. Estos Términos y condiciones regulan el acceso, la navegación y el uso de [site], así como las condiciones aplicables a la compra de productos en la tienda online.' },
+    { type: 'p', text: 'KnitNPrint es una tienda online con sede en Portugal que vende productos personalizados y otros artículos para responder a las necesidades de sus clientes en distintas áreas. Estos Términos y condiciones regulan el acceso, la navegación y el uso de [site], así como las condiciones aplicables a la compra de productos en la tienda online.' },
     { type: 'p', text: 'Al utilizar este sitio web o realizar un pedido, aceptas íntegramente estos Términos y condiciones, así como la Política de privacidad y la Política de cookies.' },
     { type: 'p', text: 'Si no estás de acuerdo con estos términos, debes abstenerte de utilizar el sitio web.' },
   ] },
-  { number: '03', title: 'Cambios en los Términos y condiciones', blocks: [{ type: 'p', text: 'KnitnPrint se reserva el derecho a modificar estos Términos y condiciones en cualquier momento. Los cambios serán efectivos desde su publicación en el sitio web.' }] },
+  { number: '03', title: 'Cambios en los Términos y condiciones', blocks: [{ type: 'p', text: 'KnitNPrint se reserva el derecho a modificar estos Términos y condiciones en cualquier momento. Los cambios serán efectivos desde su publicación en el sitio web.' }] },
   { number: '04', title: 'Uso del sitio web', blocks: [
     { type: 'p', text: 'Al acceder y utilizar este sitio web, te comprometes a:' },
     { type: 'ul', items: ['Utilizar la plataforma únicamente para consultas y pedidos legítimos;', 'No realizar pedidos falsos, engañosos o fraudulentos;', 'Facilitar información completa, exacta y actualizada, incluida la dirección, el correo electrónico y cualquier otro dato de contacto necesario.'] },
@@ -123,7 +123,7 @@ export const termsEs: LegalSection[] = [
     { type: 'p', text: 'Los gastos de devolución corren a cargo del cliente, salvo cuando se deba a un defecto del producto o a un error de entrega.' },
     { type: 'p', text: 'Los reembolsos se procesarán en un plazo máximo de 14 días y, siempre que sea posible, mediante el mismo método de pago utilizado.' },
     { type: 'p', text: 'Los productos personalizados o fabricados como parte de pedidos de gran cantidad no se pueden devolver, salvo por defecto, error de producción o falta de conformidad con el pedido.' },
-    { type: 'p', text: 'KnitnPrint se reserva el derecho a rechazar devoluciones que no cumplan estos criterios.' },
+    { type: 'p', text: 'KnitNPrint se reserva el derecho a rechazar devoluciones que no cumplan estos criterios.' },
     { type: 'p', text: 'Si recibes un producto dañado o defectuoso, contacta con nosotros cuanto antes en [email].' },
   ] },
   { number: '12', title: 'Garantía', blocks: [
@@ -133,7 +133,7 @@ export const termsEs: LegalSection[] = [
     { type: 'ul', items: ['Desgaste normal por el uso;', 'Uso indebido o inadecuado;', 'Alteraciones, modificaciones o intervenciones realizadas por el cliente;', 'Variaciones naturales o pequeñas irregularidades propias de la producción artesanal y de las características de la piel natural, como diferencias de tono, textura o grano, que no se consideran defectos de fabricación.'] },
   ] },
   { number: '13', title: 'Protección de datos', blocks: [
-    { type: 'p', text: 'KnitnPrint protege la privacidad de sus clientes y actúa de conformidad con el Reglamento General de Protección de Datos (RGPD — UE 2016/679).' },
+    { type: 'p', text: 'KnitNPrint protege la privacidad de sus clientes y actúa de conformidad con el Reglamento General de Protección de Datos (RGPD — UE 2016/679).' },
     { type: 'p', text: 'Los datos recogidos se utilizan exclusivamente para gestionar pedidos y comunicarse con los clientes.' },
     { type: 'p', text: 'Los clientes pueden acceder, corregir o eliminar sus datos en cualquier momento.' },
   ] },

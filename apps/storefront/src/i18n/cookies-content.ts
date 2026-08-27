@@ -11,7 +11,7 @@ type CookieContent = {
 
 export const cookiesPt: CookieContent = {
   opening: [
-    'A presente Política de Cookies explica como a KnitnPrint utiliza cookies e tecnologias semelhantes no seu website, bem como as opções disponíveis aos utilizadores relativamente à sua utilização.',
+    'A presente Política de Cookies explica como a KnitNPrint utiliza cookies e tecnologias semelhantes no seu website, bem como as opções disponíveis aos utilizadores relativamente à sua utilização.',
     'Esta Política deve ser lida em conjunto com a nossa Política de Privacidade, onde encontrará mais informações sobre a forma como tratamos e protegemos os seus dados pessoais.',
   ],
   sections: [
@@ -88,17 +88,17 @@ export const cookiesPt: CookieContent = {
       { type: 'p', text: 'Sempre que sejam tratados dados pessoais, o tratamento será realizado de acordo com a legislação aplicável e a nossa Política de Privacidade.' },
     ] },
     { number: '12', title: 'Alterações à Política de Cookies', blocks: [
-      { type: 'p', text: 'A KnitnPrint pode atualizar esta Política de Cookies sempre que necessário, incluindo em resultado de alterações legislativas, tecnológicas ou dos serviços utilizados no website.' },
+      { type: 'p', text: 'A KnitNPrint pode atualizar esta Política de Cookies sempre que necessário, incluindo em resultado de alterações legislativas, tecnológicas ou dos serviços utilizados no website.' },
       { type: 'p', text: 'Recomendamos a consulta periódica desta página.' },
       { type: 'p', text: 'A data da atualização mais recente será indicada no início do documento.' },
     ] },
     { number: '13', title: 'Contactos', blocks: [
-      { type: 'p', text: 'Para qualquer questão sobre esta Política de Cookies ou a proteção dos seus dados pessoais, contacte a KnitnPrint através de [email].' },
+      { type: 'p', text: 'Para qualquer questão sobre esta Política de Cookies ou a proteção dos seus dados pessoais, contacte a KnitNPrint através de [email].' },
     ] },
   ],
   faqs: [
     { question: 'O que são cookies?', answer: 'São pequenos ficheiros guardados pelo website no navegador ou dispositivo para suportar funcionalidades, recordar preferências e compreender a utilização do website.' },
-    { question: 'Que cookies utiliza a KnitnPrint?', answer: 'O website pode utilizar cookies necessários, de preferências, análise e publicidade, conforme descrito nesta Política de Cookies.' },
+    { question: 'Que cookies utiliza a KnitNPrint?', answer: 'O website pode utilizar cookies necessários, de preferências, análise e publicidade, conforme descrito nesta Política de Cookies.' },
     { question: 'Posso recusar cookies opcionais?', answer: 'Sim. Quando existir um painel de consentimento, os cookies opcionais devem permanecer inativos até fazer uma escolha válida.' },
     { question: 'Como posso alterar as preferências?', answer: 'Utilize a opção Gerir Cookies, quando disponível, ou reveja os controlos de privacidade e cookies do seu navegador.' },
     { question: 'O website funciona se recusar cookies?', answer: 'Os cookies necessários suportam funções essenciais. Recusar cookies opcionais não deverá impedir essas funções, embora algumas funcionalidades adicionais possam ser afetadas.' },
@@ -107,7 +107,7 @@ export const cookiesPt: CookieContent = {
 
 export const cookiesEs: CookieContent = {
   opening: [
-    'Esta Política de cookies explica cómo KnitnPrint utiliza cookies y tecnologías similares en su sitio web, así como las opciones disponibles para los usuarios.',
+    'Esta Política de cookies explica cómo KnitNPrint utiliza cookies y tecnologías similares en su sitio web, así como las opciones disponibles para los usuarios.',
     'Esta Política debe leerse junto con nuestra Política de privacidad, donde encontrarás más información sobre cómo tratamos y protegemos tus datos personales.',
   ],
   sections: [
@@ -184,17 +184,17 @@ export const cookiesEs: CookieContent = {
       { type: 'p', text: 'Cuando se traten datos personales, se hará conforme a la legislación aplicable y a nuestra Política de privacidad.' },
     ] },
     { number: '12', title: 'Cambios en la Política de cookies', blocks: [
-      { type: 'p', text: 'KnitnPrint puede actualizar esta Política cuando sea necesario por cambios legales, tecnológicos o en los servicios utilizados.' },
+      { type: 'p', text: 'KnitNPrint puede actualizar esta Política cuando sea necesario por cambios legales, tecnológicos o en los servicios utilizados.' },
       { type: 'p', text: 'Recomendamos consultar esta página periódicamente.' },
       { type: 'p', text: 'La fecha de la última actualización se mostrará al principio del documento.' },
     ] },
     { number: '13', title: 'Contacto', blocks: [
-      { type: 'p', text: 'Para preguntas sobre esta Política de cookies o la protección de tus datos personales, contacta con KnitnPrint en [email].' },
+      { type: 'p', text: 'Para preguntas sobre esta Política de cookies o la protección de tus datos personales, contacta con KnitNPrint en [email].' },
     ] },
   ],
   faqs: [
     { question: '¿Qué son las cookies?', answer: 'Son pequeños archivos guardados por un sitio web en el navegador o dispositivo para permitir funciones, recordar preferencias y comprender su uso.' },
-    { question: '¿Qué cookies utiliza KnitnPrint?', answer: 'El sitio puede utilizar cookies necesarias, de preferencias, análisis y publicidad, como se describe en esta Política.' },
+    { question: '¿Qué cookies utiliza KnitNPrint?', answer: 'El sitio puede utilizar cookies necesarias, de preferencias, análisis y publicidad, como se describe en esta Política.' },
     { question: '¿Puedo rechazar las cookies opcionales?', answer: 'Sí. Cuando exista un panel de consentimiento, las cookies opcionales deben permanecer inactivas hasta que hagas una elección válida.' },
     { question: '¿Cómo puedo cambiar mis preferencias?', answer: 'Utiliza la opción Gestionar cookies cuando esté disponible o revisa los controles de privacidad y cookies del navegador.' },
     { question: '¿Funcionará el sitio si rechazo cookies?', answer: 'Las cookies necesarias permiten funciones esenciales. Rechazar las opcionales no debería impedirlas, aunque algunas funciones adicionales podrían verse afectadas.' },

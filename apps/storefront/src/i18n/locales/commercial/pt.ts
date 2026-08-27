@@ -1,6 +1,6 @@
 export const commercialPt = {
   'b2b.title': 'Soluções à medida da sua empresa',
-  'b2b.intro': 'Faça da sua identidade uma imagem de marca. Na KnitnPrint personalizamos vestuário e brindes corporativos que reforçam o espírito de equipa, valorizam eventos e marcam a diferença junto de clientes e parceiros.',
+  'b2b.intro': 'Faça da sua identidade uma imagem de marca. Na KnitNPrint personalizamos vestuário e brindes corporativos que reforçam o espírito de equipa, valorizam eventos e marcam a diferença junto de clientes e parceiros.',
   'b2b.minimum': '*Projetos corporativos sujeitos a quantidades mínimas. Contacta-nos para mais informações.',
   'b2b.heroEyebrow': 'Criado para representar a sua marca',
   'b2b.hero1': 'A sua',
@@ -8,7 +8,7 @@ export const commercialPt = {
   'b2b.hero3': 'em cada',
   'b2b.hero4': 'detalhe.',
   'b2b.partner': 'Um parceiro de confiança',
-  'b2b.why': 'Porquê a KnitnPrint?',
+  'b2b.why': 'Porquê a KnitNPrint?',
   'b2b.benefit1Title': 'Aconselhamento dedicado',
   'b2b.benefit1Body': 'Um contacto próximo para ajudar a escolher os produtos, acabamentos e personalização mais adequados aos seus objetivos.',
   'b2b.benefit2Title': 'Flexibilidade',

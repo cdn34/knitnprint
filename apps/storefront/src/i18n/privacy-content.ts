@@ -8,7 +8,7 @@ type PrivacyContent = {
 
 export const privacyPt: PrivacyContent = {
   opening: [
-    'A presente Política de Privacidade descreve como a KnitnPrint, responsável pelo website [site], recolhe, utiliza e protege os dados pessoais dos utilizadores quando visitam o website ou efetuam compras através da loja online.',
+    'A presente Política de Privacidade descreve como a KnitNPrint, responsável pelo website [site], recolhe, utiliza e protege os dados pessoais dos utilizadores quando visitam o website ou efetuam compras através da loja online.',
     'Ao utilizar este website, aceita as práticas descritas na presente Política de Privacidade.',
   ],
   sections: [
@@ -68,7 +68,7 @@ export const privacyPt: PrivacyContent = {
 
 export const privacyEs: PrivacyContent = {
   opening: [
-    'Esta Política de privacidad describe cómo KnitnPrint, responsable de [site], recoge, utiliza y protege los datos personales de los usuarios cuando visitan el sitio web o compran en la tienda online.',
+    'Esta Política de privacidad describe cómo KnitNPrint, responsable de [site], recoge, utiliza y protege los datos personales de los usuarios cuando visitan el sitio web o compran en la tienda online.',
     'Al utilizar este sitio web, aceptas las prácticas descritas en esta Política de privacidad.',
   ],
   sections: [
