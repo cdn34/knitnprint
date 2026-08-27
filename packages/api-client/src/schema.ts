@@ -207,6 +207,7 @@ export interface CreateStaffRequest {
 }
 
 export interface CreateVariantRequest {
+  "available_quantity"?: number
   "currency": string
   "option_values"?: unknown
   "price_minor": number
@@ -812,6 +813,17 @@ export interface UpdateCommercialSettingsRequest {
   "support_email": string
   "tax_enabled": boolean
   "tax_rules": Array<TaxRuleInput>
+}
+
+export interface UpdateProductRequest {
+  "available_quantity": number
+  "currency": string
+  "description"?: string
+  "price_minor": number
+  "search_keywords"?: string
+  "sku": string
+  "slug": string
+  "title": string
 }
 
 export interface Variant {

@@ -111,7 +111,9 @@ pub fn app(state: AppState) -> Router {
         )
         .route(
             "/api/admin/products/{product_id}",
-            get(catalog::admin_detail),
+            get(catalog::admin_detail)
+                .put(catalog::update)
+                .delete(catalog::delete),
         )
         .route(
             "/api/admin/products/{product_id}/status",

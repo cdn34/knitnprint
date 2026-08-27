@@ -18,6 +18,7 @@ import {
   Eye,
   ImageUp,
   Archive,
+  ArchiveRestore,
   BadgePercent,
   CircleCheck,
   Boxes,
@@ -1688,6 +1689,35 @@ function CatalogManagement({
   const [search, setSearch] = useState('')
   const [preview, setPreview] = useState<Product | null>(null)
   const [imagePreviews, setImagePreviews] = useState<Record<string, string>>({})
+  const [productTitle, setProductTitle] = useState('')
+  const [productSlug, setProductSlug] = useState('')
+  const [productSlugEdited, setProductSlugEdited] = useState(false)
+  const [productDescription, setProductDescription] = useState('')
+  const [productKeywords, setProductKeywords] = useState('')
+  const [productSku, setProductSku] = useState('')
+  const [productPrice, setProductPrice] = useState('')
+  const [productQuantity, setProductQuantity] = useState('0')
+  const editorDirty = useMemo(() => {
+    if (!preview) {
+      return Boolean(productTitle || productSlug || productDescription || productKeywords || productSku || productPrice || productQuantity !== '0')
+    }
+    const base = preview.variants[0]
+    return productTitle !== preview.title
+      || productSlug !== preview.slug
+      || productDescription !== preview.description
+      || productKeywords !== preview.search_keywords
+      || productSku !== (base?.sku ?? '')
+      || Number(productPrice) !== (base?.price_minor ?? 0) / 100
+      || Number(productQuantity) !== (base?.available_quantity ?? 0)
+  }, [preview, productTitle, productSlug, productDescription, productKeywords, productSku, productPrice, productQuantity])
+  useEffect(() => {
+    function warnBeforeLeaving(event: BeforeUnloadEvent) {
+      if (!editorDirty) return
+      event.preventDefault()
+    }
+    window.addEventListener('beforeunload', warnBeforeLeaving)
+    return () => window.removeEventListener('beforeunload', warnBeforeLeaving)
+  }, [editorDirty])
   const products = useQuery({
     queryKey: [...productsKey, search],
     queryFn: () => api.listAdminProducts({ q: search }),
@@ -1712,6 +1742,24 @@ function CatalogManagement({
       client.invalidateQueries({ queryKey: productsKey })
       client.invalidateQueries({ queryKey: inventoryKey })
       setPreview(product)
+    },
+  })
+  const updateProduct = useMutation({
+    mutationFn: ({ id, ...input }: { id: string; title: string; slug: string; description: string; search_keywords: string; sku: string; price_minor: number; currency: string; available_quantity: number }) =>
+      api.updateProduct(id, input),
+    onSuccess: (product) => {
+      client.invalidateQueries({ queryKey: productsKey })
+      client.invalidateQueries({ queryKey: inventoryKey })
+      setPreview(product)
+      loadProduct(product)
+    },
+  })
+  const deleteProduct = useMutation({
+    mutationFn: api.deleteProduct,
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: productsKey })
+      client.invalidateQueries({ queryKey: inventoryKey })
+      clearEditor()
     },
   })
   const changeStatus = useMutation({
@@ -1811,26 +1859,78 @@ function CatalogManagement({
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const formElement = event.currentTarget
-    const form = new FormData(formElement)
-    const price = Number(form.get('product-price'))
+    const price = Number(productPrice)
+    if (preview) {
+      updateProduct.mutate({
+        id: preview.id,
+        title: productTitle,
+        slug: productSlug,
+        description: productDescription,
+        search_keywords: productKeywords,
+        sku: productSku,
+        price_minor: Math.round(price * 100),
+        currency: 'EUR',
+        available_quantity: Number(productQuantity),
+      })
+      return
+    }
     createProduct.mutate(
       {
-        title: String(form.get('product-title') ?? ''),
-        slug: String(form.get('product-slug') ?? ''),
-        description: String(form.get('product-description') ?? ''),
-        search_keywords: String(form.get('product-keywords') ?? ''),
+        title: productTitle,
+        slug: productSlug,
+        description: productDescription,
+        search_keywords: productKeywords,
         variants: [
           {
-            title: String(form.get('variant-title') ?? ''),
-            sku: String(form.get('variant-sku') ?? ''),
+            title: 'Default',
+            sku: productSku,
             price_minor: Math.round(price * 100),
-            currency: String(form.get('variant-currency') ?? ''),
+            currency: 'EUR',
             option_values: {},
+            available_quantity: Number(productQuantity),
           },
         ],
       },
-      { onSuccess: () => formElement.reset() },
+      {
+        onSuccess: () => {
+          formElement.reset()
+          setProductTitle('')
+          setProductSlug('')
+          setProductSlugEdited(false)
+          setProductDescription('')
+          setProductKeywords('')
+          setProductSku('')
+          setProductPrice('')
+          setProductQuantity('0')
+          setPreview(null)
+        },
+      },
     )
+  }
+
+  function loadProduct(product: Product) {
+    const base = product.variants[0]
+    setPreview(product)
+    setProductTitle(product.title)
+    setProductSlug(product.slug)
+    setProductSlugEdited(true)
+    setProductDescription(product.description)
+    setProductKeywords(product.search_keywords)
+    setProductSku(base?.sku ?? '')
+    setProductPrice(base ? String(base.price_minor / 100) : '')
+    setProductQuantity(String(base?.available_quantity ?? 0))
+  }
+
+  function clearEditor() {
+    setPreview(null)
+    setProductTitle('')
+    setProductSlug('')
+    setProductSlugEdited(false)
+    setProductDescription('')
+    setProductKeywords('')
+    setProductSku('')
+    setProductPrice('')
+    setProductQuantity('0')
   }
 
   function submitVariant(event: FormEvent<HTMLFormElement>) {
@@ -1944,13 +2044,12 @@ function CatalogManagement({
                     product.variants[0]?.currency,
                   )}
                   {' · '}
-                  {product.variants.length} variant
-                  {product.variants.length === 1 ? '' : 's'}
+                  {product.variants[0]?.sku ?? 'No SKU'} · {product.variants[0]?.available_quantity ?? 0} in stock
                 </small>
               </div>
               <div className="product-actions">
-                <button type="button" onClick={() => setPreview(product)}>
-                  <Eye size={15} /> Preview
+                <button type="button" onClick={() => loadProduct(product)}>
+                  <Eye size={15} /> Edit
                 </button>
                 {canUpload && (
                   <label className="product-upload">
@@ -1991,6 +2090,20 @@ function CatalogManagement({
                     <Archive size={15} /> Archive
                   </button>
                 )}
+                {canWrite && product.status === 'archived' && (
+                  <button
+                    type="button"
+                    disabled={changeStatus.isPending}
+                    onClick={() =>
+                      changeStatus.mutate({
+                        id: product.id,
+                        status: 'active',
+                      })
+                    }
+                  >
+                    <ArchiveRestore size={15} /> Restore
+                  </button>
+                )}
               </div>
             </article>
           ))}
@@ -2005,38 +2118,56 @@ function CatalogManagement({
             <div className="panel-title">
               <Plus size={17} />
               <div>
-                <strong>New product draft</strong>
-                <span>Start with the product and its first variant.</span>
+                <strong>{preview ? 'Edit product' : 'New product draft'}</strong>
+                <span>Product details, price and available stock.</span>
               </div>
             </div>
             <label htmlFor="product-title">Product title</label>
-            <input id="product-title" name="product-title" required />
+            <input
+              id="product-title"
+              name="product-title"
+              value={productTitle}
+              onChange={(event) => {
+                const title = event.target.value
+                setProductTitle(title)
+                if (!productSlugEdited) setProductSlug(slugify(title))
+              }}
+              required
+            />
             <label htmlFor="product-slug">URL slug</label>
             <input
               id="product-slug"
               name="product-slug"
               pattern="[a-z0-9]+(?:-[a-z0-9]+)*"
               placeholder="woven-planter"
+              value={productSlug}
+              onChange={(event) => {
+                setProductSlug(event.target.value)
+                setProductSlugEdited(true)
+              }}
+              aria-describedby="product-slug-help"
               required
             />
+            <small className="field-help" id="product-slug-help">
+              Generated from the title. You can edit it before saving.
+            </small>
+            {productSlug && <small className="url-preview">/products/{productSlug}</small>}
             <label htmlFor="product-description">Description</label>
             <textarea
               id="product-description"
               name="product-description"
               rows={3}
+              maxLength={50000}
+              value={productDescription}
+              onChange={(event) => setProductDescription(event.target.value)}
             />
+            <small className="field-count">{productDescription.length.toLocaleString()} / 50,000</small>
             <label htmlFor="product-keywords">Search keywords</label>
-            <input id="product-keywords" name="product-keywords" />
-            <div className="variant-heading">First variant</div>
-            <label htmlFor="variant-title">Variant title</label>
-            <input
-              id="variant-title"
-              name="variant-title"
-              defaultValue="Default"
-              required
-            />
-            <label htmlFor="variant-sku">SKU</label>
-            <input id="variant-sku" name="variant-sku" required />
+            <input id="product-keywords" name="product-keywords" maxLength={2000} value={productKeywords} onChange={(event) => setProductKeywords(event.target.value)} />
+            <small className="field-help">Only administrators can see these keywords. They also support storefront search.</small>
+            <small className="field-count">{productKeywords.length.toLocaleString()} / 2,000</small>
+            <label htmlFor="product-sku">SKU</label>
+            <input id="product-sku" name="product-sku" maxLength={120} value={productSku} onChange={(event) => setProductSku(event.target.value)} required />
             <div className="price-fields">
               <div>
                 <label htmlFor="product-price">Price</label>
@@ -2046,32 +2177,28 @@ function CatalogManagement({
                   type="number"
                   min="0"
                   step="0.01"
+                  value={productPrice}
+                  onChange={(event) => setProductPrice(event.target.value)}
                   required
                 />
               </div>
               <div>
-                <label htmlFor="variant-currency">Currency</label>
-                <select
-                  id="variant-currency"
-                  name="variant-currency"
-                  defaultValue="EUR"
-                >
-                  <option value="EUR">EUR</option>
-                  <option value="GBP">GBP</option>
-                  <option value="USD">USD</option>
-                </select>
+                <label htmlFor="product-quantity">Stock</label>
+                <input id="product-quantity" name="product-quantity" type="number" min="0" step="1" value={productQuantity} onChange={(event) => setProductQuantity(event.target.value)} required />
               </div>
             </div>
-            {createProduct.isError && (
+            {(createProduct.isError || updateProduct.isError || deleteProduct.isError) && (
               <p className="panel-error" role="alert">
-                {createProduct.error instanceof ApiError
-                  ? createProduct.error.message
-                  : 'The draft could not be created.'}
+                {(createProduct.error ?? updateProduct.error ?? deleteProduct.error)?.message ?? 'The product could not be saved.'}
               </p>
             )}
-            <button className="primary-button" disabled={createProduct.isPending}>
-              {createProduct.isPending ? 'Creating…' : 'Create draft'}
+            <button className="primary-button" disabled={createProduct.isPending || updateProduct.isPending}>
+              {createProduct.isPending || updateProduct.isPending ? 'Saving…' : preview ? 'Save product' : 'Create draft'}
             </button>
+            {preview && <button className="secondary-button" type="button" onClick={clearEditor}>Create another product</button>}
+            {preview && <button className="danger-button" type="button" disabled={deleteProduct.isPending} onClick={() => {
+              if (window.confirm(`Permanently delete ${preview.title}? Products with sales cannot be deleted.`)) deleteProduct.mutate(preview.id)
+            }}>Delete product</button>}
           </form>
         )}
       </div>
@@ -2080,7 +2207,7 @@ function CatalogManagement({
           <button
             type="button"
             aria-label="Close product preview"
-            onClick={() => setPreview(null)}
+            onClick={clearEditor}
           >
             ×
           </button>
@@ -2186,6 +2313,15 @@ function formatMoney(amount?: number, currency?: string) {
     style: 'currency',
     currency,
   }).format(amount / 100)
+}
+
+function slugify(value: string) {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
 }
 
 const staffKey = ['staff'] as const
