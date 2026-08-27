@@ -281,12 +281,15 @@ boundary exact under concurrent requests; short transactions serialize only
 the IP/global counter updates. Bucket identifiers are stored only as SHA-256
 hashes.
 
-By default client IP limits use the direct TCP peer. If a trusted ingress
-overwrites `X-Forwarded-For` and the API cannot be reached around that ingress,
-set `TRUST_PROXY_HEADERS=true` to use its first forwarded address. Never enable
-this when clients can supply or preserve that header themselves. An edge or
-ingress request limit is still recommended to reject abusive traffic before it
-consumes application or database resources.
+By default client IP limits use the direct TCP peer. If the API is reachable
+only through trusted ingress hops, set `TRUST_PROXY_HEADERS=true` and
+`TRUSTED_PROXY_HOPS` to their exact count (between 1 and 10). Resolution walks
+`X-Forwarded-For` from right to left, so one AWS ALB hop uses the rightmost
+address that the load balancer observed and appended; caller-supplied values to
+its left cannot spoof the rate-limit identity. Never enable this while clients
+can reach the API around the trusted ingress. An edge or ingress request limit
+is still recommended to reject abusive traffic before it consumes application
+or database resources.
 
 Run authentication cleanup from a scheduler (daily is appropriate for most
 installations):

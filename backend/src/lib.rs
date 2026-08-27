@@ -47,7 +47,7 @@ pub struct AppState {
     pub media_scanner: media_scanner::MediaScanner,
     pub email: email::EmailService,
     pub payments: payments::PaymentService,
-    pub trust_proxy_headers: bool,
+    pub trusted_proxy_hops: usize,
     pub secure_cookies: bool,
     pub manual_payments_enabled: bool,
     pub security: security::SecurityPolicy,

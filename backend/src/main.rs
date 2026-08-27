@@ -59,7 +59,7 @@ async fn main() {
             media_scanner,
             email,
             payments,
-            trust_proxy_headers: config.trust_proxy_headers,
+            trusted_proxy_hops: config.trusted_proxy_hops,
             secure_cookies: deployed,
             manual_payments_enabled: !deployed,
             security: knitnprint_api::security::SecurityPolicy {

@@ -9,6 +9,7 @@ pub struct Config {
     pub port: u16,
     pub database_url: Option<String>,
     pub trust_proxy_headers: bool,
+    pub trusted_proxy_hops: usize,
     pub web_origins: Vec<String>,
 }
 
@@ -53,7 +54,11 @@ pub enum ConfigError {
     #[error("TRUST_PROXY_HEADERS must be true or false")]
     InvalidTrustProxyHeaders,
     #[error(
-        "WEB_ORIGINS must be a comma-separated list of absolute HTTP(S) origins without paths; production origins must use HTTPS"
+        "TRUSTED_PROXY_HOPS must be an integer between 1 and 10 when TRUST_PROXY_HEADERS=true, and must be unset or 0 otherwise"
+    )]
+    InvalidTrustedProxyHops,
+    #[error(
+        "WEB_ORIGINS must be a comma-separated list of absolute HTTP(S) origins without paths; staging and production origins must use HTTPS"
     )]
     InvalidWebOrigins,
 }
@@ -66,6 +71,7 @@ impl Config {
             env::var("PORT").ok().as_deref(),
             env::var("DATABASE_URL").ok(),
             env::var("TRUST_PROXY_HEADERS").ok().as_deref(),
+            env::var("TRUSTED_PROXY_HOPS").ok().as_deref(),
             env::var("WEB_ORIGINS").ok().as_deref(),
         )
     }
@@ -76,6 +82,7 @@ impl Config {
         port: Option<&str>,
         database_url: Option<String>,
         trust_proxy_headers: Option<&str>,
+        trusted_proxy_hops: Option<&str>,
         web_origins: Option<&str>,
     ) -> Result<Self, ConfigError> {
         let environment = Environment::parse(environment)?;
@@ -96,6 +103,16 @@ impl Config {
             "false" => false,
             _ => return Err(ConfigError::InvalidTrustProxyHeaders),
         };
+        let trusted_proxy_hops = match (trust_proxy_headers, trusted_proxy_hops) {
+            (true, Some(value)) => value
+                .parse::<usize>()
+                .ok()
+                .filter(|hops| (1..=10).contains(hops))
+                .ok_or(ConfigError::InvalidTrustedProxyHops)?,
+            (true, None) => return Err(ConfigError::InvalidTrustedProxyHops),
+            (false, None | Some("0")) => 0,
+            (false, Some(_)) => return Err(ConfigError::InvalidTrustedProxyHops),
+        };
         let web_origins = parse_web_origins(environment, web_origins)?;
 
         Ok(Self {
@@ -104,6 +121,7 @@ impl Config {
             port,
             database_url,
             trust_proxy_headers,
+            trusted_proxy_hops,
             web_origins,
         })
     }
@@ -154,7 +172,7 @@ mod tests {
 
     #[test]
     fn development_defaults_are_safe_and_predictable() {
-        let config = Config::from_values(None, None, None, None, None, None).unwrap();
+        let config = Config::from_values(None, None, None, None, None, None, None).unwrap();
         assert_eq!(config.environment, Environment::Development);
         assert_eq!(config.host.to_string(), "0.0.0.0");
         assert_eq!(config.port, 8080);
@@ -163,29 +181,40 @@ mod tests {
 
     #[test]
     fn production_requires_a_database() {
-        let error =
-            Config::from_values(Some("production"), None, None, None, None, None).unwrap_err();
+        let error = Config::from_values(Some("production"), None, None, None, None, None, None)
+            .unwrap_err();
         assert_eq!(error, ConfigError::MissingDeploymentDatabase);
     }
 
     #[test]
     fn staging_requires_a_database() {
-        let error = Config::from_values(Some("staging"), None, None, None, None, None).unwrap_err();
+        let error =
+            Config::from_values(Some("staging"), None, None, None, None, None, None).unwrap_err();
         assert_eq!(error, ConfigError::MissingDeploymentDatabase);
     }
 
     #[test]
     fn invalid_ports_fail_early() {
-        let error = Config::from_values(None, None, Some("70000"), None, None, None).unwrap_err();
+        let error =
+            Config::from_values(None, None, Some("70000"), None, None, None, None).unwrap_err();
         assert_eq!(error, ConfigError::InvalidPort);
     }
 
     #[test]
     fn proxy_header_trust_is_explicit() {
-        let config = Config::from_values(None, None, None, None, Some("true"), None).unwrap();
+        let config =
+            Config::from_values(None, None, None, None, Some("true"), Some("1"), None).unwrap();
         assert!(config.trust_proxy_headers);
-        let error = Config::from_values(None, None, None, None, Some("yes"), None).unwrap_err();
+        assert_eq!(config.trusted_proxy_hops, 1);
+        let error =
+            Config::from_values(None, None, None, None, Some("yes"), None, None).unwrap_err();
         assert_eq!(error, ConfigError::InvalidTrustProxyHeaders);
+        let missing =
+            Config::from_values(None, None, None, None, Some("true"), None, None).unwrap_err();
+        assert_eq!(missing, ConfigError::InvalidTrustedProxyHops);
+        let unexpected =
+            Config::from_values(None, None, None, None, None, Some("1"), None).unwrap_err();
+        assert_eq!(unexpected, ConfigError::InvalidTrustedProxyHops);
     }
 
     #[test]
@@ -195,6 +224,7 @@ mod tests {
             None,
             None,
             Some("postgres://example".into()),
+            None,
             None,
             None,
         )
@@ -207,6 +237,7 @@ mod tests {
             None,
             Some("postgres://example".into()),
             None,
+            None,
             Some("http://shop.example.com"),
         )
         .unwrap_err();
@@ -217,6 +248,7 @@ mod tests {
             None,
             None,
             Some("postgres://example".into()),
+            None,
             None,
             Some("https://shop.example.com,https://admin.example.com"),
         )
@@ -233,6 +265,7 @@ mod tests {
             Some("postgres://example".into()),
             None,
             None,
+            None,
         )
         .unwrap_err();
         assert_eq!(missing, ConfigError::InvalidWebOrigins);
@@ -242,6 +275,7 @@ mod tests {
             None,
             None,
             Some("postgres://example".into()),
+            None,
             None,
             Some("http://shop.example.com"),
         )
@@ -253,6 +287,7 @@ mod tests {
             None,
             None,
             Some("postgres://example".into()),
+            None,
             None,
             Some("https://shop.example.com,https://admin.example.com"),
         )
