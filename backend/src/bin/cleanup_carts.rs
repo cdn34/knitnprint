@@ -30,10 +30,6 @@ async fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    if let Err(error) = sqlx::migrate!("../migrations").run(&pool).await {
-        eprintln!("failed to run migrations: {error}");
-        return ExitCode::FAILURE;
-    }
     match cleanup_expired(&pool, batch_size).await {
         Ok(removed) => {
             println!("removed {removed} expired carts");

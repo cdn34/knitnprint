@@ -1,6 +1,6 @@
 use std::{env, process::ExitCode};
 
-use knitnprint_api::media::MediaStorage;
+use knitnprint_api::{config::Environment, media::MediaStorage};
 use sqlx::postgres::PgPoolOptions;
 use uuid::Uuid;
 
@@ -25,16 +25,13 @@ async fn main() -> ExitCode {
 async fn cleanup() -> Result<(u64, u64), String> {
     let database_url = env::var("DATABASE_URL").map_err(|_| "DATABASE_URL is required")?;
     let max_age_hours = parse_max_age(env::var("MEDIA_PENDING_MAX_HOURS").ok())?;
+    let environment = Environment::from_env().map_err(|error| error.to_string())?;
     let pool = PgPoolOptions::new()
         .max_connections(3)
         .connect(&database_url)
         .await
         .map_err(|error| format!("database connection failed: {error}"))?;
-    sqlx::migrate!("../migrations")
-        .run(&pool)
-        .await
-        .map_err(|error| format!("database migration failed: {error}"))?;
-    let storage = MediaStorage::from_env(false)
+    let storage = MediaStorage::from_env(environment.is_deployed())
         .await?
         .ok_or("media storage is required")?;
 

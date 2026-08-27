@@ -29,11 +29,6 @@ async fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    if let Err(error) = sqlx::migrate!("../migrations").run(&pool).await {
-        eprintln!("failed to run migrations: {error}");
-        return ExitCode::FAILURE;
-    }
-
     let result = sqlx::query(
         r#"
         DELETE FROM staff_sessions

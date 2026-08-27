@@ -60,6 +60,11 @@ contains the operational binaries `migrate`, `create_owner`,
 Because the image uses `CMD` rather than a fixed entrypoint, an ECS task can
 select one by overriding its command with the absolute binary path. The
 development `seed` utility is intentionally excluded from the runtime image.
+Run `migrate` separately before any other one-off command. Cleanup and owner
+commands never apply migrations and are intended to work with restricted
+runtime/job database credentials. In staging and production, `cleanup_media`
+requires explicit `S3_REGION` and `S3_BUCKET` values and uses the standard AWS
+credential chain unless an explicit access-key pair is supplied.
 
 Local product images use the private `knitnprint-media` bucket in MinIO.
 `docker compose up -d` creates the bucket automatically. The API defaults to

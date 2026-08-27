@@ -35,10 +35,6 @@ async fn cleanup() -> Result<knitnprint_api::customer_retention::CleanupSummary,
         .connect(&database_url)
         .await
         .map_err(|error| format!("database connection failed: {error}"))?;
-    sqlx::migrate!("../migrations")
-        .run(&pool)
-        .await
-        .map_err(|error| format!("database migration failed: {error}"))?;
     cleanup_expired_customer_data(&pool, batch_size, session_retention_days)
         .await
         .map_err(|error| format!("customer cleanup transaction failed: {error}"))
