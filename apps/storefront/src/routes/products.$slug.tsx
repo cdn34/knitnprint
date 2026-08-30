@@ -92,7 +92,7 @@ function ProductPage() {
       <main className="product-page" id="main-content" tabIndex={-1}>
         <a className="text-link page-back-link" href="/#shop"><ArrowLeft size={17} /> {t('product.backToShop')}</a>
         <div className="product-gallery">
-          <div className="product-detail-art">
+          <div className={`product-detail-art${selectedMedia ? ' product-detail-art--photo' : ''}`}>
             {selectedMedia ? (
               <img
                 className="product-detail-photo"

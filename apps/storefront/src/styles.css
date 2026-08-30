@@ -1105,6 +1105,7 @@ html[lang='pt'] .home-section-title--categories h2 {
   border-radius: 0.8rem;
   background: #e9dfd1;
 }
+.product-detail-art.product-detail-art--photo { min-height: 0; }
 .product-gallery { min-width: 0; }
 .product-gallery-controls { position: absolute; right: 1rem; bottom: 1rem; left: 1rem; display: flex; align-items: center; justify-content: space-between; pointer-events: none; }
 .product-gallery-controls button { width: 42px; height: 42px; display: grid; place-items: center; border: 1px solid rgb(255 255 255 / .65); border-radius: 50%; color: #2c2825; background: rgb(255 255 255 / .88); box-shadow: 0 5px 20px rgb(50 42 36 / .16); cursor: pointer; pointer-events: auto; }
@@ -1121,10 +1122,8 @@ html[lang='pt'] .home-section-title--categories h2 {
 }
 .product-detail-photo {
   width: 100%;
-  height: 100%;
-  min-height: 620px;
-  object-fit: contain;
-  object-position: center;
+  height: auto;
+  min-height: 0;
 }
 .product-detail-copy h1 {
   margin: 0.35rem 0 0;
@@ -3587,9 +3586,6 @@ html[lang='pt'] .home-section-title--categories h2 {
     grid-template-columns: 1fr;
   }
   .product-detail-art {
-    min-height: 430px;
-  }
-  .product-detail-photo {
     min-height: 430px;
   }
   .product-detail-copy {
