@@ -1688,7 +1688,6 @@ function CatalogManagement({
   const client = useQueryClient()
   const [search, setSearch] = useState('')
   const [preview, setPreview] = useState<Product | null>(null)
-  const [imagePreviews, setImagePreviews] = useState<Record<string, string>>({})
   const [productTitle, setProductTitle] = useState('')
   const [productSlug, setProductSlug] = useState('')
   const [productSlugEdited, setProductSlugEdited] = useState(false)
@@ -1824,44 +1823,42 @@ function CatalogManagement({
   })
   const uploadImage = useMutation({
     mutationFn: async ({
-      altText,
-      file,
+      images,
       product,
     }: {
-      altText: string
-      file: File
+      images: Array<{ altText: string; file: File }>
       product: Product
     }) => {
-      const upload = await api.initiateMediaUpload({
-        filename: file.name,
-        content_type: file.type,
-        byte_size: file.size,
-      })
-      await api.uploadMediaObject(upload.upload_url, file, file.type)
-      await api.completeMediaUpload(upload.id, {
-        product_id: product.id,
-        alt_text: altText,
-      })
-      return { file, product }
+      for (const { altText, file } of images) {
+        const upload = await api.initiateMediaUpload({
+          filename: file.name,
+          content_type: file.type,
+          byte_size: file.size,
+        })
+        await api.uploadMediaObject(upload.upload_url, file, file.type)
+        await api.completeMediaUpload(upload.id, {
+          product_id: product.id,
+          alt_text: altText,
+        })
+      }
+      return api.adminProduct(product.id)
     },
-    onSuccess: ({ file, product }) => {
-      const previewUrl = URL.createObjectURL(file)
-      setImagePreviews((current) => ({
-        ...current,
-        [product.id]: previewUrl,
-      }))
-      setPreview(product)
+    onSuccess: (product) => {
+      client.invalidateQueries({ queryKey: productsKey })
+      loadProduct(product)
     },
   })
 
-  function selectImage(product: Product, file?: File) {
-    if (!file) return
-    const altText = window.prompt(
-      `Describe the image of ${product.title} for customers using assistive technology.`,
-    )
-    if (altText?.trim()) {
-      uploadImage.mutate({ altText: altText.trim(), file, product })
+  function selectImages(product: Product, files?: FileList | null) {
+    if (!files?.length) return
+    const images: Array<{ altText: string; file: File }> = []
+    for (const file of Array.from(files)) {
+      const altText = window.prompt(
+        `Describe ${file.name}, an image of ${product.title}, for customers using assistive technology.`,
+      )
+      if (altText?.trim()) images.push({ altText: altText.trim(), file })
     }
+    if (images.length > 0) uploadImage.mutate({ images, product })
   }
 
   function submit(event: FormEvent<HTMLFormElement>) {
@@ -2015,12 +2012,9 @@ function CatalogManagement({
           {products.data?.map((product) => (
             <article className="product-row" key={product.id}>
               <div className="product-thumbnail" aria-hidden="true">
-                {imagePreviews[product.id] ?? product.media[0]?.thumbnail_url ? (
+                {product.media[0]?.thumbnail_url ? (
                   <img
-                    src={
-                      imagePreviews[product.id] ??
-                      product.media[0]?.thumbnail_url
-                    }
+                    src={product.media[0]?.thumbnail_url}
                     alt=""
                   />
                 ) : (
@@ -2049,14 +2043,15 @@ function CatalogManagement({
                   <Eye size={15} /> Edit
                 </button>
                 {canUpload && (
-                  <label className="product-upload">
-                    <ImageUp size={15} /> Image
+                  <label className="product-upload" aria-label="Add product photos">
+                    <ImageUp size={15} /> Photos
                     <input
                       type="file"
+                      multiple
                       accept="image/jpeg,image/png,image/webp"
                       disabled={uploadImage.isPending}
                       onChange={(event) => {
-                        selectImage(product, event.currentTarget.files?.[0])
+                        selectImages(product, event.currentTarget.files)
                         event.currentTarget.value = ''
                       }}
                     />
@@ -2215,6 +2210,28 @@ function CatalogManagement({
             {preview && <button className="danger-button" type="button" disabled={deleteProduct.isPending} onClick={() => {
               if (window.confirm(`Permanently delete ${preview.title}? Products with sales cannot be deleted.`)) deleteProduct.mutate(preview.id)
             }}>Delete product</button>}
+            {preview && (
+              <div className="admin-product-photos">
+                <div><strong>Product photos</strong><span>{preview.media.length} uploaded</span></div>
+                {preview.media.length > 0 && (
+                  <div className="admin-product-photo-grid">
+                    {preview.media.map((media, index) => (
+                      <figure key={media.id}>
+                        <img src={media.thumbnail_url} alt={media.alt_text} />
+                        <figcaption>{index === 0 ? 'Main photo' : `Photo ${index + 1}`}</figcaption>
+                      </figure>
+                    ))}
+                  </div>
+                )}
+                <label className="product-upload admin-photo-upload" aria-label="Add product photos">
+                  <ImageUp size={15} /> {uploadImage.isPending ? 'Uploading…' : 'Add photos'}
+                  <input type="file" multiple accept="image/jpeg,image/png,image/webp" disabled={uploadImage.isPending} onChange={(event) => {
+                    selectImages(preview, event.currentTarget.files)
+                    event.currentTarget.value = ''
+                  }} />
+                </label>
+              </div>
+            )}
           </form>
         )}
       </div>
@@ -2227,10 +2244,10 @@ function CatalogManagement({
           >
             ×
           </button>
-          {imagePreviews[preview.id] ?? preview.media[0]?.detail_url ? (
+          {preview.media[0]?.detail_url ? (
             <img
               className="preview-art preview-image"
-              src={imagePreviews[preview.id] ?? preview.media[0]?.detail_url}
+              src={preview.media[0]?.detail_url}
               alt={preview.media[0]?.alt_text ?? ''}
             />
           ) : (

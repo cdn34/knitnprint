@@ -1,6 +1,8 @@
 import { createFileRoute, notFound } from '@tanstack/react-router'
 import {
   ArrowLeft,
+  ChevronLeft,
+  ChevronRight,
   CircleCheck,
   PackageCheck,
   PackageX,
@@ -52,6 +54,20 @@ function ProductPage() {
     'idle' | 'adding' | 'added' | 'error'
   >('idle')
   const [hydrated, setHydrated] = useState(false)
+  const [selectedMediaIndex, setSelectedMediaIndex] = useState(0)
+  const selectedMedia = product.media[selectedMediaIndex] ?? product.media[0]
+
+  function showPreviousPhoto() {
+    setSelectedMediaIndex((current) =>
+      current === 0 ? product.media.length - 1 : current - 1,
+    )
+  }
+
+  function showNextPhoto() {
+    setSelectedMediaIndex((current) =>
+      current === product.media.length - 1 ? 0 : current + 1,
+    )
+  }
 
   useEffect(() => setHydrated(true), [])
 
@@ -75,19 +91,44 @@ function ProductPage() {
       <StorefrontHeader />
       <main className="product-page" id="main-content" tabIndex={-1}>
         <a className="text-link page-back-link" href="/#shop"><ArrowLeft size={17} /> {t('product.backToShop')}</a>
-        <div className="product-detail-art">
-          {product.media[0] ? (
-            <img
-              className="product-detail-photo"
-              src={mediaUrl(product.media[0].detail_url)}
-              alt={product.media[0].alt_text}
-            />
-          ) : (
-            <span
-              className="product-form product-form--planter"
-              role="img"
-              aria-label={t('product.illustration', { name: product.title })}
-            />
+        <div className="product-gallery">
+          <div className="product-detail-art">
+            {selectedMedia ? (
+              <img
+                className="product-detail-photo"
+                src={mediaUrl(selectedMedia.detail_url)}
+                alt={selectedMedia.alt_text}
+              />
+            ) : (
+              <span
+                className="product-form product-form--planter"
+                role="img"
+                aria-label={t('product.illustration', { name: product.title })}
+              />
+            )}
+            {product.media.length > 1 && (
+              <div className="product-gallery-controls">
+                <button type="button" onClick={showPreviousPhoto} aria-label="Previous product photo"><ChevronLeft aria-hidden="true" /></button>
+                <span aria-live="polite">{selectedMediaIndex + 1} / {product.media.length}</span>
+                <button type="button" onClick={showNextPhoto} aria-label="Next product photo"><ChevronRight aria-hidden="true" /></button>
+              </div>
+            )}
+          </div>
+          {product.media.length > 1 && (
+            <div className="product-gallery-thumbnails" aria-label="Product photos">
+              {product.media.map((media, index) => (
+                <button
+                  type="button"
+                  key={media.id}
+                  className={index === selectedMediaIndex ? 'selected' : ''}
+                  aria-label={`Show product photo ${index + 1}`}
+                  aria-pressed={index === selectedMediaIndex}
+                  onClick={() => setSelectedMediaIndex(index)}
+                >
+                  <img src={mediaUrl(media.thumbnail_url)} alt="" />
+                </button>
+              ))}
+            </div>
           )}
         </div>
         <section className="product-detail-copy">
