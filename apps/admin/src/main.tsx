@@ -666,8 +666,9 @@ function OrderDetail({
       <section className="order-detail-section">
         <h4>Items</h4>
         {order.lines.map((line) => (
-          <div className="order-line" key={line.id}>
-            <span><strong>{line.product_title}</strong><small>{line.variant_title} · {line.sku} · Qty {line.quantity} · Shipped {line.fulfilled_quantity}</small></span>
+          <div className="order-line order-line--customizable" key={line.id}>
+            {line.customization_media_asset_id && <a href={`/api/admin/personalization/media/${line.customization_media_asset_id}/detail`} target="_blank" rel="noreferrer"><img className="order-customization-image" src={`/api/admin/personalization/media/${line.customization_media_asset_id}/thumbnail`} alt="Fotografia enviada pelo cliente" /></a>}
+            <span><strong>{line.product_title}</strong><small>{line.variant_title} · {line.sku} · Qty {line.quantity} · Shipped {line.fulfilled_quantity}</small>{Boolean(line.customization) && <small className="order-customization-summary">Personalização: {customizationLabel(line.customization)}</small>}</span>
             <b>{formatMoney(line.line_total_minor, line.currency)}</b>
           </div>
         ))}
@@ -785,6 +786,13 @@ function OrderDetail({
       </section>
     </aside>
   )
+}
+
+function customizationLabel(value: unknown) {
+  if (!value || typeof value !== 'object') return 'configuração guardada'
+  const text = (value as { text?: { content?: unknown }; photo?: unknown }).text?.content
+  const parts = [(value as { photo?: unknown }).photo ? 'fotografia' : '', typeof text === 'string' ? `texto “${text}”` : ''].filter(Boolean)
+  return parts.join(' + ') || 'configuração guardada'
 }
 
 const discountsKey = ['discounts'] as const
@@ -1697,6 +1705,21 @@ function CatalogManagement({
   const [productPrice, setProductPrice] = useState('')
   const [productQuantity, setProductQuantity] = useState('0')
   const [productCategoryIds, setProductCategoryIds] = useState<string[]>([])
+  const [personalizationMode, setPersonalizationMode] = useState<'none' | 'photo' | 'text' | 'photo_text'>('none')
+  const [printArea, setPrintArea] = useState({ x: 25, y: 25, width: 50, height: 50 })
+  const [textMaxCharacters, setTextMaxCharacters] = useState(35)
+  const [textMinSize, setTextMinSize] = useState(12)
+  const [textMaxSize, setTextMaxSize] = useState(72)
+  const [allowedFonts, setAllowedFonts] = useState('Arial')
+  const [allowedColors, setAllowedColors] = useState('#111111')
+  const personalization = {
+    mode: personalizationMode,
+    area_x: Math.round(printArea.x * 100), area_y: Math.round(printArea.y * 100),
+    area_width: Math.round(printArea.width * 100), area_height: Math.round(printArea.height * 100),
+    text_max_characters: textMaxCharacters, text_min_size: textMinSize, text_max_size: textMaxSize,
+    allowed_fonts: allowedFonts.split(',').map((value) => value.trim()).filter(Boolean),
+    allowed_colors: allowedColors.split(',').map((value) => value.trim()).filter(Boolean),
+  }
   const editorDirty = useMemo(() => {
     if (!preview) {
       return Boolean(productTitle || productSlug || productDescription || productKeywords || productSku || productPrice || productQuantity !== '0')
@@ -1750,7 +1773,7 @@ function CatalogManagement({
     },
   })
   const updateProduct = useMutation({
-    mutationFn: async ({ id, categoryIds, ...input }: { id: string; categoryIds: string[]; title: string; slug: string; description: string; search_keywords: string; sku: string; price_minor: number; currency: string; available_quantity: number }) => {
+    mutationFn: async ({ id, categoryIds, ...input }: Parameters<typeof api.updateProduct>[1] & { id: string; categoryIds: string[] }) => {
       const product = await api.updateProduct(id, input)
       return api.assignProductCategories(product.id, { category_ids: categoryIds })
     },
@@ -1876,6 +1899,7 @@ function CatalogManagement({
         price_minor: Math.round(price * 100),
         currency: 'EUR',
         available_quantity: Number(productQuantity),
+        personalization,
       })
       return
     }
@@ -1895,6 +1919,7 @@ function CatalogManagement({
             available_quantity: Number(productQuantity),
           },
         ],
+        personalization,
         categoryIds: productCategoryIds,
       },
     )
@@ -1912,6 +1937,14 @@ function CatalogManagement({
     setProductPrice(base ? String(base.price_minor / 100) : '')
     setProductQuantity(String(base?.available_quantity ?? 0))
     setProductCategoryIds(product.categories.map(({ id }) => id))
+    const config = product.personalization
+    setPersonalizationMode(config.mode as typeof personalizationMode)
+    setPrintArea({ x: config.area_x / 100, y: config.area_y / 100, width: config.area_width / 100, height: config.area_height / 100 })
+    setTextMaxCharacters(config.text_max_characters)
+    setTextMinSize(config.text_min_size)
+    setTextMaxSize(config.text_max_size)
+    setAllowedFonts((config.allowed_fonts as string[]).join(', '))
+    setAllowedColors((config.allowed_colors as string[]).join(', '))
   }
 
   function clearEditor() {
@@ -1925,6 +1958,13 @@ function CatalogManagement({
     setProductPrice('')
     setProductQuantity('0')
     setProductCategoryIds([])
+    setPersonalizationMode('none')
+    setPrintArea({ x: 25, y: 25, width: 50, height: 50 })
+    setTextMaxCharacters(35)
+    setTextMinSize(12)
+    setTextMaxSize(72)
+    setAllowedFonts('Arial')
+    setAllowedColors('#111111')
   }
 
   function submitVariant(event: FormEvent<HTMLFormElement>) {
@@ -2197,6 +2237,44 @@ function CatalogManagement({
                   <span><strong>{category.name}</strong><small>/{category.slug}</small></span>
                 </label>
               ))}
+            </fieldset>
+            <fieldset className="personalization-settings">
+              <legend>Personalização</legend>
+              <label htmlFor="personalization-mode">O cliente pode adicionar</label>
+              <select id="personalization-mode" value={personalizationMode} onChange={(event) => setPersonalizationMode(event.target.value as typeof personalizationMode)}>
+                <option value="none">Sem personalização</option>
+                <option value="photo">Só fotografia</option>
+                <option value="text">Só texto</option>
+                <option value="photo_text">Fotografia e texto</option>
+              </select>
+              {personalizationMode !== 'none' && (
+                <>
+                  <p className="field-help">Define a zona onde o cliente poderá criar. Os valores são percentagens da fotografia principal.</p>
+                  <div className="print-area-preview">
+                    {preview?.media[0] ? <img src={preview.media[0].detail_url} alt="" /> : <span>Adiciona uma fotografia principal para posicionar a zona.</span>}
+                    <i style={{ left: `${printArea.x}%`, top: `${printArea.y}%`, width: `${printArea.width}%`, height: `${printArea.height}%` }}>Zona personalizável</i>
+                  </div>
+                  <div className="print-area-fields">
+                    {(['x', 'y', 'width', 'height'] as const).map((field) => (
+                      <label key={field}>{field === 'x' ? 'Esquerda' : field === 'y' ? 'Topo' : field === 'width' ? 'Largura' : 'Altura'} (%)
+                        <input type="number" min="0" max="100" step="1" value={printArea[field]} onChange={(event) => setPrintArea((current) => ({ ...current, [field]: Number(event.target.value) }))} />
+                      </label>
+                    ))}
+                  </div>
+                </>
+              )}
+              {(personalizationMode === 'text' || personalizationMode === 'photo_text') && (
+                <div className="text-personalization-settings">
+                  <label>Limite de caracteres<input type="number" min="1" max="500" value={textMaxCharacters} onChange={(event) => setTextMaxCharacters(Number(event.target.value))} /></label>
+                  <div className="print-area-fields">
+                    <label>Tamanho mínimo<input type="number" min="8" max="200" value={textMinSize} onChange={(event) => setTextMinSize(Number(event.target.value))} /></label>
+                    <label>Tamanho máximo<input type="number" min={textMinSize} max="300" value={textMaxSize} onChange={(event) => setTextMaxSize(Number(event.target.value))} /></label>
+                  </div>
+                  <label>Tipos de letra permitidos<input value={allowedFonts} onChange={(event) => setAllowedFonts(event.target.value)} placeholder="Arial, Georgia" /></label>
+                  <small className="field-help">Separa várias opções com vírgulas.</small>
+                  <label>Cores permitidas<input value={allowedColors} onChange={(event) => setAllowedColors(event.target.value)} placeholder="#111111, #ffffff" /></label>
+                </div>
+              )}
             </fieldset>
             {(createProduct.isError || updateProduct.isError || deleteProduct.isError) && (
               <p className="panel-error" role="alert">

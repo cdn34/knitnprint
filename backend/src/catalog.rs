@@ -45,6 +45,38 @@ pub struct Product {
     pub variants: Vec<Variant>,
     pub media: Vec<ProductMedia>,
     pub categories: Vec<Category>,
+    pub personalization: PersonalizationConfig,
+}
+
+#[derive(Clone, Serialize, Deserialize, ToSchema, FromRow)]
+pub struct PersonalizationConfig {
+    pub mode: String,
+    pub area_x: i32,
+    pub area_y: i32,
+    pub area_width: i32,
+    pub area_height: i32,
+    pub text_max_characters: i32,
+    pub text_min_size: i32,
+    pub text_max_size: i32,
+    pub allowed_fonts: Value,
+    pub allowed_colors: Value,
+}
+
+impl Default for PersonalizationConfig {
+    fn default() -> Self {
+        Self {
+            mode: "none".into(),
+            area_x: 2500,
+            area_y: 2500,
+            area_width: 5000,
+            area_height: 5000,
+            text_max_characters: 35,
+            text_min_size: 12,
+            text_max_size: 72,
+            allowed_fonts: serde_json::json!(["Arial"]),
+            allowed_colors: serde_json::json!(["#111111"]),
+        }
+    }
 }
 
 #[derive(Clone, Serialize, ToSchema, FromRow)]
@@ -85,6 +117,8 @@ pub struct CreateProductRequest {
     #[serde(default)]
     pub search_keywords: String,
     pub variants: Vec<CreateVariantRequest>,
+    #[serde(default)]
+    pub personalization: PersonalizationConfig,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -111,6 +145,8 @@ pub struct UpdateProductRequest {
     pub price_minor: i64,
     pub currency: String,
     pub available_quantity: i64,
+    #[serde(default)]
+    pub personalization: PersonalizationConfig,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -291,6 +327,12 @@ pub async fn create(
             }
         }
     }
+    if upsert_personalization(&mut transaction, product_id, &input.personalization)
+        .await
+        .is_err()
+    {
+        return unavailable();
+    }
     if audit(
         &mut transaction,
         actor.id,
@@ -340,6 +382,7 @@ pub async fn update(
         || input.description.len() > 50_000
         || input.search_keywords.len() > 2_000
         || !valid_variant(&variant)
+        || !valid_personalization(&input.personalization)
     {
         return invalid_input();
     }
@@ -367,6 +410,12 @@ pub async fn update(
         if sqlx::query("UPDATE inventory_items SET available_quantity=$2, updated_at=now() WHERE variant_id=$1").bind(variant_id).bind(input.available_quantity).execute(&mut *tx).await.is_err()
             || sqlx::query("INSERT INTO inventory_movements (id, variant_id, actor_staff_user_id, movement_type, quantity_delta, resulting_available_quantity, reason) VALUES ($1,$2,$3,'adjustment',$4,$5,'Product editor stock correction')")
                 .bind(Uuid::now_v7()).bind(variant_id).bind(actor.id).bind(delta).bind(input.available_quantity).execute(&mut *tx).await.is_err() { return unavailable(); }
+    }
+    if upsert_personalization(&mut tx, product_id, &input.personalization)
+        .await
+        .is_err()
+    {
+        return unavailable();
     }
     if audit(&mut tx, actor.id, "product.update", product_id, None)
         .await
@@ -1014,6 +1063,18 @@ async fn hydrate_product(pool: &PgPool, row: ProductRow) -> Result<Product, sqlx
     .bind(row.id)
     .fetch_all(pool)
     .await?;
+    let personalization = sqlx::query_as::<_, PersonalizationConfig>(
+        r#"
+        SELECT mode, area_x, area_y, area_width, area_height,
+               text_max_characters, text_min_size, text_max_size,
+               allowed_fonts, allowed_colors
+        FROM product_personalization WHERE product_id = $1
+        "#,
+    )
+    .bind(row.id)
+    .fetch_optional(pool)
+    .await?
+    .unwrap_or_default();
     Ok(Product {
         id: row.id,
         title: row.title,
@@ -1024,6 +1085,7 @@ async fn hydrate_product(pool: &PgPool, row: ProductRow) -> Result<Product, sqlx
         variants,
         media,
         categories,
+        personalization,
     })
 }
 
@@ -1046,6 +1108,71 @@ fn valid_product(input: &CreateProductRequest) -> bool {
         && input.search_keywords.len() <= 2_000
         && currency_and_variants_valid
         && unique_skus
+        && valid_personalization(&input.personalization)
+}
+
+fn valid_personalization(config: &PersonalizationConfig) -> bool {
+    matches!(
+        config.mode.as_str(),
+        "none" | "photo" | "text" | "photo_text"
+    ) && config.area_x >= 0
+        && config.area_y >= 0
+        && config.area_width >= 100
+        && config.area_height >= 100
+        && config.area_x + config.area_width <= 10_000
+        && config.area_y + config.area_height <= 10_000
+        && (1..=500).contains(&config.text_max_characters)
+        && (8..=200).contains(&config.text_min_size)
+        && (config.text_min_size..=300).contains(&config.text_max_size)
+        && valid_string_options(&config.allowed_fonts, 20)
+        && valid_string_options(&config.allowed_colors, 30)
+}
+
+fn valid_string_options(value: &Value, maximum: usize) -> bool {
+    value.as_array().is_some_and(|items| {
+        !items.is_empty()
+            && items.len() <= maximum
+            && items.iter().all(|item| {
+                item.as_str()
+                    .is_some_and(|text| !text.trim().is_empty() && text.len() <= 100)
+            })
+    })
+}
+
+async fn upsert_personalization(
+    tx: &mut Transaction<'_, Postgres>,
+    product_id: Uuid,
+    config: &PersonalizationConfig,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r#"
+        INSERT INTO product_personalization (
+            product_id, mode, area_x, area_y, area_width, area_height,
+            text_max_characters, text_min_size, text_max_size, allowed_fonts, allowed_colors
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+        ON CONFLICT (product_id) DO UPDATE SET
+            mode=EXCLUDED.mode, area_x=EXCLUDED.area_x, area_y=EXCLUDED.area_y,
+            area_width=EXCLUDED.area_width, area_height=EXCLUDED.area_height,
+            text_max_characters=EXCLUDED.text_max_characters,
+            text_min_size=EXCLUDED.text_min_size, text_max_size=EXCLUDED.text_max_size,
+            allowed_fonts=EXCLUDED.allowed_fonts, allowed_colors=EXCLUDED.allowed_colors,
+            updated_at=now()
+        "#,
+    )
+    .bind(product_id)
+    .bind(&config.mode)
+    .bind(config.area_x)
+    .bind(config.area_y)
+    .bind(config.area_width)
+    .bind(config.area_height)
+    .bind(config.text_max_characters)
+    .bind(config.text_min_size)
+    .bind(config.text_max_size)
+    .bind(&config.allowed_fonts)
+    .bind(&config.allowed_colors)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
 }
 
 fn valid_variant(variant: &CreateVariantRequest) -> bool {

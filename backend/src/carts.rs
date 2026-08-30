@@ -6,6 +6,7 @@ use axum::{
 };
 use axum_extra::extract::cookie::{Cookie, CookieJar, SameSite};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use sha2::{Digest, Sha256};
 use sqlx::{FromRow, PgPool, Postgres, Transaction};
 use time::Duration;
@@ -31,6 +32,10 @@ const CART_DAYS: i64 = 30;
 pub struct AddCartItemRequest {
     pub variant_id: Uuid,
     pub quantity: i32,
+    #[serde(default)]
+    pub customization: Option<Value>,
+    #[serde(default)]
+    pub customization_media_asset_id: Option<Uuid>,
 }
 
 #[derive(Deserialize, Serialize, ToSchema)]
@@ -84,6 +89,8 @@ pub struct CartItem {
     pub available_quantity: i64,
     pub available: bool,
     pub image_url: Option<String>,
+    pub customization: Option<Value>,
+    pub customization_media_asset_id: Option<Uuid>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -139,6 +146,8 @@ struct CartLineRow {
     currency: String,
     available_quantity: i64,
     image_url: Option<String>,
+    customization: Option<Value>,
+    customization_media_asset_id: Option<Uuid>,
 }
 
 #[derive(FromRow)]
@@ -164,6 +173,12 @@ struct VariantForCart {
     price_minor: i64,
     currency: String,
     available_quantity: i64,
+    personalization_mode: String,
+    text_max_characters: i32,
+    text_min_size: i32,
+    text_max_size: i32,
+    allowed_fonts: Value,
+    allowed_colors: Value,
 }
 
 #[derive(FromRow)]
@@ -186,7 +201,7 @@ enum MutationClaim {
 
 pub async fn cleanup_expired(pool: &PgPool, batch_size: i64) -> Result<u64, sqlx::Error> {
     let result = sqlx::query(
-        r#"
+        r##"
         WITH claimed AS (
             SELECT id FROM carts
             WHERE status = 'expired' OR (status = 'active' AND expires_at <= now())
@@ -195,7 +210,7 @@ pub async fn cleanup_expired(pool: &PgPool, batch_size: i64) -> Result<u64, sqlx
             LIMIT $1
         )
         DELETE FROM carts cart USING claimed WHERE cart.id = claimed.id
-        "#,
+        "##,
     )
     .bind(batch_size)
     .execute(pool)
@@ -243,7 +258,7 @@ pub async fn add_item(
     headers: HeaderMap,
     Json(input): Json<AddCartItemRequest>,
 ) -> Response {
-    if !(1..=99).contains(&input.quantity) {
+    if !(1..=99).contains(&input.quantity) || !valid_customization(input.customization.as_ref()) {
         return invalid_quantity();
     }
     let Some(idempotency_hash) = idempotency_hash(&headers) else {
@@ -256,7 +271,10 @@ pub async fn add_item(
         Ok(session) => session,
         Err(_) => return unavailable(),
     };
-    let signature = format!("add:{}:{}", input.variant_id, input.quantity);
+    let signature = format!(
+        "add:{}:{}:{:?}:{:?}",
+        input.variant_id, input.quantity, input.customization, input.customization_media_asset_id
+    );
     let mut transaction = match pool.begin().await {
         Ok(transaction) => transaction,
         Err(_) => return unavailable(),
@@ -277,15 +295,29 @@ pub async fn add_item(
         Ok(None) => return unavailable_item(),
         Err(_) => return unavailable(),
     };
+    if !customization_allowed(
+        &variant,
+        input.customization.as_ref(),
+        input.customization_media_asset_id,
+    ) {
+        return invalid_customization();
+    }
+    if let Some(media_id) = input.customization_media_asset_id {
+        let ready: bool = match sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM media_assets WHERE id=$1 AND status='ready' AND NOT EXISTS (SELECT 1 FROM product_media WHERE media_asset_id=$1))")
+            .bind(media_id).fetch_one(&mut *transaction).await { Ok(value) => value, Err(_) => return unavailable() };
+        if !ready {
+            return invalid_customization();
+        }
+    }
     let existing_quantity: i32 = match sqlx::query_scalar(
-        "SELECT quantity FROM cart_lines WHERE cart_id = $1 AND variant_id = $2 FOR UPDATE",
+        "SELECT quantity FROM cart_lines WHERE cart_id = $1 AND variant_id = $2 AND customization IS NULL FOR UPDATE",
     )
     .bind(session.id)
     .bind(input.variant_id)
     .fetch_optional(&mut *transaction)
     .await
     {
-        Ok(quantity) => quantity.unwrap_or(0),
+        Ok(quantity) => if input.customization.is_none() { quantity.unwrap_or(0) } else { 0 },
         Err(_) => return unavailable(),
     };
     let Some(resulting_quantity) = existing_quantity.checked_add(input.quantity) else {
@@ -298,15 +330,15 @@ pub async fn add_item(
         return response;
     }
     if sqlx::query(
-        r#"
-        INSERT INTO cart_lines (id, cart_id, variant_id, quantity, unit_price_minor, currency)
-        VALUES ($1, $2, $3, $4, $5, $6)
-        ON CONFLICT (cart_id, variant_id) DO UPDATE
+        r##"
+        INSERT INTO cart_lines (id, cart_id, variant_id, quantity, unit_price_minor, currency, customization, customization_media_asset_id)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        ON CONFLICT (cart_id, variant_id) WHERE customization IS NULL DO UPDATE
         SET quantity = EXCLUDED.quantity,
             unit_price_minor = EXCLUDED.unit_price_minor,
             currency = EXCLUDED.currency,
             updated_at = now()
-        "#,
+        "##,
     )
     .bind(Uuid::now_v7())
     .bind(session.id)
@@ -314,6 +346,8 @@ pub async fn add_item(
     .bind(resulting_quantity)
     .bind(variant.price_minor)
     .bind(&variant.currency)
+    .bind(&input.customization)
+    .bind(input.customization_media_asset_id)
     .execute(&mut *transaction)
     .await
     .is_err()
@@ -924,7 +958,7 @@ async fn load_cart(pool: &PgPool, cart_id: Uuid) -> Result<Cart, sqlx::Error> {
                    JOIN media_assets media ON media.id = relation.media_asset_id
                    WHERE relation.product_id = product.id AND media.status = 'ready'
                    ORDER BY relation.position, media.id LIMIT 1
-               ) AS image_url
+               ) AS image_url, line.customization, line.customization_media_asset_id
         FROM cart_lines line
         JOIN product_variants variant ON variant.id = line.variant_id
         JOIN products product ON product.id = variant.product_id
@@ -994,6 +1028,8 @@ async fn load_cart(pool: &PgPool, cart_id: Uuid) -> Result<Cart, sqlx::Error> {
             available_quantity: row.available_quantity,
             available: published && enough_stock,
             image_url: row.image_url,
+            customization: row.customization,
+            customization_media_asset_id: row.customization_media_asset_id,
         });
     }
     let mut discount = None;
@@ -1083,20 +1119,75 @@ async fn load_cart(pool: &PgPool, cart_id: Uuid) -> Result<Cart, sqlx::Error> {
     })
 }
 
+fn valid_customization(value: Option<&Value>) -> bool {
+    value.is_none_or(|value| value.is_object() && value.to_string().len() <= 20_000)
+}
+
+fn customization_allowed(
+    variant: &VariantForCart,
+    customization: Option<&Value>,
+    media_id: Option<Uuid>,
+) -> bool {
+    let photo = customization.and_then(|value| value.get("photo"));
+    let text = customization.and_then(|value| value.get("text"));
+    let shape_valid = match variant.personalization_mode.as_str() {
+        "none" => customization.is_none() && media_id.is_none(),
+        "photo" => photo.is_some() && text.is_none() && media_id.is_some(),
+        "text" => photo.is_none() && text.is_some() && media_id.is_none(),
+        "photo_text" => photo.is_some() && text.is_some() && media_id.is_some(),
+        _ => false,
+    };
+    if !shape_valid {
+        return false;
+    }
+    let Some(text) = text else {
+        return true;
+    };
+    let Some(content) = text.get("content").and_then(Value::as_str) else {
+        return false;
+    };
+    let Some(font) = text.get("font").and_then(Value::as_str) else {
+        return false;
+    };
+    let Some(color) = text.get("color").and_then(Value::as_str) else {
+        return false;
+    };
+    let Some(size) = text.get("size").and_then(Value::as_i64) else {
+        return false;
+    };
+    !content.trim().is_empty()
+        && content.chars().count() <= variant.text_max_characters as usize
+        && (variant.text_min_size as i64..=variant.text_max_size as i64).contains(&size)
+        && variant
+            .allowed_fonts
+            .as_array()
+            .is_some_and(|values| values.iter().any(|value| value.as_str() == Some(font)))
+        && variant
+            .allowed_colors
+            .as_array()
+            .is_some_and(|values| values.iter().any(|value| value.as_str() == Some(color)))
+}
+
 async fn active_variant(
     transaction: &mut Transaction<'_, Postgres>,
     variant_id: Uuid,
 ) -> Result<Option<VariantForCart>, sqlx::Error> {
     sqlx::query_as(
-        r#"
+        r##"
         SELECT variant.price_minor, variant.currency::text AS currency,
-               inventory.available_quantity
+               inventory.available_quantity, COALESCE(personalization.mode, 'none') AS personalization_mode,
+               COALESCE(personalization.text_max_characters, 35) AS text_max_characters,
+               COALESCE(personalization.text_min_size, 12) AS text_min_size,
+               COALESCE(personalization.text_max_size, 72) AS text_max_size,
+               COALESCE(personalization.allowed_fonts, '["Arial"]'::jsonb) AS allowed_fonts,
+               COALESCE(personalization.allowed_colors, '["#111111"]'::jsonb) AS allowed_colors
         FROM product_variants variant
         JOIN products product ON product.id = variant.product_id
         JOIN inventory_items inventory ON inventory.variant_id = variant.id
+        LEFT JOIN product_personalization personalization ON personalization.product_id = product.id
         WHERE variant.id = $1 AND product.status = 'active'
         FOR UPDATE OF variant, inventory
-        "#,
+        "##,
     )
     .bind(variant_id)
     .fetch_optional(&mut **transaction)
@@ -1442,6 +1533,14 @@ fn invalid_quantity() -> Response {
         StatusCode::UNPROCESSABLE_ENTITY,
         "invalid_cart_quantity",
         "Cart quantities must be between 1 and 99.",
+    )
+}
+
+fn invalid_customization() -> Response {
+    error(
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "invalid_customization",
+        "The personalization does not match the options allowed for this product.",
     )
 }
 

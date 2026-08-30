@@ -181,6 +181,18 @@ pub fn app(state: AppState) -> Router {
             "/api/admin/media/uploads/{media_id}/complete",
             axum::routing::post(media::complete),
         )
+        .route(
+            "/api/personalization/uploads",
+            axum::routing::post(media::initiate_personalization),
+        )
+        .route(
+            "/api/personalization/uploads/{media_id}/complete",
+            axum::routing::post(media::complete_personalization),
+        )
+        .route(
+            "/api/admin/personalization/media/{media_id}/{variant}",
+            get(media::admin_personalization_asset),
+        )
         .route("/api/admin/staff", get(staff::list).post(staff::create))
         .route(
             "/api/admin/staff/{staff_id}/disable",
