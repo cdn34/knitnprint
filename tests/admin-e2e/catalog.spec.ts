@@ -127,18 +127,22 @@ test('lets an owner manage commercial settings and complete an order journey', a
     })
   }
 
-  page.once('dialog', async (dialog) => {
+  let uploadedPhoto = 0
+  const describePhoto = async (dialog: import('@playwright/test').Dialog) => {
     expect(dialog.message()).toContain(title)
-    await dialog.accept(`${title} in a soft neutral finish`)
-  })
-  await product.getByLabel('Image').setInputFiles({
-    name: 'woven-planter.png',
-    mimeType: 'image/png',
-    buffer: Buffer.from(
-      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
-      'base64',
-    ),
-  })
+    uploadedPhoto += 1
+    await dialog.accept(`${title} product view ${uploadedPhoto}`)
+  }
+  page.on('dialog', describePhoto)
+  const photoBuffer = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+    'base64',
+  )
+  await product.getByLabel('Add product photos').setInputFiles([
+    { name: 'woven-planter-front.png', mimeType: 'image/png', buffer: photoBuffer },
+    { name: 'woven-planter-detail.png', mimeType: 'image/png', buffer: photoBuffer },
+  ])
+  page.off('dialog', describePhoto)
   await expect(product.locator('.product-thumbnail img')).toBeVisible()
 
   await catalog.getByLabel('Search products').fill(`browsercatalog ${unique}`)
@@ -175,11 +179,15 @@ test('lets an owner manage commercial settings and complete an order journey', a
     categories: [{ name: categoryName, slug: categorySlug }],
     media: [
       {
-        alt_text: `${title} in a soft neutral finish`,
+        alt_text: `${title} product view 1`,
         position: 0,
         thumbnail_url: expect.stringContaining('/thumbnail'),
         card_url: expect.stringContaining('/card'),
         detail_url: expect.stringContaining('/detail'),
+      },
+      {
+        alt_text: `${title} product view 2`,
+        position: 1,
       },
     ],
   })
@@ -277,6 +285,9 @@ test('lets an owner manage commercial settings and complete an order journey', a
   await page.goto(`http://127.0.0.1:3000/products/${slug}`)
   await page.waitForLoadState('networkidle')
   await expect(page.getByRole('heading', { level: 1 })).toHaveText(title)
+  await expect(page.getByRole('button', { name: 'Show product photo 1' })).toHaveAttribute('aria-pressed', 'true')
+  await page.getByRole('button', { name: 'Next product photo' }).click()
+  await expect(page.getByRole('button', { name: 'Show product photo 2' })).toHaveAttribute('aria-pressed', 'true')
   await expect(page.getByRole('radio', { name: /Default/ })).toBeDisabled()
   await expect(page.getByRole('radio', { name: /Plum/ })).toBeChecked()
   await expect(page.locator('.product-detail-price')).toContainText('46.00')
