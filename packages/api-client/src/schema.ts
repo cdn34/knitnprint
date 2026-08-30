@@ -5,6 +5,8 @@ export interface AccountTokenRequest {
 }
 
 export interface AddCartItemRequest {
+  "customization"?: unknown
+  "customization_media_asset_id"?: string | null
   "quantity": number
   "variant_id": string
 }
@@ -85,6 +87,8 @@ export interface CartItem {
   "available": boolean
   "available_quantity": number
   "currency": string
+  "customization"?: unknown
+  "customization_media_asset_id"?: string | null
   "id": string
   "image_url"?: string | null
   "line_total_minor": number
@@ -180,6 +184,7 @@ export interface CreateOrderRequest {
 
 export interface CreateProductRequest {
   "description"?: string
+  "personalization"?: PersonalizationConfig
   "search_keywords"?: string
   "slug": string
   "title": string
@@ -566,6 +571,8 @@ export interface OrderEvent {
 
 export interface OrderLine {
   "currency": string
+  "customization"?: unknown
+  "customization_media_asset_id"?: string | null
   "fulfilled_quantity": number
   "id": string
   "line_total_minor": number
@@ -658,11 +665,30 @@ export interface PaymentStatusEvent {
   "provider_status": string
 }
 
+export interface PersonalizationConfig {
+  "allowed_colors": unknown
+  "allowed_fonts": unknown
+  "area_height": number
+  "area_width": number
+  "area_x": number
+  "area_y": number
+  "mode": string
+  "text_max_characters": number
+  "text_max_size": number
+  "text_min_size": number
+}
+
+export interface PersonalizationMediaRecord {
+  "id": string
+  "preview_url": string
+}
+
 export interface Product {
   "categories": Array<Category>
   "description": string
   "id": string
   "media": Array<ProductMedia>
+  "personalization": PersonalizationConfig
   "search_keywords": string
   "slug": string
   "status": string
@@ -819,6 +845,7 @@ export interface UpdateProductRequest {
   "available_quantity": number
   "currency": string
   "description"?: string
+  "personalization"?: PersonalizationConfig
   "price_minor": number
   "search_keywords"?: string
   "sku": string

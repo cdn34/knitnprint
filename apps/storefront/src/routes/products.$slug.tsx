@@ -12,6 +12,7 @@ import {
 import { useEffect, useState } from 'react'
 import { cartApi, cartMutationKey } from '../cart-api'
 import { ContextualFaqs } from '../components/contextual-faqs'
+import { ProductPersonalizer, type CustomerCustomization } from '../components/product-personalizer'
 import { StorefrontAnnouncement, StorefrontFooter, StorefrontHeader } from '../components/storefront-shell'
 import {
   mediaUrl,
@@ -56,6 +57,7 @@ function ProductPage() {
   const [hydrated, setHydrated] = useState(false)
   const [selectedMediaIndex, setSelectedMediaIndex] = useState(0)
   const selectedMedia = product.media[selectedMediaIndex] ?? product.media[0]
+  const [personalization, setPersonalization] = useState<{ customization: CustomerCustomization | null; mediaId?: string; ready: boolean }>({ customization: null, ready: product.personalization.mode === 'none' })
 
   function showPreviousPhoto() {
     setSelectedMediaIndex((current) =>
@@ -76,7 +78,7 @@ function ProductPage() {
     setCartState('adding')
     try {
       await cartApi.addCartItem(
-        { variant_id: variant.id, quantity: 1 },
+        { variant_id: variant.id, quantity: 1, customization: personalization.customization ?? undefined, customization_media_asset_id: personalization.mediaId },
         cartMutationKey(),
       )
       setCartState('added')
@@ -185,7 +187,7 @@ function ProductPage() {
           <button
             className="button button--primary"
             type="button"
-            disabled={!hydrated || !variant || stock?.state === 'sold-out' || cartState === 'adding'}
+            disabled={!hydrated || !variant || !personalization.ready || stock?.state === 'sold-out' || cartState === 'adding'}
             onClick={addToCart}
           >
             {stock?.state === 'sold-out'
@@ -209,6 +211,7 @@ function ProductPage() {
             <span><ShieldCheck /> {t('product.secureCheckout')}</span>
           </div>
         </section>
+        {product.personalization.mode !== 'none' && <ProductPersonalizer config={product.personalization} productImage={product.media[0] ? mediaUrl(product.media[0].detail_url) : undefined} onChange={setPersonalization} />}
         <ContextualFaqs
           id="product-faqs"
           eyebrow={t('product.faqEyebrow')}

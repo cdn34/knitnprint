@@ -66,6 +66,7 @@ export type {
   PaymentCheckout,
   PaymentOptions,
   PaymentStatusEvent,
+  PersonalizationConfig,
   Product,
   ProductMedia,
   Refund,
@@ -497,6 +498,16 @@ export function createApiClient(options: ApiClientOptions = {}) {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(input),
+      }),
+    initiatePersonalizationUpload: (input: InitiateUploadRequest) =>
+      send<InitiateUploadResponse>('/api/personalization/uploads', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(input),
+      }),
+    completePersonalizationUpload: (mediaId: string) =>
+      send<{ id: string; preview_url: string }>(`/api/personalization/uploads/${mediaId}/complete`, {
+        method: 'POST',
       }),
     uploadMediaObject: async (
       uploadUrl: string,

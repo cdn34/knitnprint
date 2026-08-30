@@ -315,6 +315,7 @@ function CartPage() {
                     <div className="cart-item-copy">
                       <h3><a href={`/products/${item.product_slug}`}>{item.product_title}</a></h3>
                       <p>{item.variant_title} · {t('cart.sku')} {item.sku}</p>
+                      {Boolean(item.customization) && <p className="cart-item-personalization">Personalizado{item.customization_media_asset_id ? ' com fotografia' : ''}{typeof (item.customization as { text?: { content?: unknown } }).text?.content === 'string' ? ` · “${(item.customization as { text: { content: string } }).text.content}”` : ''}</p>}
                       <label>
                         <span>{t('cart.quantity')}</span>
                         <select
