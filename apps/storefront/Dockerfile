@@ -1,4 +1,4 @@
-FROM node:24-alpine AS build
+FROM node:24-alpine@sha256:e67514e5d0f6c46656005e1b693b2ec9d52e80b641307de684d4a015ba7a4eaf AS build
 
 WORKDIR /app
 
@@ -12,7 +12,7 @@ COPY apps/storefront apps/storefront
 COPY packages/api-client packages/api-client
 RUN npm run build --workspace=@knitnprint/storefront
 
-FROM node:24-alpine AS runtime
+FROM node:24-alpine@sha256:e67514e5d0f6c46656005e1b693b2ec9d52e80b641307de684d4a015ba7a4eaf AS runtime
 
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \

@@ -4,11 +4,19 @@ import { nitro } from 'nitro/vite'
 import { defineConfig } from 'vite'
 
 export default defineConfig({
-  plugins: [tanstackStart(), nitro(), react()],
+  plugins: [
+    tanstackStart(),
+    nitro({
+      devProxy: {
+        '/api/**': {
+          target: 'http://127.0.0.1:8080',
+          changeOrigin: true,
+        },
+      },
+    }),
+    react(),
+  ],
   server: {
     port: 3000,
-    proxy: {
-      '/api': 'http://127.0.0.1:8080',
-    },
   },
 })
