@@ -1698,7 +1698,15 @@ const PERSONALIZATION_COLOR_OPTIONS = [
 ] as const
 
 type PrintArea = { x: number; y: number; width: number; height: number }
+const DEFAULT_PHOTO_AREA: PrintArea = { x: 25, y: 25, width: 50, height: 50 }
 const DEFAULT_TEXT_AREA: PrintArea = { x: 25, y: 30, width: 50, height: 25 }
+
+function printAreaFromBasisPoints(values: unknown[], fallback: PrintArea): PrintArea {
+  if (values.length !== 4 || values.some((value) => typeof value !== 'number' || !Number.isFinite(value))) return { ...fallback }
+  const [x, y, width, height] = values.map((value) => Number(value) / 100)
+  if (x < 0 || y < 0 || width <= 0 || height <= 0 || x + width > 100 || y + height > 100) return { ...fallback }
+  return { x, y, width, height }
+}
 
 function EditablePrintArea({ area, label, kind, active, onActivate, onChange }: Readonly<{
   area: PrintArea
@@ -1756,7 +1764,7 @@ function CatalogManagement({
   const [productQuantity, setProductQuantity] = useState('0')
   const [productCategoryIds, setProductCategoryIds] = useState<string[]>([])
   const [personalizationMode, setPersonalizationMode] = useState<'none' | 'photo' | 'text' | 'photo_text'>('none')
-  const [photoArea, setPhotoArea] = useState<PrintArea>({ x: 25, y: 25, width: 50, height: 50 })
+  const [photoArea, setPhotoArea] = useState<PrintArea>(DEFAULT_PHOTO_AREA)
   const [textArea, setTextArea] = useState<PrintArea>(DEFAULT_TEXT_AREA)
   const [activePrintArea, setActivePrintArea] = useState<'photo' | 'text'>('text')
   const [previewMediaId, setPreviewMediaId] = useState<string>()
@@ -1997,8 +2005,8 @@ function CatalogManagement({
     const config = product.personalization
     setPersonalizationMode(config.mode as typeof personalizationMode)
     setActivePrintArea(config.mode === 'photo' ? 'photo' : 'text')
-    setPhotoArea({ x: config.area_x / 100, y: config.area_y / 100, width: config.area_width / 100, height: config.area_height / 100 })
-    const configuredTextArea = { x: config.text_area_x / 100, y: config.text_area_y / 100, width: config.text_area_width / 100, height: config.text_area_height / 100 }
+    setPhotoArea(printAreaFromBasisPoints([config.area_x, config.area_y, config.area_width, config.area_height], DEFAULT_PHOTO_AREA))
+    const configuredTextArea = printAreaFromBasisPoints([config.text_area_x, config.text_area_y, config.text_area_width, config.text_area_height], DEFAULT_TEXT_AREA)
     const usesLegacyTextArea = configuredTextArea.x === 25 && configuredTextArea.y === 65 && configuredTextArea.width === 50 && configuredTextArea.height === 20
     setTextArea(usesLegacyTextArea ? DEFAULT_TEXT_AREA : configuredTextArea)
     setPreviewMediaId(config.preview_media_id ?? product.media[0]?.id)
@@ -2024,7 +2032,7 @@ function CatalogManagement({
     setProductCategoryIds([])
     setPersonalizationMode('none')
     setActivePrintArea('text')
-    setPhotoArea({ x: 25, y: 25, width: 50, height: 50 })
+    setPhotoArea(DEFAULT_PHOTO_AREA)
     setTextArea(DEFAULT_TEXT_AREA)
     setPreviewMediaId(undefined)
     setTextMaxCharacters(35)
