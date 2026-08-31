@@ -12,7 +12,6 @@ import {
 import { useEffect, useState } from 'react'
 import { cartApi, cartMutationKey } from '../cart-api'
 import { ContextualFaqs } from '../components/contextual-faqs'
-import { ProductPersonalizer, type CustomerCustomization } from '../components/product-personalizer'
 import { StorefrontAnnouncement, StorefrontFooter, StorefrontHeader } from '../components/storefront-shell'
 import {
   mediaUrl,
@@ -57,7 +56,6 @@ function ProductPage() {
   const [hydrated, setHydrated] = useState(false)
   const [selectedMediaIndex, setSelectedMediaIndex] = useState(0)
   const selectedMedia = product.media[selectedMediaIndex] ?? product.media[0]
-  const [personalization, setPersonalization] = useState<{ customization: CustomerCustomization | null; mediaId?: string; ready: boolean }>({ customization: null, ready: product.personalization.mode === 'none' })
 
   function showPreviousPhoto() {
     setSelectedMediaIndex((current) =>
@@ -78,7 +76,7 @@ function ProductPage() {
     setCartState('adding')
     try {
       await cartApi.addCartItem(
-        { variant_id: variant.id, quantity: 1, customization: personalization.customization ?? undefined, customization_media_asset_id: personalization.mediaId },
+        { variant_id: variant.id, quantity: 1 },
         cartMutationKey(),
       )
       setCartState('added')
@@ -184,10 +182,10 @@ function ProductPage() {
               <span><strong>{localizedStock?.label}</strong><small>{localizedStock?.detail}</small></span>
             </div>
           )}
-          <button
+          {product.personalization.mode !== 'none' ? <a className="button button--primary personalization-start-button" href={`/products/${product.slug}/personalize`}>Começa a personalizar</a> : <button
             className="button button--primary"
             type="button"
-            disabled={!hydrated || !variant || !personalization.ready || stock?.state === 'sold-out' || cartState === 'adding'}
+            disabled={!hydrated || !variant || stock?.state === 'sold-out' || cartState === 'adding'}
             onClick={addToCart}
           >
             {stock?.state === 'sold-out'
@@ -199,7 +197,7 @@ function ProductPage() {
                   : cartState === 'added'
                     ? t('product.added')
                     : t('product.addToCart')}
-          </button>
+          </button>}
           <div className="cart-action-status" aria-live="polite">
             {cartState === 'added' && <a href="/cart">{t('product.viewCart')}</a>}
             {cartState === 'error' && (
@@ -211,7 +209,6 @@ function ProductPage() {
             <span><ShieldCheck /> {t('product.secureCheckout')}</span>
           </div>
         </section>
-        {product.personalization.mode !== 'none' && <ProductPersonalizer config={product.personalization} productImage={product.media[0] ? mediaUrl(product.media[0].detail_url) : undefined} onChange={setPersonalization} />}
         <ContextualFaqs
           id="product-faqs"
           eyebrow={t('product.faqEyebrow')}
