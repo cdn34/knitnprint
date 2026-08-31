@@ -8,7 +8,7 @@ import {
 } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
 import '../styles.css'
-import { I18nProvider, useI18n } from '../i18n'
+import { useI18n } from '../i18n'
 import type { TranslationKey } from '../i18n/locales/en'
 
 const getDeploymentMetadata = createServerFn({ method: 'GET' }).handler(() => ({
@@ -43,11 +43,7 @@ export const Route = createRootRoute({
 })
 
 function Root() {
-  return (
-    <I18nProvider>
-      <LocalizedDocument />
-    </I18nProvider>
-  )
+  return <LocalizedDocument />
 }
 
 function LocalizedDocument() {
