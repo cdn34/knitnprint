@@ -150,11 +150,11 @@ h1 { margin: .25rem 0 0; font: 500 2rem Georgia, serif; }
 .editable-print-area--photo { border-color: #d05e75; color: #8a3045; background: rgb(255 239 242 / 42%); }
 .editable-print-area--text { border-color: #39749d; color: #174d72; background: rgb(232 246 255 / 42%); }
 .editable-print-area > span { padding: .2rem .35rem; border-radius: 1rem; background: rgb(255 255 255 / 82%); font-size: .58rem; font-weight: 800; pointer-events: none; }
-.resize-handle { width: 25px !important; height: 25px; padding: 0 !important; position: absolute; display: grid; place-items: center; border: 1px solid currentColor !important; border-radius: 50% !important; color: inherit !important; background: #fff !important; font-size: .8rem; line-height: 1; cursor: nwse-resize; touch-action: none; }
-.resize-handle--nw { left: -13px; top: -13px; }
-.resize-handle--ne { right: -13px; top: -13px; cursor: nesw-resize; }
-.resize-handle--sw { left: -13px; bottom: -13px; cursor: nesw-resize; }
-.resize-handle--se { right: -13px; bottom: -13px; }
+.resize-handle { z-index: 3; width: 22px !important; height: 22px; padding: 0 !important; position: absolute; display: grid; place-items: center; border: 1px solid currentColor !important; border-radius: 50% !important; color: inherit !important; background: #fff !important; box-shadow: 0 2px 6px rgb(48 37 42 / 24%); font-size: .72rem; line-height: 1; cursor: nwse-resize; touch-action: none; }
+.resize-handle--nw { left: 6px; top: 6px; }
+.resize-handle--ne { right: 6px; top: 6px; cursor: nesw-resize; }
+.resize-handle--sw { left: 6px; bottom: 6px; cursor: nesw-resize; }
+.resize-handle--se { right: 6px; bottom: 6px; }
 .print-area-fields { margin-top: .65rem; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .55rem; }
 .text-personalization-settings { margin-top: .8rem; padding-top: .8rem; display: grid; gap: .65rem; border-top: 1px solid #ede6e1; }
 .personalization-option-grid, .personalization-color-grid { padding: .65rem; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .45rem; border: 1px solid #e3dad4; border-radius: .5rem; }
