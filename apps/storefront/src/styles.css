@@ -3874,7 +3874,7 @@ html[lang='pt'] .home-section-title--categories h2 {
 .personalization-page .personalizer-heading { display: none; }
 .personalization-page .personalizer-layout { margin-top: 0; grid-template-columns: minmax(250px, 330px) minmax(500px, 1fr); }
 .personalization-page .personalizer-stage { min-height: min(70vh, 760px); }
-.personalization-checkout-bar { max-width: 1500px; padding: .8rem clamp(1rem, 3vw, 2rem); position: fixed; right: 0; bottom: 0; left: 0; z-index: 20; display: flex; align-items: center; justify-content: flex-end; gap: 1rem; border-top: 1px solid #ddd3cd; background: rgb(255 253 252 / 94%); backdrop-filter: blur(12px); }
+.personalization-checkout-bar { width: min(1500px, calc(100% - 2rem)); padding: .8rem clamp(1rem, 3vw, 2rem); position: fixed; bottom: 0; left: 50%; z-index: 20; display: flex; align-items: center; justify-content: flex-end; gap: 1rem; transform: translateX(-50%); border: 1px solid #ddd3cd; border-bottom: 0; border-radius: 1rem 1rem 0 0; background: rgb(255 253 252 / 94%); box-shadow: 0 -8px 28px rgb(55 42 47 / 8%); backdrop-filter: blur(12px); }
 .personalization-checkout-bar > span { margin-right: auto; color: #625a55; font-size: .78rem; }
 .personalization-checkout-bar .button { display: inline-flex; align-items: center; gap: .45rem; }
 .personalization-checkout-bar strong { color: #9e344d; font-size: .72rem; }
