@@ -157,6 +157,19 @@ h1 { margin: .25rem 0 0; font: 500 2rem Georgia, serif; }
 .personalization-media-picker label > svg { width: 18px; height: 18px; position: absolute; right: .65rem; top: .65rem; opacity: 0; color: #fff; filter: drop-shadow(0 1px 2px rgb(0 0 0 / 28%)); }
 .personalization-media-picker label.selected > svg { opacity: 1; }
 .personalization-media-picker > small { margin-top: .65rem; display: block; color: #786c66; font-size: .56rem; line-height: 1.4; }
+.personalization-view-manager { margin-top: .75rem; padding: .7rem; display: grid; gap: .65rem; border: 1px solid #cdbdc0; border-radius: .65rem; background: linear-gradient(135deg, #fffafb, #f8f3f1); }
+.personalization-view-tabs { display: flex; flex-wrap: wrap; gap: .45rem; }
+.personalization-view-tabs button { width: auto; min-height: 36px; padding: .45rem .7rem; display: inline-flex; align-items: center; gap: .4rem; border: 1px solid #d2c5c0; border-radius: .5rem; color: #5f5551; background: #fff; font-size: .63rem; font-weight: 800; cursor: pointer; }
+.personalization-view-tabs button > span { width: 20px; height: 20px; display: grid; place-items: center; border-radius: .35rem; color: #78465a; background: #f5e7eb; font-size: .54rem; }
+.personalization-view-tabs button.active { border-color: #74485a; color: #fff; background: #684956; box-shadow: 0 4px 12px rgb(77 48 60 / 18%); }
+.personalization-view-tabs button.active > span { color: #684956; background: #fff; }
+.personalization-view-tabs .personalization-view-add { border-style: dashed; color: #87485a; background: #fff8fa; }
+.personalization-view-tabs button:disabled { opacity: .45; cursor: not-allowed; }
+.personalization-view-name-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: .55rem; }
+.personalization-view-name-row label { display: grid; gap: .3rem; color: #514a47; font-size: .62rem; font-weight: 700; }
+.personalization-view-name-row input { width: 100%; }
+.personalization-view-name-row button { width: auto; min-height: 35px; padding: .5rem .65rem; border: 1px solid #d7b6bd; border-radius: .4rem; color: #933e52; background: #fff; font-size: .6rem; font-weight: 700; cursor: pointer; }
+.personalization-view-name-row button:disabled { opacity: .4; cursor: not-allowed; }
 .print-area-preview { margin-top: .75rem; min-height: 310px; position: relative; display: grid; place-items: center; overflow: hidden; border-radius: .5rem; color: #746b65; background: #f4f0ed; font-size: .65rem; text-align: center; }
 .print-area-canvas { max-width: 100%; position: relative; display: inline-block; line-height: 0; }
 .print-area-canvas > img { width: auto; height: auto; max-width: 100%; max-height: 520px; display: block; }

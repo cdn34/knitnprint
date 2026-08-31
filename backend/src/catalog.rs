@@ -69,6 +69,8 @@ pub struct PersonalizationConfig {
     pub text_area_height: i32,
     #[serde(default = "default_print_areas")]
     pub print_areas: Value,
+    #[serde(default)]
+    pub views: Option<Value>,
     pub text_max_characters: i32,
     pub text_min_size: i32,
     pub text_max_size: i32,
@@ -90,6 +92,7 @@ impl Default for PersonalizationConfig {
             text_area_width: 5000,
             text_area_height: 2500,
             print_areas: default_print_areas(),
+            views: Some(default_personalization_views()),
             text_max_characters: 35,
             text_min_size: 12,
             text_max_size: 72,
@@ -115,6 +118,15 @@ fn default_print_areas() -> Value {
         "y": 2500,
         "width": 5000,
         "height": 5000
+    }])
+}
+
+fn default_personalization_views() -> Value {
+    serde_json::json!([{
+        "id": "view-front",
+        "label": "Frente",
+        "media_id": null,
+        "print_areas": default_print_areas()
     }])
 }
 
@@ -1108,7 +1120,7 @@ async fn hydrate_product(pool: &PgPool, row: ProductRow) -> Result<Product, sqlx
         SELECT mode, preview_media_asset_id AS preview_media_id,
                area_x, area_y, area_width, area_height,
                text_area_x, text_area_y, text_area_width, text_area_height,
-               print_areas,
+               print_areas, views,
                text_max_characters, text_min_size, text_max_size,
                allowed_fonts, allowed_colors
         FROM product_personalization WHERE product_id = $1
@@ -1171,11 +1183,69 @@ fn valid_personalization(config: &PersonalizationConfig) -> bool {
         && config.text_area_x + config.text_area_width <= 10_000
         && config.text_area_y + config.text_area_height <= 10_000
         && valid_print_areas(&config.print_areas)
+        && config
+            .views
+            .as_ref()
+            .is_none_or(valid_personalization_views)
         && (1..=500).contains(&config.text_max_characters)
         && (8..=200).contains(&config.text_min_size)
         && (config.text_min_size..=300).contains(&config.text_max_size)
         && valid_font_options(&config.allowed_fonts)
         && valid_color_options(&config.allowed_colors)
+}
+
+fn valid_personalization_views(value: &Value) -> bool {
+    let Some(views) = value.as_array() else {
+        return false;
+    };
+    if views.is_empty() || views.len() > 6 {
+        return false;
+    }
+    let mut view_ids = BTreeSet::new();
+    let mut area_ids = BTreeSet::new();
+    views.iter().all(|view| {
+        let id = view.get("id").and_then(Value::as_str).unwrap_or("").trim();
+        let label = view
+            .get("label")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .trim();
+        let media_valid = view.get("media_id").is_none_or(|media_id| {
+            media_id.is_null()
+                || media_id
+                    .as_str()
+                    .is_some_and(|value| Uuid::parse_str(value).is_ok())
+        });
+        let Some(print_areas) = view.get("print_areas") else {
+            return false;
+        };
+        let unique_area_ids = print_areas.as_array().is_some_and(|areas| {
+            areas.iter().all(|area| {
+                area.get("id")
+                    .and_then(Value::as_str)
+                    .is_some_and(|area_id| area_ids.insert(area_id))
+            })
+        });
+        !id.is_empty()
+            && id.len() <= 80
+            && view_ids.insert(id)
+            && !label.is_empty()
+            && label.len() <= 80
+            && media_valid
+            && valid_print_areas(print_areas)
+            && unique_area_ids
+    })
+}
+
+fn normalized_personalization_views(config: &PersonalizationConfig) -> Value {
+    config.views.clone().unwrap_or_else(|| {
+        serde_json::json!([{
+            "id": "view-front",
+            "label": "Frente",
+            "media_id": config.preview_media_id,
+            "print_areas": config.print_areas
+        }])
+    })
 }
 
 fn valid_print_areas(value: &Value) -> bool {
@@ -1248,13 +1318,14 @@ async fn upsert_personalization(
     product_id: Uuid,
     config: &PersonalizationConfig,
 ) -> Result<(), sqlx::Error> {
+    let views = normalized_personalization_views(config);
     sqlx::query(
         r#"
         INSERT INTO product_personalization (
             product_id, mode, preview_media_asset_id, area_x, area_y, area_width, area_height,
             text_area_x, text_area_y, text_area_width, text_area_height,
-            print_areas, text_max_characters, text_min_size, text_max_size, allowed_fonts, allowed_colors
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+            print_areas, views, text_max_characters, text_min_size, text_max_size, allowed_fonts, allowed_colors
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
         ON CONFLICT (product_id) DO UPDATE SET
             mode=EXCLUDED.mode, preview_media_asset_id=EXCLUDED.preview_media_asset_id,
             area_x=EXCLUDED.area_x, area_y=EXCLUDED.area_y,
@@ -1262,6 +1333,7 @@ async fn upsert_personalization(
             text_area_x=EXCLUDED.text_area_x, text_area_y=EXCLUDED.text_area_y,
             text_area_width=EXCLUDED.text_area_width, text_area_height=EXCLUDED.text_area_height,
             print_areas=EXCLUDED.print_areas,
+            views=EXCLUDED.views,
             text_max_characters=EXCLUDED.text_max_characters,
             text_min_size=EXCLUDED.text_min_size, text_max_size=EXCLUDED.text_max_size,
             allowed_fonts=EXCLUDED.allowed_fonts, allowed_colors=EXCLUDED.allowed_colors,
@@ -1280,6 +1352,7 @@ async fn upsert_personalization(
     .bind(config.text_area_width)
     .bind(config.text_area_height)
     .bind(&config.print_areas)
+    .bind(&views)
     .bind(config.text_max_characters)
     .bind(config.text_min_size)
     .bind(config.text_max_size)

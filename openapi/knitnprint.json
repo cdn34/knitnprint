@@ -6652,7 +6652,8 @@
           "text_min_size": {
             "type": "integer",
             "format": "int32"
-          }
+          },
+          "views": {}
         }
       },
       "PersonalizationMediaRecord": {

@@ -685,6 +685,7 @@ export interface PersonalizationConfig {
   "text_max_characters": number
   "text_max_size": number
   "text_min_size": number
+  "views"?: unknown
 }
 
 export interface PersonalizationMediaRecord {
