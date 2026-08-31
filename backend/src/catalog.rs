@@ -351,19 +351,20 @@ pub async fn create(
         {
             return database_write_error(error);
         }
-        if variant.available_quantity > 0 {
-            if sqlx::query("UPDATE inventory_items SET available_quantity = $2 WHERE variant_id = $1")
-                .bind(variant_id)
-                .bind(variant.available_quantity)
-                .execute(&mut *transaction)
-                .await
-                .is_err()
-                || sqlx::query("INSERT INTO inventory_movements (id, variant_id, actor_staff_user_id, movement_type, quantity_delta, resulting_available_quantity, reason) VALUES ($1, $2, $3, 'adjustment', $4, $4, 'Initial product stock')")
-                    .bind(Uuid::now_v7()).bind(variant_id).bind(actor.id).bind(variant.available_quantity)
-                    .execute(&mut *transaction).await.is_err()
-            {
-                return unavailable();
-            }
+        if variant.available_quantity <= 0 {
+            continue;
+        }
+        if sqlx::query("UPDATE inventory_items SET available_quantity = $2 WHERE variant_id = $1")
+            .bind(variant_id)
+            .bind(variant.available_quantity)
+            .execute(&mut *transaction)
+            .await
+            .is_err()
+            || sqlx::query("INSERT INTO inventory_movements (id, variant_id, actor_staff_user_id, movement_type, quantity_delta, resulting_available_quantity, reason) VALUES ($1, $2, $3, 'adjustment', $4, $4, 'Initial product stock')")
+                .bind(Uuid::now_v7()).bind(variant_id).bind(actor.id).bind(variant.available_quantity)
+                .execute(&mut *transaction).await.is_err()
+        {
+            return unavailable();
         }
     }
     if upsert_personalization(&mut transaction, product_id, &input.personalization)

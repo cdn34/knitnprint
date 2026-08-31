@@ -338,8 +338,11 @@ pub async fn add_item(
     if resulting_quantity > 99 || i64::from(resulting_quantity) > variant.available_quantity {
         return insufficient_stock();
     }
-    if let Err(response) = ensure_currency(&mut transaction, session.id, &variant.currency).await {
-        return response;
+    if let Err(error) = ensure_currency(&mut transaction, session.id, &variant.currency).await {
+        return match error {
+            EnsureCurrencyError::Unavailable => unavailable(),
+            EnsureCurrencyError::Mismatch => currency_mismatch(),
+        };
     }
     if sqlx::query(
         r##"
@@ -1409,18 +1412,18 @@ async fn ensure_currency(
     transaction: &mut Transaction<'_, Postgres>,
     cart_id: Uuid,
     currency: &str,
-) -> Result<(), Response> {
+) -> Result<(), EnsureCurrencyError> {
     let current: Option<String> =
         sqlx::query_scalar("SELECT currency::text FROM carts WHERE id = $1 FOR UPDATE")
             .bind(cart_id)
             .fetch_one(&mut **transaction)
             .await
-            .map_err(|_| unavailable())?;
+            .map_err(|_| EnsureCurrencyError::Unavailable)?;
     if current
         .as_deref()
         .is_some_and(|current| current != currency)
     {
-        return Err(currency_mismatch());
+        return Err(EnsureCurrencyError::Mismatch);
     }
     if current.is_none() {
         sqlx::query("UPDATE carts SET currency = $2 WHERE id = $1")
@@ -1428,9 +1431,14 @@ async fn ensure_currency(
             .bind(currency)
             .execute(&mut **transaction)
             .await
-            .map_err(|_| unavailable())?;
+            .map_err(|_| EnsureCurrencyError::Unavailable)?;
     }
     Ok(())
+}
+
+enum EnsureCurrencyError {
+    Unavailable,
+    Mismatch,
 }
 
 async fn reset_empty_currency(
