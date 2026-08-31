@@ -1,7 +1,7 @@
 import { createFileRoute, notFound } from '@tanstack/react-router'
 import { ArrowLeft, ShoppingBag } from 'lucide-react'
 import { useState } from 'react'
-import { cartApi, cartMutationKey } from '../cart-api'
+import { announceCartUpdate, cartApi, cartMutationKey } from '../cart-api'
 import { mediaUrl, preferredVariant, publishedProduct, variantStock } from '../catalog-api'
 import { ProductPersonalizer, type CustomerCustomization } from '../components/product-personalizer'
 import { StorefrontAnnouncement, StorefrontHeader } from '../components/storefront-shell'
@@ -34,7 +34,8 @@ function PersonalizeProductPage() {
     setStatus('adding')
     setConfirmingIncomplete(false)
     try {
-      await cartApi.addCartItem({ variant_id: variant.id, quantity: 1, ...(design.customization ? { customization: design.customization } : {}), ...(design.mediaId ? { customization_media_asset_id: design.mediaId } : {}) }, cartMutationKey())
+      const cart = await cartApi.addCartItem({ variant_id: variant.id, quantity: 1, ...(design.customization ? { customization: design.customization } : {}), ...(design.mediaId ? { customization_media_asset_id: design.mediaId } : {}) }, cartMutationKey())
+      announceCartUpdate(cart)
       setStatus('added')
     } catch { setStatus('error') }
   }

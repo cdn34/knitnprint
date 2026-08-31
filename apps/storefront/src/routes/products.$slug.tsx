@@ -10,7 +10,7 @@ import {
   TriangleAlert,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { cartApi, cartMutationKey } from '../cart-api'
+import { announceCartUpdate, cartApi, cartMutationKey } from '../cart-api'
 import { ContextualFaqs } from '../components/contextual-faqs'
 import { StorefrontAnnouncement, StorefrontFooter, StorefrontHeader } from '../components/storefront-shell'
 import {
@@ -75,10 +75,11 @@ function ProductPage() {
     if (!variant || !stock || stock.state === 'sold-out') return
     setCartState('adding')
     try {
-      await cartApi.addCartItem(
+      const cart = await cartApi.addCartItem(
         { variant_id: variant.id, quantity: 1 },
         cartMutationKey(),
       )
+      announceCartUpdate(cart)
       setCartState('added')
     } catch {
       setCartState('error')

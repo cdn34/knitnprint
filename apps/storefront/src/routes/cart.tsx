@@ -15,7 +15,7 @@ import {
   TriangleAlert,
 } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
-import { cartApi, cartMutationKey } from '../cart-api'
+import { announceCartUpdate, cartApi, cartMutationKey } from '../cart-api'
 import { ContextualFaqs } from '../components/contextual-faqs'
 import { StorefrontAnnouncement, StorefrontFooter, StorefrontHeader } from '../components/storefront-shell'
 import { useI18n } from '../i18n'
@@ -56,7 +56,10 @@ function CartPage() {
         if (!active) return
         setPaymentOptions(options)
         if (orderId) setOrder(resource as Order)
-        else setCart(resource as Cart)
+        else {
+          setCart(resource as Cart)
+          announceCartUpdate(resource as Cart)
+        }
       })
       .catch(() => {
         if (active) setMessage(t('cart.unavailable'))
@@ -105,13 +108,9 @@ function CartPage() {
     setBusyLine(lineId)
     setMessage('')
     try {
-      setCart(
-        await cartApi.updateCartItem(
-          lineId,
-          { quantity },
-          cartMutationKey(),
-        ),
-      )
+      const nextCart = await cartApi.updateCartItem(lineId, { quantity }, cartMutationKey())
+      setCart(nextCart)
+      announceCartUpdate(nextCart)
     } catch {
       setMessage(t('cart.quantityUnavailable'))
     } finally {
@@ -123,7 +122,9 @@ function CartPage() {
     setBusyLine(lineId)
     setMessage('')
     try {
-      setCart(await cartApi.removeCartItem(lineId, cartMutationKey()))
+      const nextCart = await cartApi.removeCartItem(lineId, cartMutationKey())
+      setCart(nextCart)
+      announceCartUpdate(nextCart)
     } catch {
       setMessage(t('cart.removeError'))
     } finally {
@@ -219,6 +220,7 @@ function CartPage() {
         cartMutationKey(),
       )
       setOrder(nextOrder)
+      announceCartUpdate({ item_count: 0 })
       if (method === 'stripe') {
         window.history.replaceState(
           null,
@@ -230,7 +232,9 @@ function CartPage() {
     } catch {
       setMessage(t('cart.orderError'))
       try {
-        setCart(await cartApi.cart())
+        const nextCart = await cartApi.cart()
+        setCart(nextCart)
+        announceCartUpdate(nextCart)
       } catch {
         // Preserve the actionable checkout error when reconciliation is unavailable.
       }
