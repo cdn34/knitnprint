@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Dancing+Script:wght@400;700&family=Montserrat:wght@400;600;700&family=Pacifico&family=Playfair+Display:wght@400;600;700&family=Roboto:wght@400;500;700&display=swap');
+
 :root {
   --canvas: #f7f3ef;
   --surface: #fffdfc;
@@ -3824,4 +3826,26 @@ html[lang='pt'] .home-section-title--categories h2 {
 .personalizer-photo:active { cursor: grabbing; }
 .personalizer-text { max-width: 94%; position: absolute; left: 50%; bottom: 8%; transform: translateX(-50%); overflow-wrap: anywhere; font-weight: 700; line-height: 1; text-align: center; text-shadow: 0 1px 2px rgb(255 255 255 / 50%); }
 .personalizer-placeholder { position: absolute; inset: 0; display: grid; place-items: center; padding: 1rem; color: #8b626c; font-size: .72rem; text-align: center; }
+.personalizer-zone--text { border-color: #39749d; background: rgb(232 246 255 / 15%); }
+.personalizer-zone--text .personalizer-text { inset: 0; max-width: none; display: grid; place-items: center; transform: none; }
+.selected-color { display: flex; align-items: center; gap: .45rem; color: #6d6661; font-size: .68rem; }
+.selected-color i { width: 1.1rem; height: 1.1rem; border: 1px solid #cfc6c0; border-radius: 50%; }
+.personalization-start-button { text-align: center; }
+.personalization-page { width: min(1500px, calc(100% - 2rem)); margin: 0 auto; padding: clamp(1.25rem, 3vw, 3rem) 0 7rem; }
+.personalization-page-header { display: grid; grid-template-columns: 1fr auto 1fr; align-items: end; gap: 1rem; }
+.personalization-page-header > div { text-align: center; }
+.personalization-page-header p { margin: 0; color: #9c5263; font-size: .7rem; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
+.personalization-page-header h1 { margin: .2rem 0; font: 500 clamp(1.8rem, 4vw, 3.1rem) Georgia, serif; }
+.personalization-page-header span { color: #6d6661; font-size: .8rem; }
+.personalization-page-header > label { justify-self: end; display: grid; gap: .3rem; font-size: .7rem; font-weight: 700; }
+.personalization-page-header select { padding: .55rem .8rem; border: 1px solid #d7cec8; border-radius: .5rem; background: #fff; }
+.personalization-page .personalizer { margin-top: 1.25rem; padding: clamp(1rem, 2vw, 1.5rem); }
+.personalization-page .personalizer-heading { display: none; }
+.personalization-page .personalizer-layout { margin-top: 0; grid-template-columns: minmax(250px, 330px) minmax(500px, 1fr); }
+.personalization-page .personalizer-stage { min-height: min(70vh, 760px); }
+.personalization-checkout-bar { max-width: 1500px; padding: .8rem clamp(1rem, 3vw, 2rem); position: fixed; right: 0; bottom: 0; left: 0; z-index: 20; display: flex; align-items: center; justify-content: flex-end; gap: 1rem; border-top: 1px solid #ddd3cd; background: rgb(255 253 252 / 94%); backdrop-filter: blur(12px); }
+.personalization-checkout-bar > span { margin-right: auto; color: #625a55; font-size: .78rem; }
+.personalization-checkout-bar .button { display: inline-flex; align-items: center; gap: .45rem; }
+.personalization-checkout-bar strong { color: #9e344d; font-size: .72rem; }
 @media (max-width: 760px) { .personalizer-layout { grid-template-columns: 1fr; } .personalizer-stage { min-height: 360px; } }
+@media (max-width: 820px) { .personalization-page-header { grid-template-columns: 1fr; align-items: start; } .personalization-page-header > div { text-align: left; } .personalization-page-header > label { justify-self: start; } .personalization-page .personalizer-layout { grid-template-columns: 1fr; } .personalization-page .personalizer-stage { min-height: 52vh; } .personalization-checkout-bar { flex-wrap: wrap; } }

@@ -673,6 +673,11 @@ export interface PersonalizationConfig {
   "area_x": number
   "area_y": number
   "mode": string
+  "preview_media_id"?: string | null
+  "text_area_height": number
+  "text_area_width": number
+  "text_area_x": number
+  "text_area_y": number
   "text_max_characters": number
   "text_max_size": number
   "text_min_size": number

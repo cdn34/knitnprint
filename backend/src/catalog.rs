@@ -51,10 +51,15 @@ pub struct Product {
 #[derive(Clone, Serialize, Deserialize, ToSchema, FromRow)]
 pub struct PersonalizationConfig {
     pub mode: String,
+    pub preview_media_id: Option<Uuid>,
     pub area_x: i32,
     pub area_y: i32,
     pub area_width: i32,
     pub area_height: i32,
+    pub text_area_x: i32,
+    pub text_area_y: i32,
+    pub text_area_width: i32,
+    pub text_area_height: i32,
     pub text_max_characters: i32,
     pub text_min_size: i32,
     pub text_max_size: i32,
@@ -66,15 +71,28 @@ impl Default for PersonalizationConfig {
     fn default() -> Self {
         Self {
             mode: "none".into(),
+            preview_media_id: None,
             area_x: 2500,
             area_y: 2500,
             area_width: 5000,
             area_height: 5000,
+            text_area_x: 2500,
+            text_area_y: 6500,
+            text_area_width: 5000,
+            text_area_height: 2000,
             text_max_characters: 35,
             text_min_size: 12,
             text_max_size: 72,
-            allowed_fonts: serde_json::json!(["Arial"]),
-            allowed_colors: serde_json::json!(["#111111"]),
+            allowed_fonts: serde_json::json!([
+                "Roboto",
+                "Montserrat",
+                "Playfair Display",
+                "Dancing Script",
+                "Pacifico"
+            ]),
+            allowed_colors: serde_json::json!([
+                "#111111", "#ffffff", "#9c5263", "#1f4f78", "#b3232f"
+            ]),
         }
     }
 }
@@ -1065,7 +1083,9 @@ async fn hydrate_product(pool: &PgPool, row: ProductRow) -> Result<Product, sqlx
     .await?;
     let personalization = sqlx::query_as::<_, PersonalizationConfig>(
         r#"
-        SELECT mode, area_x, area_y, area_width, area_height,
+        SELECT mode, preview_media_asset_id AS preview_media_id,
+               area_x, area_y, area_width, area_height,
+               text_area_x, text_area_y, text_area_width, text_area_height,
                text_max_characters, text_min_size, text_max_size,
                allowed_fonts, allowed_colors
         FROM product_personalization WHERE product_id = $1
@@ -1121,6 +1141,12 @@ fn valid_personalization(config: &PersonalizationConfig) -> bool {
         && config.area_height >= 100
         && config.area_x + config.area_width <= 10_000
         && config.area_y + config.area_height <= 10_000
+        && config.text_area_x >= 0
+        && config.text_area_y >= 0
+        && config.text_area_width >= 100
+        && config.text_area_height >= 100
+        && config.text_area_x + config.text_area_width <= 10_000
+        && config.text_area_y + config.text_area_height <= 10_000
         && (1..=500).contains(&config.text_max_characters)
         && (8..=200).contains(&config.text_min_size)
         && (config.text_min_size..=300).contains(&config.text_max_size)
@@ -1147,12 +1173,16 @@ async fn upsert_personalization(
     sqlx::query(
         r#"
         INSERT INTO product_personalization (
-            product_id, mode, area_x, area_y, area_width, area_height,
+            product_id, mode, preview_media_asset_id, area_x, area_y, area_width, area_height,
+            text_area_x, text_area_y, text_area_width, text_area_height,
             text_max_characters, text_min_size, text_max_size, allowed_fonts, allowed_colors
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
         ON CONFLICT (product_id) DO UPDATE SET
-            mode=EXCLUDED.mode, area_x=EXCLUDED.area_x, area_y=EXCLUDED.area_y,
+            mode=EXCLUDED.mode, preview_media_asset_id=EXCLUDED.preview_media_asset_id,
+            area_x=EXCLUDED.area_x, area_y=EXCLUDED.area_y,
             area_width=EXCLUDED.area_width, area_height=EXCLUDED.area_height,
+            text_area_x=EXCLUDED.text_area_x, text_area_y=EXCLUDED.text_area_y,
+            text_area_width=EXCLUDED.text_area_width, text_area_height=EXCLUDED.text_area_height,
             text_max_characters=EXCLUDED.text_max_characters,
             text_min_size=EXCLUDED.text_min_size, text_max_size=EXCLUDED.text_max_size,
             allowed_fonts=EXCLUDED.allowed_fonts, allowed_colors=EXCLUDED.allowed_colors,
@@ -1161,10 +1191,15 @@ async fn upsert_personalization(
     )
     .bind(product_id)
     .bind(&config.mode)
+    .bind(config.preview_media_id)
     .bind(config.area_x)
     .bind(config.area_y)
     .bind(config.area_width)
     .bind(config.area_height)
+    .bind(config.text_area_x)
+    .bind(config.text_area_y)
+    .bind(config.text_area_width)
+    .bind(config.text_area_height)
     .bind(config.text_max_characters)
     .bind(config.text_min_size)
     .bind(config.text_max_size)

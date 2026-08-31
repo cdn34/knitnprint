@@ -6562,6 +6562,10 @@
           "area_y",
           "area_width",
           "area_height",
+          "text_area_x",
+          "text_area_y",
+          "text_area_width",
+          "text_area_height",
           "text_max_characters",
           "text_min_size",
           "text_max_size",
@@ -6589,6 +6593,29 @@
           },
           "mode": {
             "type": "string"
+          },
+          "preview_media_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "text_area_height": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "text_area_width": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "text_area_x": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "text_area_y": {
+            "type": "integer",
+            "format": "int32"
           },
           "text_max_characters": {
             "type": "integer",

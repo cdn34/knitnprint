@@ -1,9 +1,11 @@
 import {
   StrictMode,
   type FormEvent,
+  type PointerEvent as ReactPointerEvent,
   type ReactNode,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react'
 import { createRoot } from 'react-dom/client'
@@ -1689,6 +1691,43 @@ function InventoryManagement({ initialVariantId }: Readonly<{ initialVariantId?:
 
 const productsKey = ['admin-products'] as const
 
+type PrintArea = { x: number; y: number; width: number; height: number }
+
+function EditablePrintArea({ area, label, kind, onChange }: Readonly<{
+  area: PrintArea
+  label: string
+  kind: 'photo' | 'text'
+  onChange: (area: PrintArea) => void
+}>) {
+  const interaction = useRef<{ startX: number; startY: number; area: PrintArea; handle: string } | undefined>(undefined)
+  function start(event: ReactPointerEvent<HTMLElement>, handle: string) {
+    event.preventDefault()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    interaction.current = { startX: event.clientX, startY: event.clientY, area, handle }
+  }
+  function move(event: ReactPointerEvent<HTMLElement>) {
+    const active = interaction.current
+    const bounds = event.currentTarget.parentElement?.getBoundingClientRect()
+    if (!active || !bounds) return
+    const dx = (event.clientX - active.startX) / bounds.width * 100
+    const dy = (event.clientY - active.startY) / bounds.height * 100
+    let { x, y, width, height } = active.area
+    if (active.handle === 'move') {
+      x = Math.max(0, Math.min(100 - width, x + dx)); y = Math.max(0, Math.min(100 - height, y + dy))
+    } else {
+      if (active.handle.includes('w')) { const next = Math.max(0, Math.min(x + width - 5, x + dx)); width += x - next; x = next }
+      if (active.handle.includes('e')) width = Math.max(5, Math.min(100 - x, width + dx))
+      if (active.handle.includes('n')) { const next = Math.max(0, Math.min(y + height - 5, y + dy)); height += y - next; y = next }
+      if (active.handle.includes('s')) height = Math.max(5, Math.min(100 - y, height + dy))
+    }
+    onChange({ x, y, width, height })
+  }
+  return <div className={`editable-print-area editable-print-area--${kind}`} style={{ left: `${area.x}%`, top: `${area.y}%`, width: `${area.width}%`, height: `${area.height}%` }} onPointerDown={(event) => start(event, 'move')} onPointerMove={move} onPointerUp={() => { interaction.current = undefined }}>
+    <span>{label}</span>
+    {(['nw', 'ne', 'sw', 'se'] as const).map((handle) => <button key={handle} type="button" className={`resize-handle resize-handle--${handle}`} aria-label={`Redimensionar zona de ${label}`} onPointerDown={(event) => { event.stopPropagation(); start(event, handle) }} onPointerMove={move} onPointerUp={() => { interaction.current = undefined }}>{handle === 'nw' ? '↖' : handle === 'ne' ? '↗' : handle === 'sw' ? '↙' : '↘'}</button>)}
+  </div>
+}
+
 function CatalogManagement({
   canUpload,
   canWrite,
@@ -1706,20 +1745,26 @@ function CatalogManagement({
   const [productQuantity, setProductQuantity] = useState('0')
   const [productCategoryIds, setProductCategoryIds] = useState<string[]>([])
   const [personalizationMode, setPersonalizationMode] = useState<'none' | 'photo' | 'text' | 'photo_text'>('none')
-  const [printArea, setPrintArea] = useState({ x: 25, y: 25, width: 50, height: 50 })
+  const [photoArea, setPhotoArea] = useState<PrintArea>({ x: 25, y: 25, width: 50, height: 50 })
+  const [textArea, setTextArea] = useState<PrintArea>({ x: 25, y: 65, width: 50, height: 20 })
+  const [previewMediaId, setPreviewMediaId] = useState<string>()
   const [textMaxCharacters, setTextMaxCharacters] = useState(35)
   const [textMinSize, setTextMinSize] = useState(12)
   const [textMaxSize, setTextMaxSize] = useState(72)
-  const [allowedFonts, setAllowedFonts] = useState('Arial')
-  const [allowedColors, setAllowedColors] = useState('#111111')
+  const [allowedFonts, setAllowedFonts] = useState('Roboto, Montserrat, Playfair Display, Dancing Script, Pacifico')
+  const [allowedColors, setAllowedColors] = useState('#111111, #ffffff, #9c5263, #1f4f78, #b3232f')
   const personalization = {
     mode: personalizationMode,
-    area_x: Math.round(printArea.x * 100), area_y: Math.round(printArea.y * 100),
-    area_width: Math.round(printArea.width * 100), area_height: Math.round(printArea.height * 100),
+    preview_media_id: previewMediaId,
+    area_x: Math.round(photoArea.x * 100), area_y: Math.round(photoArea.y * 100),
+    area_width: Math.round(photoArea.width * 100), area_height: Math.round(photoArea.height * 100),
+    text_area_x: Math.round(textArea.x * 100), text_area_y: Math.round(textArea.y * 100),
+    text_area_width: Math.round(textArea.width * 100), text_area_height: Math.round(textArea.height * 100),
     text_max_characters: textMaxCharacters, text_min_size: textMinSize, text_max_size: textMaxSize,
     allowed_fonts: allowedFonts.split(',').map((value) => value.trim()).filter(Boolean),
     allowed_colors: allowedColors.split(',').map((value) => value.trim()).filter(Boolean),
   }
+  const personalizationPreviewMedia = preview?.media.find(({ id }) => id === previewMediaId) ?? preview?.media[0]
   const editorDirty = useMemo(() => {
     if (!preview) {
       return Boolean(productTitle || productSlug || productDescription || productKeywords || productSku || productPrice || productQuantity !== '0')
@@ -1939,7 +1984,9 @@ function CatalogManagement({
     setProductCategoryIds(product.categories.map(({ id }) => id))
     const config = product.personalization
     setPersonalizationMode(config.mode as typeof personalizationMode)
-    setPrintArea({ x: config.area_x / 100, y: config.area_y / 100, width: config.area_width / 100, height: config.area_height / 100 })
+    setPhotoArea({ x: config.area_x / 100, y: config.area_y / 100, width: config.area_width / 100, height: config.area_height / 100 })
+    setTextArea({ x: config.text_area_x / 100, y: config.text_area_y / 100, width: config.text_area_width / 100, height: config.text_area_height / 100 })
+    setPreviewMediaId(config.preview_media_id ?? product.media[0]?.id)
     setTextMaxCharacters(config.text_max_characters)
     setTextMinSize(config.text_min_size)
     setTextMaxSize(config.text_max_size)
@@ -1959,12 +2006,14 @@ function CatalogManagement({
     setProductQuantity('0')
     setProductCategoryIds([])
     setPersonalizationMode('none')
-    setPrintArea({ x: 25, y: 25, width: 50, height: 50 })
+    setPhotoArea({ x: 25, y: 25, width: 50, height: 50 })
+    setTextArea({ x: 25, y: 65, width: 50, height: 20 })
+    setPreviewMediaId(undefined)
     setTextMaxCharacters(35)
     setTextMinSize(12)
     setTextMaxSize(72)
-    setAllowedFonts('Arial')
-    setAllowedColors('#111111')
+    setAllowedFonts('Roboto, Montserrat, Playfair Display, Dancing Script, Pacifico')
+    setAllowedColors('#111111, #ffffff, #9c5263, #1f4f78, #b3232f')
   }
 
   function submitVariant(event: FormEvent<HTMLFormElement>) {
@@ -2249,17 +2298,12 @@ function CatalogManagement({
               </select>
               {personalizationMode !== 'none' && (
                 <>
-                  <p className="field-help">Define a zona onde o cliente poderá criar. Os valores são percentagens da fotografia principal.</p>
+                  <p className="field-help">Escolhe a fotografia que mostra melhor a área a personalizar. Arrasta cada caixa e usa as setas nos cantos para a dimensionar.</p>
+                  {preview?.media.length ? <label htmlFor="personalization-preview-media">Fotografia apresentada no editor<select id="personalization-preview-media" value={personalizationPreviewMedia?.id ?? ''} onChange={(event) => setPreviewMediaId(event.target.value)}>{preview.media.map((media, index) => <option key={media.id} value={media.id}>{index === 0 ? 'Fotografia principal' : `Fotografia ${index + 1}`} · {media.alt_text}</option>)}</select></label> : <p className="field-help">Guarda o produto e adiciona fotografias para poderes escolher a vista do editor.</p>}
                   <div className="print-area-preview">
-                    {preview?.media[0] ? <img src={preview.media[0].detail_url} alt="" /> : <span>Adiciona uma fotografia principal para posicionar a zona.</span>}
-                    <i style={{ left: `${printArea.x}%`, top: `${printArea.y}%`, width: `${printArea.width}%`, height: `${printArea.height}%` }}>Zona personalizável</i>
-                  </div>
-                  <div className="print-area-fields">
-                    {(['x', 'y', 'width', 'height'] as const).map((field) => (
-                      <label key={field}>{field === 'x' ? 'Esquerda' : field === 'y' ? 'Topo' : field === 'width' ? 'Largura' : 'Altura'} (%)
-                        <input type="number" min="0" max="100" step="1" value={printArea[field]} onChange={(event) => setPrintArea((current) => ({ ...current, [field]: Number(event.target.value) }))} />
-                      </label>
-                    ))}
+                    {personalizationPreviewMedia ? <img src={personalizationPreviewMedia.detail_url} alt="" /> : <span>Adiciona uma fotografia para posicionar as zonas.</span>}
+                    {(personalizationMode === 'photo' || personalizationMode === 'photo_text') && <EditablePrintArea area={photoArea} onChange={setPhotoArea} label="Fotografia" kind="photo" />}
+                    {(personalizationMode === 'text' || personalizationMode === 'photo_text') && <EditablePrintArea area={textArea} onChange={setTextArea} label="Texto" kind="text" />}
                   </div>
                 </>
               )}

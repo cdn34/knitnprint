@@ -89,7 +89,7 @@ h1 { margin: .25rem 0 0; font: 500 2rem Georgia, serif; }
 .section-heading > span { padding: .35rem .65rem; border-radius: 2rem; color: #5f4652; background: #eee5e9; font-size: .7rem; font-weight: 600; }
 .catalog-toolbar { height: 44px; margin-bottom: .8rem; padding: 0 .8rem; display: flex; align-items: center; gap: .55rem; border: 1px solid #ded4cc; border-radius: .65rem; color: #765c47; background: #fffdfc; }
 .catalog-toolbar input { width: 100%; height: 100%; border: 0; outline: 0; color: #2e2e2d; background: transparent; font-size: .75rem; }
-.catalog-layout { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(310px, .6fr); gap: 1.2rem; align-items: start; }
+.catalog-layout { display: grid; grid-template-columns: minmax(280px, .78fr) minmax(440px, 1.22fr); gap: 1.2rem; align-items: start; }
 .product-list, .product-form, .product-preview, .catalog-editor > section { border: 1px solid #ded4cc; border-radius: .8rem; background: #fffdfc; }
 .product-row { padding: 1rem; display: flex; align-items: center; gap: .8rem; border-bottom: 1px solid #ede6e1; }
 .product-row:last-child { border-bottom: 0; }
@@ -139,7 +139,15 @@ h1 { margin: .25rem 0 0; font: 500 2rem Georgia, serif; }
 .personalization-settings > label, .text-personalization-settings > label, .print-area-fields label { display: grid; gap: .32rem; color: #4f4b48; font-size: .65rem; font-weight: 600; }
 .print-area-preview { margin-top: .75rem; aspect-ratio: 4 / 3; position: relative; display: grid; place-items: center; overflow: hidden; border-radius: .5rem; color: #746b65; background: #f4f0ed; font-size: .65rem; text-align: center; }
 .print-area-preview img { width: 100%; height: 100%; object-fit: contain; }
-.print-area-preview i { position: absolute; display: grid; place-items: center; border: 2px dashed #d05e75; color: #8a3045; background: rgb(255 239 242 / 55%); font-size: .58rem; font-style: normal; font-weight: 700; }
+.editable-print-area { position: absolute; display: grid; place-items: center; border: 2px dashed; background: rgb(255 255 255 / 24%); cursor: move; touch-action: none; }
+.editable-print-area--photo { border-color: #d05e75; color: #8a3045; background: rgb(255 239 242 / 42%); }
+.editable-print-area--text { border-color: #39749d; color: #174d72; background: rgb(232 246 255 / 42%); }
+.editable-print-area > span { padding: .2rem .35rem; border-radius: 1rem; background: rgb(255 255 255 / 82%); font-size: .58rem; font-weight: 800; pointer-events: none; }
+.resize-handle { width: 25px !important; height: 25px; padding: 0 !important; position: absolute; display: grid; place-items: center; border: 1px solid currentColor !important; border-radius: 50% !important; color: inherit !important; background: #fff !important; font-size: .8rem; line-height: 1; cursor: nwse-resize; touch-action: none; }
+.resize-handle--nw { left: -13px; top: -13px; }
+.resize-handle--ne { right: -13px; top: -13px; cursor: nesw-resize; }
+.resize-handle--sw { left: -13px; bottom: -13px; cursor: nesw-resize; }
+.resize-handle--se { right: -13px; bottom: -13px; }
 .print-area-fields { margin-top: .65rem; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .55rem; }
 .text-personalization-settings { margin-top: .8rem; padding-top: .8rem; display: grid; gap: .65rem; border-top: 1px solid #ede6e1; }
 .variant-heading { margin-top: 1rem; padding-top: .9rem; border-top: 1px solid #ede6e1; color: #765c47; font-size: .65rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
