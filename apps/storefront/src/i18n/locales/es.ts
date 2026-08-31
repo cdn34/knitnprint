@@ -20,8 +20,6 @@ export const es = {
   'common.priceUnavailable': 'Precio no disponible',
   'stock.soldOut': 'Agotado',
   'stock.soldOutDetail': 'Esta opción no está disponible en este momento.',
-  'stock.low': 'Solo quedan {count}',
-  'stock.lowDetail': 'Quedan pocas unidades en el estudio.',
   'stock.available': 'Disponible',
   'stock.availableDetail': 'Disponible en el inventario de nuestro estudio.',
   'shell.announcement': 'Objetos en pequeñas series, creados con tiempo en Portugal',
