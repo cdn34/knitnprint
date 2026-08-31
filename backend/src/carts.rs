@@ -1130,11 +1130,21 @@ fn customization_allowed(
 ) -> bool {
     let photo = customization.and_then(|value| value.get("photo"));
     let text = customization.and_then(|value| value.get("text"));
+    let has_personalization = photo.is_some() || text.is_some();
+    let photo_upload_matches = photo.is_some() == media_id.is_some();
     let shape_valid = match variant.personalization_mode.as_str() {
         "none" => customization.is_none() && media_id.is_none(),
-        "photo" => photo.is_some() && text.is_none() && media_id.is_some(),
-        "text" => photo.is_none() && text.is_some() && media_id.is_none(),
-        "photo_text" => photo.is_some() && text.is_some() && media_id.is_some(),
+        "photo" => {
+            text.is_none()
+                && photo_upload_matches
+                && (customization.is_none() || has_personalization)
+        }
+        "text" => {
+            photo.is_none()
+                && media_id.is_none()
+                && (customization.is_none() || has_personalization)
+        }
+        "photo_text" => photo_upload_matches && (customization.is_none() || has_personalization),
         _ => false,
     };
     if !shape_valid {
@@ -1155,9 +1165,17 @@ fn customization_allowed(
     let Some(size) = text.get("size").and_then(Value::as_i64) else {
         return false;
     };
+    let Some(x) = text.get("x").and_then(Value::as_f64) else {
+        return false;
+    };
+    let Some(y) = text.get("y").and_then(Value::as_f64) else {
+        return false;
+    };
     !content.trim().is_empty()
         && content.chars().count() <= variant.text_max_characters as usize
         && (variant.text_min_size as i64..=variant.text_max_size as i64).contains(&size)
+        && (0.0..=100.0).contains(&x)
+        && (0.0..=100.0).contains(&y)
         && variant
             .allowed_fonts
             .as_array()
@@ -1617,4 +1635,73 @@ fn invalid_discount() -> Response {
         )),
     )
         .into_response()
+}
+
+#[cfg(test)]
+mod personalization_tests {
+    use super::*;
+
+    fn variant(mode: &str) -> VariantForCart {
+        VariantForCart {
+            price_minor: 1000,
+            currency: "EUR".into(),
+            available_quantity: 10,
+            personalization_mode: mode.into(),
+            text_max_characters: 35,
+            text_min_size: 12,
+            text_max_size: 72,
+            allowed_fonts: serde_json::json!(["Roboto"]),
+            allowed_colors: serde_json::json!(["#111111"]),
+        }
+    }
+
+    fn text_at(x: f64, y: f64) -> Value {
+        serde_json::json!({ "text": { "content": "Olá", "font": "Roboto", "color": "#111111", "size": 24, "x": x, "y": y } })
+    }
+
+    #[test]
+    fn personalization_is_optional_for_personalizable_products() {
+        for mode in ["photo", "text", "photo_text"] {
+            assert!(customization_allowed(&variant(mode), None, None));
+        }
+    }
+
+    #[test]
+    fn combined_mode_accepts_partial_or_complete_personalization() {
+        let media_id = Uuid::new_v4();
+        let photo = serde_json::json!({ "photo": { "x": 50, "y": 50, "scale": 1 } });
+        let both = serde_json::json!({
+            "photo": { "x": 50, "y": 50, "scale": 1 },
+            "text": { "content": "Olá", "font": "Roboto", "color": "#111111", "size": 24, "x": 50, "y": 50 }
+        });
+        assert!(customization_allowed(
+            &variant("photo_text"),
+            Some(&text_at(50.0, 50.0)),
+            None
+        ));
+        assert!(customization_allowed(
+            &variant("photo_text"),
+            Some(&photo),
+            Some(media_id)
+        ));
+        assert!(customization_allowed(
+            &variant("photo_text"),
+            Some(&both),
+            Some(media_id)
+        ));
+    }
+
+    #[test]
+    fn text_position_must_remain_inside_the_print_area() {
+        assert!(customization_allowed(
+            &variant("text"),
+            Some(&text_at(0.0, 100.0)),
+            None
+        ));
+        assert!(!customization_allowed(
+            &variant("text"),
+            Some(&text_at(101.0, 50.0)),
+            None
+        ));
+    }
 }
