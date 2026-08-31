@@ -1698,6 +1698,7 @@ const PERSONALIZATION_COLOR_OPTIONS = [
 ] as const
 
 type PrintArea = { x: number; y: number; width: number; height: number }
+const DEFAULT_TEXT_AREA: PrintArea = { x: 25, y: 30, width: 50, height: 25 }
 
 function EditablePrintArea({ area, label, kind, active, onActivate, onChange }: Readonly<{
   area: PrintArea
@@ -1756,7 +1757,7 @@ function CatalogManagement({
   const [productCategoryIds, setProductCategoryIds] = useState<string[]>([])
   const [personalizationMode, setPersonalizationMode] = useState<'none' | 'photo' | 'text' | 'photo_text'>('none')
   const [photoArea, setPhotoArea] = useState<PrintArea>({ x: 25, y: 25, width: 50, height: 50 })
-  const [textArea, setTextArea] = useState<PrintArea>({ x: 25, y: 65, width: 50, height: 20 })
+  const [textArea, setTextArea] = useState<PrintArea>(DEFAULT_TEXT_AREA)
   const [activePrintArea, setActivePrintArea] = useState<'photo' | 'text'>('text')
   const [previewMediaId, setPreviewMediaId] = useState<string>()
   const [textMaxCharacters, setTextMaxCharacters] = useState(35)
@@ -1997,7 +1998,9 @@ function CatalogManagement({
     setPersonalizationMode(config.mode as typeof personalizationMode)
     setActivePrintArea(config.mode === 'photo' ? 'photo' : 'text')
     setPhotoArea({ x: config.area_x / 100, y: config.area_y / 100, width: config.area_width / 100, height: config.area_height / 100 })
-    setTextArea({ x: config.text_area_x / 100, y: config.text_area_y / 100, width: config.text_area_width / 100, height: config.text_area_height / 100 })
+    const configuredTextArea = { x: config.text_area_x / 100, y: config.text_area_y / 100, width: config.text_area_width / 100, height: config.text_area_height / 100 }
+    const usesLegacyTextArea = configuredTextArea.x === 25 && configuredTextArea.y === 65 && configuredTextArea.width === 50 && configuredTextArea.height === 20
+    setTextArea(usesLegacyTextArea ? DEFAULT_TEXT_AREA : configuredTextArea)
     setPreviewMediaId(config.preview_media_id ?? product.media[0]?.id)
     setTextMaxCharacters(config.text_max_characters)
     setTextMinSize(config.text_min_size)
@@ -2022,7 +2025,7 @@ function CatalogManagement({
     setPersonalizationMode('none')
     setActivePrintArea('text')
     setPhotoArea({ x: 25, y: 25, width: 50, height: 50 })
-    setTextArea({ x: 25, y: 65, width: 50, height: 20 })
+    setTextArea(DEFAULT_TEXT_AREA)
     setPreviewMediaId(undefined)
     setTextMaxCharacters(35)
     setTextMinSize(12)
