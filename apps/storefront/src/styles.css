@@ -3831,6 +3831,13 @@ html[lang='pt'] .home-section-title--categories h2 {
 .personalizer-heading span { display: block; margin-top: .45rem; color: #6d6661; font-size: .82rem; }
 .personalizer-layout { margin-top: 1.4rem; display: grid; grid-template-columns: minmax(220px, .55fr) minmax(320px, 1.45fr); gap: 1.25rem; }
 .personalizer-tools { display: flex; flex-direction: column; gap: .8rem; }
+.personalizer-area-switcher { padding: .8rem; display: grid; gap: .55rem; border: 1px solid #e2d7d1; border-radius: .8rem; background: #f8f3f0; }
+.personalizer-area-switcher > span { color: #6f625d; font-size: .66rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+.personalizer-area-switcher > div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .45rem; }
+.personalizer-area-switcher button { min-width: 0; padding: .5rem .6rem; display: flex; align-items: center; gap: .45rem; overflow: hidden; border: 1px solid #d8cbc5; border-radius: .55rem; color: #554f4b; background: #fff; font-size: .68rem; font-weight: 700; text-align: left; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.personalizer-area-switcher button b { width: 1.35rem; height: 1.35rem; flex: 0 0 auto; display: grid; place-items: center; border-radius: 50%; color: #8f4558; background: #f8e9ed; font-size: .62rem; }
+.personalizer-area-switcher button.selected { border-color: #9c5263; color: #fff; background: #9c5263; box-shadow: 0 3px 10px rgb(107 56 69 / 18%); }
+.personalizer-area-switcher button.selected b { color: #9c5263; background: #fff; }
 .personalizer-tool { padding: 1rem; display: grid; gap: .75rem; border: 1px solid #e8dfda; border-radius: .8rem; background: #fcfaf8; }
 .personalizer-tool--selected { border-color: #c894a1; box-shadow: 0 0 0 2px rgb(164 82 101 / 10%); background: #fffafb; }
 .personalizer-tool strong { display: flex; align-items: center; gap: .45rem; font-size: .82rem; }

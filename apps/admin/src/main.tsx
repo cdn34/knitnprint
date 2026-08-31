@@ -667,13 +667,14 @@ function OrderDetail({
       </section>
       <section className="order-detail-section">
         <h4>Items</h4>
-        {order.lines.map((line) => (
-          <div className="order-line order-line--customizable" key={line.id}>
-            {line.customization_media_asset_id && <a href={`/api/admin/personalization/media/${line.customization_media_asset_id}/detail`} target="_blank" rel="noreferrer"><img className="order-customization-image" src={`/api/admin/personalization/media/${line.customization_media_asset_id}/thumbnail`} alt="Fotografia enviada pelo cliente" /></a>}
+        {order.lines.map((line) => {
+          const mediaIds = line.customization_media_asset_ids?.length ? line.customization_media_asset_ids : line.customization_media_asset_id ? [line.customization_media_asset_id] : []
+          return <div className="order-line order-line--customizable" key={line.id}>
+            {mediaIds.length > 0 && <div className="order-customization-images">{mediaIds.map((mediaId, index) => <a key={mediaId} href={`/api/admin/personalization/media/${mediaId}/detail`} target="_blank" rel="noreferrer"><img className="order-customization-image" src={`/api/admin/personalization/media/${mediaId}/thumbnail`} alt={`Fotografia ${index + 1} enviada pelo cliente`} /></a>)}</div>}
             <span><strong>{line.product_title}</strong><small>{line.variant_title} · {line.sku} · Qty {line.quantity} · Shipped {line.fulfilled_quantity}</small>{Boolean(line.customization) && <small className="order-customization-summary">Personalização: {customizationLabel(line.customization)}</small>}</span>
             <b>{formatMoney(line.line_total_minor, line.currency)}</b>
           </div>
-        ))}
+        })}
       </section>
       {canRecordPayment && order.payment_status === 'paid' && order.fulfillment_status !== 'fulfilled' && (
         <form className="fulfillment-form order-detail-section" onSubmit={(event) => onFulfill(event, order)}>
@@ -792,6 +793,12 @@ function OrderDetail({
 
 function customizationLabel(value: unknown) {
   if (!value || typeof value !== 'object') return 'configuração guardada'
+  const areas = (value as { areas?: Array<{ photo?: unknown; text?: { content?: unknown } }> }).areas
+  if (Array.isArray(areas)) {
+    const photoCount = areas.filter((area) => area.photo).length
+    const textCount = areas.filter((area) => typeof area.text?.content === 'string').length
+    return [`${areas.length} área${areas.length === 1 ? '' : 's'}`, photoCount ? `${photoCount} fotografia${photoCount === 1 ? '' : 's'}` : '', textCount ? `${textCount} texto${textCount === 1 ? '' : 's'}` : ''].filter(Boolean).join(' · ')
+  }
   const text = (value as { text?: { content?: unknown }; photo?: unknown }).text?.content
   const parts = [(value as { photo?: unknown }).photo ? 'fotografia' : '', typeof text === 'string' ? `texto “${text}”` : ''].filter(Boolean)
   return parts.join(' + ') || 'configuração guardada'

@@ -495,5 +495,6 @@ h1 { margin: .25rem 0 0; font: 500 2rem Georgia, serif; }
   .auth-loading svg, .spinner { animation: none; }
 }
 .order-line--customizable { align-items: center; }
+.order-customization-images { max-width: 142px; display: flex; flex-wrap: wrap; gap: .35rem; }
 .order-customization-image { width: 62px; height: 62px; border-radius: .5rem; object-fit: cover; }
 .order-customization-summary { margin-top: .25rem; color: #8a3045 !important; font-weight: 700; }

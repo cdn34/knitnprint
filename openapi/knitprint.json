@@ -4036,6 +4036,13 @@
             ],
             "format": "uuid"
           },
+          "customization_media_asset_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
           "quantity": {
             "type": "integer",
             "format": "int32"
@@ -4358,7 +4365,8 @@
           "currency",
           "line_total_minor",
           "available_quantity",
-          "available"
+          "available",
+          "customization_media_asset_ids"
         ],
         "properties": {
           "available": {
@@ -4378,6 +4386,13 @@
               "null"
             ],
             "format": "uuid"
+          },
+          "customization_media_asset_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
           },
           "id": {
             "type": "string",
@@ -6191,7 +6206,8 @@
           "fulfilled_quantity",
           "unit_price_minor",
           "line_total_minor",
-          "currency"
+          "currency",
+          "customization_media_asset_ids"
         ],
         "properties": {
           "currency": {
@@ -6204,6 +6220,13 @@
               "null"
             ],
             "format": "uuid"
+          },
+          "customization_media_asset_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
           },
           "fulfilled_quantity": {
             "type": "integer",

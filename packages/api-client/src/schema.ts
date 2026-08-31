@@ -7,6 +7,7 @@ export interface AccountTokenRequest {
 export interface AddCartItemRequest {
   "customization"?: unknown
   "customization_media_asset_id"?: string | null
+  "customization_media_asset_ids"?: Array<string>
   "quantity": number
   "variant_id": string
 }
@@ -89,6 +90,7 @@ export interface CartItem {
   "currency": string
   "customization"?: unknown
   "customization_media_asset_id"?: string | null
+  "customization_media_asset_ids": Array<string>
   "id": string
   "image_url"?: string | null
   "line_total_minor": number
@@ -573,6 +575,7 @@ export interface OrderLine {
   "currency": string
   "customization"?: unknown
   "customization_media_asset_id"?: string | null
+  "customization_media_asset_ids": Array<string>
   "fulfilled_quantity": number
   "id": string
   "line_total_minor": number
