@@ -117,7 +117,9 @@ fn default_print_areas() -> Value {
         "x": 2500,
         "y": 2500,
         "width": 5000,
-        "height": 5000
+        "height": 5000,
+        "physical_width_cm": 20,
+        "physical_height_cm": 20
     }])
 }
 
@@ -1264,6 +1266,11 @@ fn valid_print_areas(value: &Value) -> bool {
             .unwrap_or("")
             .trim();
         let coordinate = |key: &str| area.get(key).and_then(Value::as_i64);
+        let physical_dimension = |key: &str| {
+            area.get(key)
+                .map_or(Some(20.0), Value::as_f64)
+                .is_some_and(|value| (0.5..=200.0).contains(&value))
+        };
         let (Some(x), Some(y), Some(width), Some(height)) = (
             coordinate("x"),
             coordinate("y"),
@@ -1283,6 +1290,8 @@ fn valid_print_areas(value: &Value) -> bool {
             && height >= 100
             && x + width <= 10_000
             && y + height <= 10_000
+            && physical_dimension("physical_width_cm")
+            && physical_dimension("physical_height_cm")
     })
 }
 

@@ -669,9 +669,10 @@ function OrderDetail({
         <h4>Items</h4>
         {order.lines.map((line) => {
           const mediaIds = line.customization_media_asset_ids?.length ? line.customization_media_asset_ids : line.customization_media_asset_id ? [line.customization_media_asset_id] : []
+          const productionSpecs = customizationProductionSpecs(line.customization)
           return <div className="order-line order-line--customizable" key={line.id}>
             {mediaIds.length > 0 && <div className="order-customization-images">{mediaIds.map((mediaId, index) => <a key={mediaId} href={`/api/admin/personalization/media/${mediaId}/detail`} target="_blank" rel="noreferrer"><img className="order-customization-image" src={`/api/admin/personalization/media/${mediaId}/thumbnail`} alt={`Fotografia ${index + 1} enviada pelo cliente`} /></a>)}</div>}
-            <span><strong>{line.product_title}</strong><small>{line.variant_title} · {line.sku} · Qty {line.quantity} · Shipped {line.fulfilled_quantity}</small>{Boolean(line.customization) && <small className="order-customization-summary">Personalização: {customizationLabel(line.customization)}</small>}</span>
+            <span><strong>{line.product_title}</strong><small>{line.variant_title} · {line.sku} · Qty {line.quantity} · Shipped {line.fulfilled_quantity}</small>{Boolean(line.customization) && <small className="order-customization-summary">Personalização: {customizationLabel(line.customization)}</small>}{productionSpecs.length > 0 && <span className="order-customization-specs">{productionSpecs.map((spec) => <span className="order-customization-spec" key={spec.key}><strong>{spec.title}</strong>{spec.photo && <small>{spec.photo}</small>}{spec.text && <small>{spec.text}</small>}</span>)}</span>}</span>
             <b>{formatMoney(line.line_total_minor, line.currency)}</b>
           </div>
         })}
@@ -803,6 +804,46 @@ function customizationLabel(value: unknown) {
   const text = (value as { text?: { content?: unknown }; photo?: unknown }).text?.content
   const parts = [(value as { photo?: unknown }).photo ? 'fotografia' : '', typeof text === 'string' ? `texto “${text}”` : ''].filter(Boolean)
   return parts.join(' + ') || 'configuração guardada'
+}
+
+type CustomizationElementSnapshot = { width?: unknown; height?: unknown }
+type CustomizationTextSnapshot = CustomizationElementSnapshot & { content?: unknown; font?: unknown; color?: unknown; size?: unknown }
+type CustomizationAreaSnapshot = {
+  view_id?: unknown; view_label?: unknown; area_id?: unknown; area_label?: unknown
+  print_width_cm?: unknown; print_height_cm?: unknown
+  photo?: CustomizationElementSnapshot; text?: CustomizationTextSnapshot
+}
+
+function customizationProductionSpecs(value: unknown) {
+  if (!value || typeof value !== 'object') return []
+  const areas = (value as { areas?: unknown }).areas
+  if (!Array.isArray(areas)) return []
+  const formatCm = (measurement: number) => new Intl.NumberFormat('pt-PT', { maximumFractionDigits: 1 }).format(Math.round(measurement * 10) / 10)
+  const elementMeasure = (element: CustomizationElementSnapshot | undefined, printWidth: number, printHeight: number) => {
+    const width = typeof element?.width === 'number' ? element.width : undefined
+    const height = typeof element?.height === 'number' ? element.height : undefined
+    return width !== undefined && height !== undefined ? `${formatCm(printWidth * width / 100)} × ${formatCm(printHeight * height / 100)} cm` : undefined
+  }
+  return areas.flatMap((rawArea, index) => {
+    if (!rawArea || typeof rawArea !== 'object') return []
+    const area = rawArea as CustomizationAreaSnapshot
+    if (typeof area.print_width_cm !== 'number' || typeof area.print_height_cm !== 'number') return []
+    const viewLabel = typeof area.view_label === 'string' ? area.view_label : `Vista ${index + 1}`
+    const areaLabel = typeof area.area_label === 'string' ? area.area_label : `Área ${index + 1}`
+    const photoMeasure = elementMeasure(area.photo, area.print_width_cm, area.print_height_cm)
+    const textMeasure = elementMeasure(area.text, area.print_width_cm, area.print_height_cm)
+    const textContent = typeof area.text?.content === 'string' ? area.text.content : undefined
+    const font = typeof area.text?.font === 'string' ? area.text.font : undefined
+    const color = typeof area.text?.color === 'string' ? area.text.color : undefined
+    const size = typeof area.text?.size === 'number' ? area.text.size : undefined
+    const textDetails = textContent ? [`Texto “${textContent}”`, font, color, size !== undefined ? `tamanho de letra ${size}` : '', textMeasure ? `caixa ${textMeasure}` : ''].filter(Boolean).join(' · ') : undefined
+    return [{
+      key: `${String(area.view_id ?? index)}:${String(area.area_id ?? index)}`,
+      title: `${viewLabel} · ${areaLabel} — área máxima ${formatCm(area.print_width_cm)} × ${formatCm(area.print_height_cm)} cm`,
+      photo: photoMeasure ? `Fotografia a imprimir: ${photoMeasure}` : undefined,
+      text: textDetails,
+    }]
+  })
 }
 
 const discountsKey = ['discounts'] as const
@@ -1706,9 +1747,9 @@ const PERSONALIZATION_COLOR_OPTIONS = [
 ] as const
 
 type PrintArea = { x: number; y: number; width: number; height: number }
-type NamedPrintArea = PrintArea & { id: string; label: string }
+type NamedPrintArea = PrintArea & { id: string; label: string; physicalWidthCm: number; physicalHeightCm: number }
 type PersonalizationView = { id: string; label: string; mediaId?: string; printAreas: NamedPrintArea[] }
-const DEFAULT_PRINT_AREA: NamedPrintArea = { id: 'area-1', label: 'Área 1', x: 25, y: 25, width: 50, height: 50 }
+const DEFAULT_PRINT_AREA: NamedPrintArea = { id: 'area-1', label: 'Área 1', x: 25, y: 25, width: 50, height: 50, physicalWidthCm: 20, physicalHeightCm: 20 }
 const DEFAULT_PERSONALIZATION_VIEW: PersonalizationView = { id: 'view-front', label: 'Frente', printAreas: [{ ...DEFAULT_PRINT_AREA }] }
 
 function printAreaFromBasisPoints(values: unknown[], fallback: PrintArea): PrintArea {
@@ -1726,7 +1767,9 @@ function namedPrintAreas(value: unknown, fallback: NamedPrintArea): NamedPrintAr
     const area = printAreaFromBasisPoints([candidate.x, candidate.y, candidate.width, candidate.height], fallback)
     const id = typeof candidate.id === 'string' && candidate.id.trim() ? candidate.id.trim() : `area-${index + 1}`
     const label = typeof candidate.label === 'string' && candidate.label.trim() ? candidate.label.trim() : `Área ${index + 1}`
-    return [{ id, label, ...area }]
+    const physicalWidthCm = typeof candidate.physical_width_cm === 'number' && Number.isFinite(candidate.physical_width_cm) ? candidate.physical_width_cm : fallback.physicalWidthCm
+    const physicalHeightCm = typeof candidate.physical_height_cm === 'number' && Number.isFinite(candidate.physical_height_cm) ? candidate.physical_height_cm : fallback.physicalHeightCm
+    return [{ id, label, physicalWidthCm, physicalHeightCm, ...area }]
   })
   return areas.length ? areas.slice(0, 8) : [{ ...fallback }]
 }
@@ -1817,8 +1860,8 @@ function CatalogManagement({
     // Keep the legacy fields synchronized while older clients still understand them.
     text_area_x: Math.round(primaryPrintArea.x * 100), text_area_y: Math.round(primaryPrintArea.y * 100),
     text_area_width: Math.round(primaryPrintArea.width * 100), text_area_height: Math.round(primaryPrintArea.height * 100),
-    print_areas: primaryPersonalizationView.printAreas.map((area) => ({ id: area.id, label: area.label.trim(), x: Math.round(area.x * 100), y: Math.round(area.y * 100), width: Math.round(area.width * 100), height: Math.round(area.height * 100) })),
-    views: personalizationViews.map((view) => ({ id: view.id, label: view.label.trim(), media_id: view.mediaId ?? null, print_areas: view.printAreas.map((area) => ({ id: area.id, label: area.label.trim(), x: Math.round(area.x * 100), y: Math.round(area.y * 100), width: Math.round(area.width * 100), height: Math.round(area.height * 100) })) })),
+    print_areas: primaryPersonalizationView.printAreas.map((area) => ({ id: area.id, label: area.label.trim(), x: Math.round(area.x * 100), y: Math.round(area.y * 100), width: Math.round(area.width * 100), height: Math.round(area.height * 100), physical_width_cm: area.physicalWidthCm, physical_height_cm: area.physicalHeightCm })),
+    views: personalizationViews.map((view) => ({ id: view.id, label: view.label.trim(), media_id: view.mediaId ?? null, print_areas: view.printAreas.map((area) => ({ id: area.id, label: area.label.trim(), x: Math.round(area.x * 100), y: Math.round(area.y * 100), width: Math.round(area.width * 100), height: Math.round(area.height * 100), physical_width_cm: area.physicalWidthCm, physical_height_cm: area.physicalHeightCm })) })),
     text_max_characters: textMaxCharacters, text_min_size: textMinSize, text_max_size: textMaxSize,
     allowed_fonts: allowedFonts.split(',').map((value) => value.trim()).filter(Boolean),
     allowed_colors: allowedColors.split(',').map((value) => value.trim()).filter(Boolean),
@@ -2033,7 +2076,7 @@ function CatalogManagement({
     const id = `area-${Date.now()}-${nextNumber}`
     const offset = Math.min(35, 15 + nextNumber * 5)
     setPersonalizationViews((current) => current.map((view) => view.id === activePersonalizationView.id
-      ? { ...view, printAreas: [...view.printAreas, { id, label: `Área ${nextNumber}`, x: offset, y: offset, width: 40, height: 40 }] }
+      ? { ...view, printAreas: [...view.printAreas, { id, label: `Área ${nextNumber}`, x: offset, y: offset, width: 40, height: 40, physicalWidthCm: 20, physicalHeightCm: 20 }] }
       : view))
     setActivePrintAreaId(id)
   }
@@ -2461,10 +2504,17 @@ function CatalogManagement({
                       <label>Largura (%)<input type="number" min="5" max={100 - activePrintArea.x} step="1" value={Math.round(activePrintArea.width)} onChange={(event) => updatePrintArea(activePrintArea.id, { width: Math.max(5, Math.min(100 - activePrintArea.x, Number(event.target.value))) })} /></label>
                       <label>Altura (%)<input type="number" min="5" max={100 - activePrintArea.y} step="1" value={Math.round(activePrintArea.height)} onChange={(event) => updatePrintArea(activePrintArea.id, { height: Math.max(5, Math.min(100 - activePrintArea.y, Number(event.target.value))) })} /></label>
                     </div>
+                    <div className="print-area-physical-settings" aria-label="Medidas reais da área de impressão">
+                      <span><strong>Medida real de impressão</strong><small>Define o tamanho máximo que esta área terá no produto final.</small></span>
+                      <div>
+                        <label>Largura (cm)<input type="number" min="0.5" max="200" step="0.5" value={activePrintArea.physicalWidthCm} onChange={(event) => updatePrintArea(activePrintArea.id, { physicalWidthCm: Math.max(.5, Math.min(200, Number(event.target.value))) })} /></label>
+                        <label>Altura (cm)<input type="number" min="0.5" max="200" step="0.5" value={activePrintArea.physicalHeightCm} onChange={(event) => updatePrintArea(activePrintArea.id, { physicalHeightCm: Math.max(.5, Math.min(200, Number(event.target.value))) })} /></label>
+                      </div>
+                    </div>
                   </div>
                   <div className="print-area-preview">
                     {personalizationPreviewMedia ? <div className="print-area-canvas"><img src={personalizationPreviewMedia.detail_url} alt={`Pré-visualização das áreas sobre ${personalizationPreviewMedia.alt_text}`} />
-                      {printAreas.map((area) => <EditablePrintArea key={area.id} area={area} label={area.label || 'Área sem nome'} active={area.id === activePrintArea.id} onActivate={() => setActivePrintAreaId(area.id)} onChange={(change) => updatePrintArea(area.id, change)} />)}
+                      {printAreas.map((area) => <EditablePrintArea key={area.id} area={area} label={`${area.label || 'Área sem nome'} · ${area.physicalWidthCm} × ${area.physicalHeightCm} cm`} active={area.id === activePrintArea.id} onActivate={() => setActivePrintAreaId(area.id)} onChange={(change) => updatePrintArea(area.id, change)} />)}
                     </div> : <span>Escolhe uma fotografia para {activePersonalizationView.label || 'esta vista'} antes de posicionares as áreas.</span>}
                   </div>
                 </>

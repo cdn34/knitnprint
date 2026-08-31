@@ -3850,6 +3850,9 @@ html[lang='pt'] .home-section-title--categories h2 {
 .personalizer-tool--selected { border-color: #c894a1; box-shadow: 0 0 0 2px rgb(164 82 101 / 10%); background: #fffafb; }
 .personalizer-tool strong { display: flex; align-items: center; gap: .45rem; font-size: .82rem; }
 .personalizer-tool strong svg { width: 18px; color: #a45265; }
+.personalizer-measure { padding: .55rem .65rem; display: flex; align-items: center; justify-content: space-between; gap: .75rem; border: 1px solid #ddcbd0; border-radius: .5rem; color: #68414c; background: #fff6f8; }
+.personalizer-measure small { color: #7c6d69; font-size: .6rem; font-weight: 700; text-align: left; }
+.personalizer-measure b { font-size: .76rem; white-space: nowrap; }
 .personalizer-tool label { display: grid; gap: .3rem; color: #554f4b; font-size: .72rem; font-weight: 650; }
 .personalizer-tool input, .personalizer-tool select, .personalizer-tool textarea { width: 100%; padding: .58rem; border: 1px solid #d5cbc5; border-radius: .45rem; background: #fff; }
 .personalizer-tool small { color: #817872; font-size: .64rem; text-align: right; }
@@ -3869,6 +3872,8 @@ html[lang='pt'] .home-section-title--categories h2 {
 .personalizer-element--text { border-color: #39749d; background: rgb(232 246 255 / 10%); }
 .personalizer-element--text.personalizer-element--selected { border-color: #39749d; }
 .personalizer-element-content { position: absolute; inset: 0; overflow: hidden; display: grid; place-items: center; line-height: normal; pointer-events: none; }
+.personalizer-element-measure { padding: .2rem .35rem; position: absolute; right: 4px; bottom: 4px; z-index: 4; opacity: 0; border-radius: 999px; color: #fff; background: rgb(60 48 52 / 82%); font-size: .52rem; font-weight: 800; line-height: 1.1; white-space: nowrap; pointer-events: none; backdrop-filter: blur(4px); }
+.personalizer-element--selected .personalizer-element-measure { opacity: 1; }
 .personalizer-photo { width: 100%; height: 100%; position: absolute; max-width: none; object-fit: cover; user-select: none; }
 .personalizer-text { max-width: 100%; max-height: 100%; padding: .2rem; overflow: hidden; overflow-wrap: anywhere; font-weight: 700; line-height: 1.05; text-align: center; text-shadow: 0 1px 2px rgb(255 255 255 / 50%); user-select: none; }
 .personalizer-placeholder { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: .35rem; padding: .45rem; color: #8b626c; font-size: .65rem; font-weight: 700; text-align: center; }
@@ -3884,6 +3889,8 @@ html[lang='pt'] .home-section-title--categories h2 {
 .personalizer-drag-hint { padding: .55rem .65rem; display: flex; align-items: flex-start; gap: .4rem; border-left: 3px solid #39749d; color: #536875; background: #f0f7fb; font-size: .65rem; line-height: 1.35; }
 .personalizer-drag-hint svg { width: 14px; height: 14px; flex: 0 0 auto; }
 .personalizer-control-label { color: #554f4b; font-size: .72rem; font-weight: 650; }
+.personalizer-range-heading { display: flex; align-items: center; justify-content: space-between; gap: .6rem; }
+.personalizer-range-heading output { min-width: 2.35rem; padding: .22rem .45rem; border-radius: 999px; color: #fff; background: #714654; font-size: .68rem; font-weight: 800; text-align: center; }
 .font-choice-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .4rem; }
 .font-choice-grid button { min-width: 0; padding: .45rem .25rem; display: grid; gap: .18rem; place-items: center; border: 1px solid #ddd3cd; border-radius: .4rem; color: #393432; background: #fff; cursor: pointer; }
 .font-choice-grid button.selected { border-color: #9c5263; box-shadow: inset 0 0 0 1px #9c5263; background: #fbf1f4; }

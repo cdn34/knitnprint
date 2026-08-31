@@ -1299,6 +1299,10 @@ fn view_customization_allowed(
     let Some(configured_views) = variant.personalization_views.as_array() else {
         return false;
     };
+    let version = customization
+        .and_then(|value| value.get("version"))
+        .and_then(Value::as_i64)
+        .unwrap_or(5);
     let mut seen_assignments = Vec::with_capacity(areas.len());
     let mut referenced_media_ids = Vec::new();
     for area in areas {
@@ -1317,15 +1321,18 @@ fn view_customization_allowed(
         else {
             return false;
         };
-        let area_exists = configured_view
+        let Some(configured_area) = configured_view
             .get("print_areas")
             .and_then(Value::as_array)
-            .is_some_and(|configured_areas| {
-                configured_areas
-                    .iter()
-                    .any(|configured| configured.get("id").and_then(Value::as_str) == Some(area_id))
-            });
-        if !area_exists {
+            .and_then(|configured_areas| {
+                configured_areas.iter().find(|configured| {
+                    configured.get("id").and_then(Value::as_str) == Some(area_id)
+                })
+            })
+        else {
+            return false;
+        };
+        if version >= 6 && !valid_measurement_snapshot(area, configured_view, configured_area) {
             return false;
         }
         seen_assignments.push((view_id, area_id));
@@ -1356,6 +1363,28 @@ fn view_customization_allowed(
     supplied_media_ids.sort_unstable();
     supplied_media_ids.dedup();
     referenced_media_ids == supplied_media_ids
+}
+
+fn valid_measurement_snapshot(
+    customization_area: &Value,
+    configured_view: &Value,
+    configured_area: &Value,
+) -> bool {
+    let configured_dimension =
+        |key: &str| configured_area.get(key).map_or(Some(20.0), Value::as_f64);
+    let matches_dimension = |snapshot_key: &str, configured_key: &str| {
+        customization_area
+            .get(snapshot_key)
+            .and_then(Value::as_f64)
+            .zip(configured_dimension(configured_key))
+            .is_some_and(|(snapshot, configured)| (snapshot - configured).abs() <= 0.01)
+    };
+    customization_area.get("view_label").and_then(Value::as_str)
+        == configured_view.get("label").and_then(Value::as_str)
+        && customization_area.get("area_label").and_then(Value::as_str)
+            == configured_area.get("label").and_then(Value::as_str)
+        && matches_dimension("print_width_cm", "physical_width_cm")
+        && matches_dimension("print_height_cm", "physical_height_cm")
 }
 
 fn valid_area_text(text: &Value, variant: &VariantForCart) -> bool {
@@ -1943,8 +1972,8 @@ mod personalization_tests {
                 { "id": "pocket-side" }
             ]),
             personalization_views: serde_json::json!([
-                { "id": "view-front", "print_areas": [{ "id": "area-1" }] },
-                { "id": "view-back", "print_areas": [{ "id": "pocket-side" }] }
+                { "id": "view-front", "label": "Frente", "print_areas": [{ "id": "area-1", "label": "Peito", "physical_width_cm": 30, "physical_height_cm": 35 }] },
+                { "id": "view-back", "label": "Costas", "print_areas": [{ "id": "pocket-side", "label": "Costas", "physical_width_cm": 28, "physical_height_cm": 32 }] }
             ]),
             text_max_characters: 35,
             text_min_size: 12,
@@ -2144,6 +2173,34 @@ mod personalization_tests {
         assert!(!customization_allowed(
             &variant("photo_text"),
             Some(&wrong_view),
+            &[]
+        ));
+    }
+
+    #[test]
+    fn physical_print_measurements_are_trusted_only_when_they_match_the_product() {
+        let valid = serde_json::json!({
+            "version": 6,
+            "areas": [{
+                "view_id": "view-front",
+                "view_label": "Frente",
+                "area_id": "area-1",
+                "area_label": "Peito",
+                "print_width_cm": 30,
+                "print_height_cm": 35,
+                "text": { "content": "Olá", "font": "Roboto", "color": "#111111", "size": 24, "x": 10, "y": 20, "width": 80, "height": 40 }
+            }]
+        });
+        assert!(customization_allowed(
+            &variant("photo_text"),
+            Some(&valid),
+            &[]
+        ));
+        let mut tampered = valid;
+        tampered["areas"][0]["print_width_cm"] = serde_json::json!(60);
+        assert!(!customization_allowed(
+            &variant("photo_text"),
+            Some(&tampered),
             &[]
         ));
     }
