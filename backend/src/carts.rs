@@ -174,6 +174,7 @@ struct VariantForCart {
     currency: String,
     available_quantity: i64,
     personalization_mode: String,
+    print_areas: Value,
     text_max_characters: i32,
     text_min_size: i32,
     text_max_size: i32,
@@ -1139,6 +1140,17 @@ fn valid_element_frame(value: &Value) -> bool {
     x >= 0.0 && y >= 0.0 && width > 0.0 && height > 0.0 && x + width <= 100.0 && y + height <= 100.0
 }
 
+fn valid_print_area_assignment(element: &Value, print_areas: &Value) -> bool {
+    let Some(area_id) = element.get("area_id").and_then(Value::as_str) else {
+        return false;
+    };
+    print_areas.as_array().is_some_and(|areas| {
+        areas
+            .iter()
+            .any(|area| area.get("id").and_then(Value::as_str) == Some(area_id))
+    })
+}
+
 fn customization_allowed(
     variant: &VariantForCart,
     customization: Option<&Value>,
@@ -1191,6 +1203,9 @@ fn customization_allowed(
                 return false;
             }
         }
+        if version >= 3 && !valid_print_area_assignment(photo, &variant.print_areas) {
+            return false;
+        }
     }
     let Some(text) = text else {
         return true;
@@ -1219,6 +1234,7 @@ fn customization_allowed(
         && (0.0..=100.0).contains(&x)
         && (0.0..=100.0).contains(&y)
         && (version < 2 || valid_element_frame(text))
+        && (version < 3 || valid_print_area_assignment(text, &variant.print_areas))
         && variant
             .allowed_fonts
             .as_array()
@@ -1237,6 +1253,7 @@ async fn active_variant(
         r##"
         SELECT variant.price_minor, variant.currency::text AS currency,
                inventory.available_quantity, COALESCE(personalization.mode, 'none') AS personalization_mode,
+               COALESCE(personalization.print_areas, '[{"id":"area-1"}]'::jsonb) AS print_areas,
                COALESCE(personalization.text_max_characters, 35) AS text_max_characters,
                COALESCE(personalization.text_min_size, 12) AS text_min_size,
                COALESCE(personalization.text_max_size, 72) AS text_max_size,
@@ -1690,6 +1707,10 @@ mod personalization_tests {
             currency: "EUR".into(),
             available_quantity: 10,
             personalization_mode: mode.into(),
+            print_areas: serde_json::json!([
+                { "id": "area-1" },
+                { "id": "pocket-side" }
+            ]),
             text_max_characters: 35,
             text_min_size: 12,
             text_max_size: 72,
@@ -1786,6 +1807,24 @@ mod personalization_tests {
             &variant("photo"),
             Some(&excessive_zoom),
             Some(media_id)
+        ));
+    }
+
+    #[test]
+    fn version_three_elements_must_use_an_available_print_area() {
+        let valid = serde_json::json!({
+            "version": 3,
+            "text": { "content": "Olá", "font": "Roboto", "color": "#111111", "size": 24, "area_id": "pocket-side", "x": 10, "y": 10, "width": 60, "height": 30 }
+        });
+        let unknown = serde_json::json!({
+            "version": 3,
+            "text": { "content": "Olá", "font": "Roboto", "color": "#111111", "size": 24, "area_id": "back", "x": 10, "y": 10, "width": 60, "height": 30 }
+        });
+        assert!(customization_allowed(&variant("text"), Some(&valid), None));
+        assert!(!customization_allowed(
+            &variant("text"),
+            Some(&unknown),
+            None
         ));
     }
 }

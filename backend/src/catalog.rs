@@ -67,6 +67,8 @@ pub struct PersonalizationConfig {
     pub text_area_y: i32,
     pub text_area_width: i32,
     pub text_area_height: i32,
+    #[serde(default = "default_print_areas")]
+    pub print_areas: Value,
     pub text_max_characters: i32,
     pub text_min_size: i32,
     pub text_max_size: i32,
@@ -87,6 +89,7 @@ impl Default for PersonalizationConfig {
             text_area_y: 3000,
             text_area_width: 5000,
             text_area_height: 2500,
+            print_areas: default_print_areas(),
             text_max_characters: 35,
             text_min_size: 12,
             text_max_size: 72,
@@ -102,6 +105,17 @@ impl Default for PersonalizationConfig {
             ]),
         }
     }
+}
+
+fn default_print_areas() -> Value {
+    serde_json::json!([{
+        "id": "area-1",
+        "label": "Área 1",
+        "x": 2500,
+        "y": 2500,
+        "width": 5000,
+        "height": 5000
+    }])
 }
 
 #[derive(Clone, Serialize, ToSchema, FromRow)]
@@ -1093,6 +1107,7 @@ async fn hydrate_product(pool: &PgPool, row: ProductRow) -> Result<Product, sqlx
         SELECT mode, preview_media_asset_id AS preview_media_id,
                area_x, area_y, area_width, area_height,
                text_area_x, text_area_y, text_area_width, text_area_height,
+               print_areas,
                text_max_characters, text_min_size, text_max_size,
                allowed_fonts, allowed_colors
         FROM product_personalization WHERE product_id = $1
@@ -1154,11 +1169,50 @@ fn valid_personalization(config: &PersonalizationConfig) -> bool {
         && config.text_area_height >= 100
         && config.text_area_x + config.text_area_width <= 10_000
         && config.text_area_y + config.text_area_height <= 10_000
+        && valid_print_areas(&config.print_areas)
         && (1..=500).contains(&config.text_max_characters)
         && (8..=200).contains(&config.text_min_size)
         && (config.text_min_size..=300).contains(&config.text_max_size)
         && valid_font_options(&config.allowed_fonts)
         && valid_color_options(&config.allowed_colors)
+}
+
+fn valid_print_areas(value: &Value) -> bool {
+    let Some(areas) = value.as_array() else {
+        return false;
+    };
+    if areas.is_empty() || areas.len() > 8 {
+        return false;
+    }
+    let mut ids = BTreeSet::new();
+    areas.iter().all(|area| {
+        let id = area.get("id").and_then(Value::as_str).unwrap_or("").trim();
+        let label = area
+            .get("label")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .trim();
+        let coordinate = |key: &str| area.get(key).and_then(Value::as_i64);
+        let (Some(x), Some(y), Some(width), Some(height)) = (
+            coordinate("x"),
+            coordinate("y"),
+            coordinate("width"),
+            coordinate("height"),
+        ) else {
+            return false;
+        };
+        !id.is_empty()
+            && id.len() <= 80
+            && ids.insert(id)
+            && !label.is_empty()
+            && label.len() <= 80
+            && x >= 0
+            && y >= 0
+            && width >= 100
+            && height >= 100
+            && x + width <= 10_000
+            && y + height <= 10_000
+    })
 }
 
 fn valid_font_options(value: &Value) -> bool {
@@ -1198,14 +1252,15 @@ async fn upsert_personalization(
         INSERT INTO product_personalization (
             product_id, mode, preview_media_asset_id, area_x, area_y, area_width, area_height,
             text_area_x, text_area_y, text_area_width, text_area_height,
-            text_max_characters, text_min_size, text_max_size, allowed_fonts, allowed_colors
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+            print_areas, text_max_characters, text_min_size, text_max_size, allowed_fonts, allowed_colors
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
         ON CONFLICT (product_id) DO UPDATE SET
             mode=EXCLUDED.mode, preview_media_asset_id=EXCLUDED.preview_media_asset_id,
             area_x=EXCLUDED.area_x, area_y=EXCLUDED.area_y,
             area_width=EXCLUDED.area_width, area_height=EXCLUDED.area_height,
             text_area_x=EXCLUDED.text_area_x, text_area_y=EXCLUDED.text_area_y,
             text_area_width=EXCLUDED.text_area_width, text_area_height=EXCLUDED.text_area_height,
+            print_areas=EXCLUDED.print_areas,
             text_max_characters=EXCLUDED.text_max_characters,
             text_min_size=EXCLUDED.text_min_size, text_max_size=EXCLUDED.text_max_size,
             allowed_fonts=EXCLUDED.allowed_fonts, allowed_colors=EXCLUDED.allowed_colors,
@@ -1223,6 +1278,7 @@ async fn upsert_personalization(
     .bind(config.text_area_y)
     .bind(config.text_area_width)
     .bind(config.text_area_height)
+    .bind(&config.print_areas)
     .bind(config.text_max_characters)
     .bind(config.text_min_size)
     .bind(config.text_max_size)

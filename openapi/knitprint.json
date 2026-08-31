@@ -6601,6 +6601,7 @@
             ],
             "format": "uuid"
           },
+          "print_areas": {},
           "text_area_height": {
             "type": "integer",
             "format": "int32"

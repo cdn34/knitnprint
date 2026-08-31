@@ -3844,7 +3844,9 @@ html[lang='pt'] .home-section-title--categories h2 {
 .personalizer-canvas { max-width: 100%; position: relative; display: inline-block; line-height: 0; }
 .personalizer-product { width: auto; height: auto; max-width: 100%; max-height: min(70vh, 760px); display: block; }
 .personalizer-product-empty { color: #817872; }
-.personalizer-print-area { position: absolute; overflow: visible; border: 2px dashed #8f4558; background: rgb(255 255 255 / 8%); box-shadow: 0 0 0 1px rgb(255 255 255 / 65%); }
+.personalizer-print-area { position: absolute; z-index: 1; overflow: visible; border: 2px dashed #8f4558; background: rgb(255 255 255 / 8%); box-shadow: 0 0 0 1px rgb(255 255 255 / 65%); }
+.personalizer-print-area--active { z-index: 2; border-style: solid; box-shadow: 0 0 0 2px rgb(255 255 255 / 72%), 0 4px 16px rgb(80 45 56 / 18%); }
+.personalizer-print-area-label { padding: .2rem .42rem; position: absolute; left: -2px; top: -2px; z-index: 6; transform: translateY(-100%); border-radius: .35rem .35rem 0 0; color: #fff; background: #8f4558; font-size: .56rem; font-weight: 800; line-height: 1.2; white-space: nowrap; }
 .personalizer-element { position: absolute; z-index: 1; border: 1px dashed rgb(83 76 73 / 65%); background: rgb(255 255 255 / 14%); cursor: grab; touch-action: none; }
 .personalizer-element:active { cursor: grabbing; }
 .personalizer-element:focus-visible { outline: 2px solid #39749d; outline-offset: 3px; }

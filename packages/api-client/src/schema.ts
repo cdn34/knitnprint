@@ -674,6 +674,7 @@ export interface PersonalizationConfig {
   "area_y": number
   "mode": string
   "preview_media_id"?: string | null
+  "print_areas"?: unknown
   "text_area_height": number
   "text_area_width": number
   "text_area_x": number
