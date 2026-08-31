@@ -171,6 +171,27 @@ main:focus {
 .icon-button svg {
   width: 20px;
 }
+.cart-icon-button {
+  position: relative;
+}
+.cart-count-badge {
+  min-width: 19px;
+  height: 19px;
+  padding: 0 5px;
+  position: absolute;
+  top: -2px;
+  right: -5px;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--surface);
+  border-radius: 999px;
+  color: white;
+  background: var(--knit-dark);
+  font-size: 0.58rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
 .mobile-action {
   display: none;
 }

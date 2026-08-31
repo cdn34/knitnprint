@@ -1,10 +1,11 @@
-import type { ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import {
   CircleUserRound,
   Menu,
   ShoppingBag,
   Sparkles,
 } from 'lucide-react'
+import { cartApi, CART_COUNT_UPDATED } from '../cart-api'
 import { localeLabels, supportedLocales, useI18n, type Locale } from '../i18n'
 
 function IconButton({
@@ -30,6 +31,22 @@ export function StorefrontAnnouncement() {
 
 export function StorefrontHeader() {
   const { locale, setLocale, t } = useI18n()
+  const [cartCount, setCartCount] = useState(0)
+
+  useEffect(() => {
+    let active = true
+    const updateCount = (event: Event) => setCartCount((event as CustomEvent<number>).detail)
+    window.addEventListener(CART_COUNT_UPDATED, updateCount)
+    cartApi.cart().then((cart) => {
+      if (!active) return
+      setCartCount(cart.item_count)
+    }).catch(() => undefined)
+    return () => {
+      active = false
+      window.removeEventListener(CART_COUNT_UPDATED, updateCount)
+    }
+  }, [])
+
   return (
     <header className="site-header">
       <a className="brand" href="/" aria-label={t('shell.homeLabel')}>
@@ -64,8 +81,9 @@ export function StorefrontHeader() {
         <a className="icon-button" aria-label={t('shell.account')} href="/account">
           <CircleUserRound />
         </a>
-        <a className="icon-button" aria-label={t('shell.viewCart')} href="/cart">
+        <a className="icon-button cart-icon-button" aria-label={`${t('shell.viewCart')} · ${cartCount}`} href="/cart">
           <ShoppingBag />
+          {cartCount > 0 && <span className="cart-count-badge" aria-hidden="true">{cartCount > 99 ? '99+' : cartCount}</span>}
         </a>
         <span className="mobile-action">
           <IconButton label={t('shell.openMenu')}>
