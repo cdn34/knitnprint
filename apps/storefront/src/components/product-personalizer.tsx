@@ -175,10 +175,12 @@ function DesignElement({ frame, kind, label, measurement, selected, onSelect, on
   </div>
 }
 
-export function ProductPersonalizer({ config, productMedia, onChange }: Readonly<{
+export function ProductPersonalizer({ config, productMedia, onChange, previewOpen, onPreviewClose }: Readonly<{
   config: PersonalizationConfig
   productMedia: ProductMediaForPersonalizer[]
   onChange: (value: { customization: CustomerCustomization | null; mediaIds: string[]; ready: boolean; missing: string[] }) => void
+  previewOpen: boolean
+  onPreviewClose: () => void
 }>) {
   const fonts = useMemo(() => { const valid = Array.isArray(config.allowed_fonts) ? config.allowed_fonts.filter((value): value is typeof SUPPORTED_FONTS[number] => typeof value === 'string' && SUPPORTED_FONTS.includes(value as typeof SUPPORTED_FONTS[number])) : []; return valid.length ? valid : [...SUPPORTED_FONTS] }, [config.allowed_fonts])
   const colors = useMemo(() => { const valid = Array.isArray(config.allowed_colors) ? config.allowed_colors.filter((value): value is string => typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value)) : []; return valid.length ? valid : DEFAULT_COLORS }, [config.allowed_colors])
@@ -203,6 +205,7 @@ export function ProductPersonalizer({ config, productMedia, onChange }: Readonly
   const [activeAreaId, setActiveAreaId] = useState(printAreas[0].id)
   const [selected, setSelected] = useState<'photo' | 'text'>(wantsPhoto ? 'photo' : 'text')
   const [uploadingAreas, setUploadingAreas] = useState<Record<string, boolean>>({})
+  const [previewViewId, setPreviewViewId] = useState(views[0].id)
   const objectUrls = useRef(new Set<string>())
   const activeDesignKey = designKey(activeView.id, activeAreaId)
   const activeDesign = designs[activeDesignKey] ?? newDesign()
@@ -210,6 +213,8 @@ export function ProductPersonalizer({ config, productMedia, onChange }: Readonly
   const activePhotoMeasurement = physicalFrameSize(activePrintArea, activeDesign.photoFrame)
   const activeTextMeasurement = physicalFrameSize(activePrintArea, activeDesign.textFrame)
   const activeProductImage = productMedia.find(({ id }) => id === activeView.mediaId)?.url ?? (views.length === 1 ? productMedia[0]?.url : undefined)
+  const previewView = views.find(({ id }) => id === previewViewId) ?? views[0]
+  const previewProductImage = productMedia.find(({ id }) => id === previewView.mediaId)?.url ?? (views.length === 1 ? productMedia[0]?.url : undefined)
 
   function updateDesign(key: string, update: Partial<AreaDesign> | ((current: AreaDesign) => AreaDesign)) {
     setDesigns((current) => {
@@ -247,6 +252,18 @@ export function ProductPersonalizer({ config, productMedia, onChange }: Readonly
     if (!views.some(({ id }) => id === activeViewId)) setActiveViewId(views[0].id)
     if (!printAreas.some(({ id }) => id === activeAreaId)) setActiveAreaId(printAreas[0].id)
   }, [views, activeViewId, printAreas, activeAreaId])
+  useEffect(() => {
+    if (!previewOpen) return
+    setPreviewViewId(activeView.id)
+    const previousOverflow = document.body.style.overflow
+    const closeOnEscape = (event: globalThis.KeyboardEvent) => { if (event.key === 'Escape') onPreviewClose() }
+    document.body.style.overflow = 'hidden'
+    window.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.body.style.overflow = previousOverflow
+      window.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [previewOpen, activeView.id, onPreviewClose])
 
   async function upload(key: string, file?: File) {
     if (!file) return
@@ -309,5 +326,27 @@ export function ProductPersonalizer({ config, productMedia, onChange }: Readonly
         </div> : <div className="personalizer-product-empty">Esta vista ainda não tem uma fotografia associada.</div>}
       </div>
     </div>
+    {previewOpen && <div className="personalization-final-preview-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onPreviewClose() }}>
+      <section className="personalization-final-preview" role="dialog" aria-modal="true" aria-labelledby="final-preview-title" aria-describedby="final-preview-description">
+        <header>
+          <div><span>Pré-visualização</span><h2 id="final-preview-title">O teu resultado final</h2><p id="final-preview-description">Vê a composição sem guias ou caixas de edição antes de a adicionares ao carrinho.</p></div>
+          {views.length > 1 && <div className="personalization-final-preview-tabs" role="tablist" aria-label="Escolher lado para pré-visualizar">{views.map((view, index) => <button key={view.id} type="button" role="tab" aria-selected={view.id === previewView.id} className={view.id === previewView.id ? 'selected' : ''} onClick={() => setPreviewViewId(view.id)}><b>{index + 1}</b>{view.label}</button>)}</div>}
+        </header>
+        <div className="personalization-final-preview-stage">
+          {previewProductImage ? <div className="personalization-final-preview-canvas">
+            <img src={previewProductImage} alt={`Resultado personalizado · ${previewView.label}`} />
+            {previewView.printAreas.map((area) => {
+              const design = designs[designKey(previewView.id, area.id)] ?? newDesign()
+              if (!design.photoUrl && !design.text.trim()) return null
+              return <div key={area.id} className="personalization-final-area" style={{ left: `${area.x}%`, top: `${area.y}%`, width: `${area.width}%`, height: `${area.height}%` }}>
+                {design.photoUrl && <div className="personalization-final-element" style={{ left: `${design.photoFrame.x}%`, top: `${design.photoFrame.y}%`, width: `${design.photoFrame.width}%`, height: `${design.photoFrame.height}%` }}><img className="personalization-final-photo" src={design.photoUrl} alt="Fotografia da personalização" style={{ left: `${design.photoCrop.x}%`, top: `${design.photoCrop.y}%`, transform: `translate(-50%, -50%) scale(${design.photoCrop.scale})` }} /></div>}
+                {design.text.trim() && <div className="personalization-final-element personalization-final-element--text" style={{ left: `${design.textFrame.x}%`, top: `${design.textFrame.y}%`, width: `${design.textFrame.width}%`, height: `${design.textFrame.height}%` }}><span style={{ color: design.color, fontFamily: design.font, fontSize: `${design.size}px` }}>{design.text}</span></div>}
+              </div>
+            })}
+          </div> : <p>Esta vista ainda não tem uma fotografia associada.</p>}
+        </div>
+        <footer><span>Ainda podes alterar qualquer fotografia, texto, tamanho ou posição.</span><button className="button button--primary" type="button" autoFocus onClick={onPreviewClose}>Continuar a personalizar</button></footer>
+      </section>
+    </div>}
   </section>
 }
