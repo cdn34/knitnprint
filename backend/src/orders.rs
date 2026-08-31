@@ -108,6 +108,7 @@ pub struct OrderLine {
     pub currency: String,
     pub customization: Option<Value>,
     pub customization_media_asset_id: Option<Uuid>,
+    pub customization_media_asset_ids: Vec<Uuid>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -176,6 +177,7 @@ struct CheckoutLine {
     available_quantity: i64,
     customization: Option<Value>,
     customization_media_asset_id: Option<Uuid>,
+    customization_media_asset_ids: Vec<Uuid>,
 }
 
 #[derive(FromRow)]
@@ -550,7 +552,8 @@ async fn create_order(
                variant.price_minor AS current_price_minor,
                line.currency::text AS stored_currency,
                variant.currency::text AS current_currency,
-               inventory.available_quantity, line.customization, line.customization_media_asset_id
+               inventory.available_quantity, line.customization, line.customization_media_asset_id,
+               line.customization_media_asset_ids
         FROM cart_lines line
         JOIN product_variants variant ON variant.id = line.variant_id
         JOIN products product ON product.id = variant.product_id
@@ -697,8 +700,8 @@ async fn create_order(
             INSERT INTO order_lines (
                 id, order_id, product_id, variant_id, product_title, variant_title,
                 sku, quantity, unit_price_minor, line_total_minor, currency, position,
-                customization, customization_media_asset_id
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9 * $8, $10, $11, $12, $13)
+                customization, customization_media_asset_id, customization_media_asset_ids
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9 * $8, $10, $11, $12, $13, $14)
             "#,
         )
         .bind(Uuid::now_v7())
@@ -714,6 +717,7 @@ async fn create_order(
         .bind(position as i32)
         .bind(&line.customization)
         .bind(line.customization_media_asset_id)
+        .bind(&line.customization_media_asset_ids)
         .execute(&mut *transaction)
         .await
         .map_err(|_| CreateError::Database)?;
@@ -988,7 +992,8 @@ pub(crate) async fn load_order(
         SELECT line.id, line.product_title, line.variant_title, line.sku, line.quantity,
                COALESCE((SELECT sum(fulfilled.quantity)::bigint FROM fulfillment_lines fulfilled WHERE fulfilled.order_line_id = line.id), 0) AS fulfilled_quantity,
                line.unit_price_minor, line.line_total_minor, line.currency::text AS currency,
-               line.customization, line.customization_media_asset_id
+               line.customization, line.customization_media_asset_id,
+               line.customization_media_asset_ids
         FROM order_lines line WHERE line.order_id = $1 ORDER BY line.position, line.id
         "#,
     )

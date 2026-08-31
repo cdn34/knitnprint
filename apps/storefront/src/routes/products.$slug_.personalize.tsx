@@ -21,20 +21,17 @@ function PersonalizeProductPage() {
   const defaultVariant = preferredVariant(product)
   const [variantId, setVariantId] = useState(defaultVariant?.id ?? '')
   const variant = product.variants.find(({ id }) => id === variantId) ?? defaultVariant
-  const [design, setDesign] = useState<{ customization: CustomerCustomization | null; mediaId?: string; ready: boolean }>({ customization: null, ready: false })
+  const [design, setDesign] = useState<{ customization: CustomerCustomization | null; mediaIds: string[]; ready: boolean; missing: string[] }>({ customization: null, mediaIds: [], ready: false, missing: [] })
   const [status, setStatus] = useState<'idle' | 'adding' | 'added' | 'error'>('idle')
   const [confirmingIncomplete, setConfirmingIncomplete] = useState(false)
   const selectedMedia = product.media.find(({ id }) => id === product.personalization.preview_media_id) ?? product.media[0]
-  const wantsPhoto = product.personalization.mode === 'photo' || product.personalization.mode === 'photo_text'
-  const wantsText = product.personalization.mode === 'text' || product.personalization.mode === 'photo_text'
-  const missingOptions = [wantsPhoto && !design.customization?.photo ? 'fotografia' : '', wantsText && !design.customization?.text ? 'texto' : ''].filter(Boolean)
 
   async function addToCart() {
     if (!variant) return
     setStatus('adding')
     setConfirmingIncomplete(false)
     try {
-      const cart = await cartApi.addCartItem({ variant_id: variant.id, quantity: 1, ...(design.customization ? { customization: design.customization } : {}), ...(design.mediaId ? { customization_media_asset_id: design.mediaId } : {}) }, cartMutationKey())
+      const cart = await cartApi.addCartItem({ variant_id: variant.id, quantity: 1, ...(design.customization ? { customization: design.customization } : {}), ...(design.mediaIds.length ? { customization_media_asset_ids: design.mediaIds } : {}) }, cartMutationKey())
       announceCartUpdate(cart)
       setStatus('added')
     } catch { setStatus('error') }
@@ -42,7 +39,7 @@ function PersonalizeProductPage() {
 
   function requestAddToCart() {
     if (!variant || status === 'adding') return
-    if (missingOptions.length) { setConfirmingIncomplete(true); return }
+    if (design.missing.length) { setConfirmingIncomplete(true); return }
     void addToCart()
   }
 
@@ -62,7 +59,7 @@ function PersonalizeProductPage() {
         {status === 'added' && <a className="text-link" href="/cart">Ver carrinho</a>}
         {status === 'error' && <strong role="alert">Não foi possível guardar a personalização. Tenta novamente.</strong>}
       </div>
-      {confirmingIncomplete && <div className="personalization-confirmation-backdrop" role="presentation" onKeyDown={(event) => { if (event.key === 'Escape') setConfirmingIncomplete(false) }}><section className="personalization-confirmation" role="alertdialog" aria-modal="true" aria-labelledby="incomplete-personalization-title" aria-describedby="incomplete-personalization-description"><span>Confirmação</span><h2 id="incomplete-personalization-title">Queres avançar sem completar?</h2><p id="incomplete-personalization-description">Ainda não adicionaste {missingOptions.join(' nem ')}. O produto será colocado no carrinho apenas com as opções que preencheste.</p><div><button className="button button--secondary" type="button" autoFocus onClick={() => setConfirmingIncomplete(false)}>Continuar a editar</button><button className="button button--primary" type="button" onClick={() => void addToCart()}>Sim, adicionar</button></div></section></div>}
+      {confirmingIncomplete && <div className="personalization-confirmation-backdrop" role="presentation" onKeyDown={(event) => { if (event.key === 'Escape') setConfirmingIncomplete(false) }}><section className="personalization-confirmation" role="alertdialog" aria-modal="true" aria-labelledby="incomplete-personalization-title" aria-describedby="incomplete-personalization-description"><span>Confirmação</span><h2 id="incomplete-personalization-title">Queres avançar sem completar?</h2><p id="incomplete-personalization-description">Ainda falta {design.missing.slice(0, 3).join(', ')}{design.missing.length > 3 ? ` e mais ${design.missing.length - 3} opção(ões)` : ''}. O produto será colocado no carrinho apenas com as opções que preencheste.</p><div><button className="button button--secondary" type="button" autoFocus onClick={() => setConfirmingIncomplete(false)}>Continuar a editar</button><button className="button button--primary" type="button" onClick={() => void addToCart()}>Sim, adicionar</button></div></section></div>}
     </main>
   </>
 }

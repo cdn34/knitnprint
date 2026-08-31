@@ -34,9 +34,24 @@ function configuredPrintAreas(config: PersonalizationConfig): PrintArea[] {
 }
 
 export type CustomerCustomization = {
-  version: 3
-  text?: { content: string; font: string; color: string; size: number; area_id: string; x: number; y: number; width: number; height: number }
-  photo?: { area_id: string; x: number; y: number; width: number; height: number; crop_x: number; crop_y: number; scale: number }
+  version: 4
+  areas: Array<{
+    area_id: string
+    text?: { content: string; font: string; color: string; size: number; x: number; y: number; width: number; height: number }
+    photo?: { media_id: string; x: number; y: number; width: number; height: number; crop_x: number; crop_y: number; scale: number }
+  }>
+}
+
+type AreaDesign = {
+  text: string
+  font: string
+  color: string
+  size: number
+  textFrame: ElementFrame
+  photoUrl?: string
+  mediaId?: string
+  photoCrop: { x: number; y: number; scale: number }
+  photoFrame: ElementFrame
 }
 
 function DesignElement({ frame, kind, label, selected, onSelect, onChange, children }: Readonly<{
@@ -119,7 +134,7 @@ function DesignElement({ frame, kind, label, selected, onSelect, onChange, child
 export function ProductPersonalizer({ config, productImage, onChange }: Readonly<{
   config: PersonalizationConfig
   productImage?: string
-  onChange: (value: { customization: CustomerCustomization | null; mediaId?: string; ready: boolean }) => void
+  onChange: (value: { customization: CustomerCustomization | null; mediaIds: string[]; ready: boolean; missing: string[] }) => void
 }>) {
   const fonts = useMemo(() => { const valid = Array.isArray(config.allowed_fonts) ? config.allowed_fonts.filter((value): value is typeof SUPPORTED_FONTS[number] => typeof value === 'string' && SUPPORTED_FONTS.includes(value as typeof SUPPORTED_FONTS[number])) : []; return valid.length ? valid : [...SUPPORTED_FONTS] }, [config.allowed_fonts])
   const colors = useMemo(() => { const valid = Array.isArray(config.allowed_colors) ? config.allowed_colors.filter((value): value is string => typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value)) : []; return valid.length ? valid : DEFAULT_COLORS }, [config.allowed_colors])
@@ -128,60 +143,92 @@ export function ProductPersonalizer({ config, productImage, onChange }: Readonly
   const wantsText = config.mode === 'text' || config.mode === 'photo_text'
   const combined = wantsPhoto && wantsText
   const printAreas = useMemo(() => configuredPrintAreas(config), [config.print_areas, config.area_x, config.area_y, config.area_width, config.area_height])
-  const [text, setText] = useState('')
-  const [font, setFont] = useState(fonts[0] ?? 'Arial')
-  const [color, setColor] = useState(colors[0] ?? '#111111')
-  const [size, setSize] = useState(config.text_min_size)
-  const [photoUrl, setPhotoUrl] = useState<string>()
-  const [mediaId, setMediaId] = useState<string>()
-  const [photoCrop, setPhotoCrop] = useState({ x: 50, y: 50, scale: 1 })
-  const [photoFrame, setPhotoFrame] = useState<ElementFrame>(combined ? { x: 5, y: 5, width: 90, height: 50 } : { x: 15, y: 15, width: 70, height: 70 })
-  const [textFrame, setTextFrame] = useState<ElementFrame>(combined ? { x: 10, y: 58, width: 80, height: 40 } : { x: 15, y: 35, width: 70, height: 30 })
-  const [photoAreaId, setPhotoAreaId] = useState(printAreas[0].id)
-  const [textAreaId, setTextAreaId] = useState(printAreas[0].id)
+  const newDesign = (): AreaDesign => ({
+    text: '',
+    font: fonts[0] ?? 'Arial',
+    color: colors[0] ?? '#111111',
+    size: config.text_min_size,
+    textFrame: combined ? { x: 10, y: 58, width: 80, height: 40 } : { x: 15, y: 35, width: 70, height: 30 },
+    photoCrop: { x: 50, y: 50, scale: 1 },
+    photoFrame: combined ? { x: 5, y: 5, width: 90, height: 50 } : { x: 15, y: 15, width: 70, height: 70 },
+  })
+  const [designs, setDesigns] = useState<Record<string, AreaDesign>>(() => Object.fromEntries(printAreas.map((area) => [area.id, newDesign()])))
+  const [activeAreaId, setActiveAreaId] = useState(printAreas[0].id)
   const [selected, setSelected] = useState<'photo' | 'text'>(wantsPhoto ? 'photo' : 'text')
-  const [uploading, setUploading] = useState(false)
-  const customization: CustomerCustomization = {
-    version: 3,
-    ...(wantsPhoto && mediaId ? { photo: { area_id: photoAreaId, ...photoFrame, crop_x: photoCrop.x, crop_y: photoCrop.y, scale: photoCrop.scale } } : {}),
-    ...(wantsText && text.trim() ? { text: { content: text.trim(), font, color, size, area_id: textAreaId, ...textFrame } } : {}),
+  const [uploadingAreas, setUploadingAreas] = useState<Record<string, boolean>>({})
+  const objectUrls = useRef(new Set<string>())
+  const activeDesign = designs[activeAreaId] ?? newDesign()
+
+  function updateDesign(areaId: string, update: Partial<AreaDesign> | ((current: AreaDesign) => AreaDesign)) {
+    setDesigns((current) => {
+      const areaDesign = current[areaId] ?? newDesign()
+      return { ...current, [areaId]: typeof update === 'function' ? update(areaDesign) : { ...areaDesign, ...update } }
+    })
   }
-  const hasCustomization = Boolean(customization.photo || customization.text)
-  const ready = (!wantsPhoto || Boolean(mediaId)) && (!wantsText || Boolean(text.trim()))
 
-  useEffect(() => onChange({ customization: hasCustomization ? customization : null, mediaId, ready }), [text, font, color, size, textAreaId, textFrame.x, textFrame.y, textFrame.width, textFrame.height, photoAreaId, photoFrame.x, photoFrame.y, photoFrame.width, photoFrame.height, photoCrop.x, photoCrop.y, photoCrop.scale, mediaId, ready])
-  useEffect(() => () => { if (photoUrl) URL.revokeObjectURL(photoUrl) }, [photoUrl])
+  const customization = useMemo<CustomerCustomization>(() => ({
+    version: 4,
+    areas: printAreas.flatMap((area) => {
+      const design = designs[area.id]
+      if (!design) return []
+      const photo = wantsPhoto && design.mediaId ? { media_id: design.mediaId, ...design.photoFrame, crop_x: design.photoCrop.x, crop_y: design.photoCrop.y, scale: design.photoCrop.scale } : undefined
+      const text = wantsText && design.text.trim() ? { content: design.text.trim(), font: design.font, color: design.color, size: design.size, ...design.textFrame } : undefined
+      return photo || text ? [{ area_id: area.id, ...(photo ? { photo } : {}), ...(text ? { text } : {}) }] : []
+    }),
+  }), [designs, printAreas, wantsPhoto, wantsText])
+  const mediaIds = useMemo(() => customization.areas.flatMap((area) => area.photo ? [area.photo.media_id] : []), [customization])
+  const missing = useMemo(() => printAreas.flatMap((area) => {
+    const design = designs[area.id]
+    return [wantsPhoto && !design?.mediaId ? `fotografia em ${area.label}` : '', wantsText && !design?.text.trim() ? `texto em ${area.label}` : ''].filter(Boolean)
+  }), [designs, printAreas, wantsPhoto, wantsText])
+  const ready = missing.length === 0
+
+  useEffect(() => onChange({ customization: customization.areas.length ? customization : null, mediaIds, ready, missing }), [customization, mediaIds, missing, onChange, ready])
+  useEffect(() => () => { objectUrls.current.forEach((url) => URL.revokeObjectURL(url)); objectUrls.current.clear() }, [])
   useEffect(() => {
-    if (!printAreas.some(({ id }) => id === photoAreaId)) setPhotoAreaId(printAreas[0].id)
-    if (!printAreas.some(({ id }) => id === textAreaId)) setTextAreaId(printAreas[0].id)
-  }, [printAreas, photoAreaId, textAreaId])
+    setDesigns((current) => Object.fromEntries(printAreas.map((area) => [area.id, current[area.id] ?? newDesign()])))
+    if (!printAreas.some(({ id }) => id === activeAreaId)) setActiveAreaId(printAreas[0].id)
+  }, [printAreas, activeAreaId])
 
-  async function upload(file?: File) {
+  async function upload(areaId: string, file?: File) {
     if (!file) return
-    if (photoUrl) URL.revokeObjectURL(photoUrl)
-    setPhotoUrl(URL.createObjectURL(file)); setMediaId(undefined); setUploading(true); setSelected('photo')
+    const currentUrl = designs[areaId]?.photoUrl
+    if (currentUrl) { URL.revokeObjectURL(currentUrl); objectUrls.current.delete(currentUrl) }
+    const photoUrl = URL.createObjectURL(file)
+    objectUrls.current.add(photoUrl)
+    updateDesign(areaId, { photoUrl, mediaId: undefined })
+    setUploadingAreas((current) => ({ ...current, [areaId]: true }))
+    setActiveAreaId(areaId)
+    setSelected('photo')
     try {
       const uploadRequest = await cartApi.initiatePersonalizationUpload({ filename: file.name, content_type: file.type, byte_size: file.size })
       await cartApi.uploadMediaObject(uploadRequest.upload_url, file, file.type)
       const complete = await cartApi.completePersonalizationUpload(uploadRequest.id)
-      setMediaId(complete.id)
-    } finally { setUploading(false) }
+      updateDesign(areaId, { mediaId: complete.id })
+    } finally {
+      setUploadingAreas((current) => ({ ...current, [areaId]: false }))
+    }
   }
 
   return <section className="personalizer" aria-labelledby="personalizer-title">
-    <div className="personalizer-heading"><p>Cria a tua peça</p><h2 id="personalizer-title">Personaliza antes de adicionar</h2><span>As linhas tracejadas delimitam as áreas de impressão. Escolhe a zona e organiza cada elemento dentro dela.</span></div>
+    <div className="personalizer-heading"><p>Cria a tua peça</p><h2 id="personalizer-title">Personaliza antes de adicionar</h2><span>Escolhe uma área e adiciona-lhe fotografia, texto ou ambos. Cada zona pode ter uma composição diferente.</span></div>
     <div className="personalizer-layout">
       <div className="personalizer-tools">
-        {wantsPhoto && <div className={`personalizer-tool${selected === 'photo' ? ' personalizer-tool--selected' : ''}`} onClick={() => setSelected('photo')}><strong><ImagePlus /> Fotografia</strong>{printAreas.length > 1 && <label>Área de impressão<select value={photoAreaId} onChange={(event) => { setPhotoAreaId(event.target.value); setSelected('photo') }}>{printAreas.map((area) => <option key={area.id} value={area.id}>{area.label}</option>)}</select></label>}<label className="personalizer-upload">{uploading ? 'A preparar fotografia…' : photoUrl ? 'Trocar fotografia' : 'Carregar fotografia'}<input type="file" accept="image/jpeg,image/png,image/webp" disabled={uploading} onChange={(event) => void upload(event.currentTarget.files?.[0])} /></label>{photoUrl && <label>Zoom<input type="range" min="1" max="3" step="0.05" value={photoCrop.scale} onChange={(event) => setPhotoCrop((current) => ({ ...current, scale: Number(event.target.value) }))} /></label>}<span className="personalizer-drag-hint"><Move /> Arrasta a caixa na área escolhida e usa as setas dos cantos para a dimensionar.</span></div>}
-        {wantsText && <div className={`personalizer-tool${selected === 'text' ? ' personalizer-tool--selected' : ''}`} onClick={() => setSelected('text')}><strong><Type /> Texto</strong>{printAreas.length > 1 && <label>Área de impressão<select value={textAreaId} onChange={(event) => { setTextAreaId(event.target.value); setSelected('text') }}>{printAreas.map((area) => <option key={area.id} value={area.id}>{area.label}</option>)}</select></label>}<label>O teu texto<textarea rows={2} maxLength={config.text_max_characters} value={text} onChange={(event) => { setText(event.target.value); setSelected('text') }} placeholder="Escreve aqui" /></label><small>{text.length} / {config.text_max_characters}</small><span className="personalizer-drag-hint"><Move /> Arrasta a caixa na área escolhida e usa as setas dos cantos para a dimensionar.</span><span className="personalizer-control-label">Tipo de letra</span><div className="font-choice-grid">{fonts.map((value) => <button key={value} type="button" className={font === value ? 'selected' : ''} aria-pressed={font === value} onClick={() => setFont(value)}><b style={{ fontFamily: value }}>Ag</b><small>{value}</small></button>)}</div><label>Cor<select value={color} onChange={(event) => setColor(event.target.value)}>{colors.map((value) => <option key={value} value={value}>{colorName(value)} · {value}</option>)}</select></label><span className="selected-color"><i style={{ background: color }} />{colorName(color)}</span><label>Tamanho<input type="range" min={config.text_min_size} max={config.text_max_size} value={size} onChange={(event) => setSize(Number(event.target.value))} /></label></div>}
+        {printAreas.length > 1 && <div className="personalizer-area-switcher" role="group" aria-label="Escolher área de impressão"><span>Área a editar</span><div>{printAreas.map((area, index) => <button key={area.id} type="button" className={activeAreaId === area.id ? 'selected' : ''} aria-pressed={activeAreaId === area.id} onClick={() => setActiveAreaId(area.id)}><b>{index + 1}</b>{area.label}</button>)}</div></div>}
+        {wantsPhoto && <div className={`personalizer-tool${selected === 'photo' ? ' personalizer-tool--selected' : ''}`} onClick={() => setSelected('photo')}><strong><ImagePlus /> Fotografia · {printAreas.find(({ id }) => id === activeAreaId)?.label}</strong><label className="personalizer-upload">{uploadingAreas[activeAreaId] ? 'A preparar fotografia…' : activeDesign.photoUrl ? 'Trocar fotografia' : 'Carregar fotografia'}<input type="file" accept="image/jpeg,image/png,image/webp" disabled={uploadingAreas[activeAreaId]} onChange={(event) => void upload(activeAreaId, event.currentTarget.files?.[0])} /></label>{activeDesign.photoUrl && <label>Zoom<input type="range" min="1" max="3" step="0.05" value={activeDesign.photoCrop.scale} onChange={(event) => updateDesign(activeAreaId, (current) => ({ ...current, photoCrop: { ...current.photoCrop, scale: Number(event.target.value) } }))} /></label>}<span className="personalizer-drag-hint"><Move /> Arrasta e dimensiona a fotografia dentro desta área.</span></div>}
+        {wantsText && <div className={`personalizer-tool${selected === 'text' ? ' personalizer-tool--selected' : ''}`} onClick={() => setSelected('text')}><strong><Type /> Texto · {printAreas.find(({ id }) => id === activeAreaId)?.label}</strong><label>O teu texto<textarea rows={2} maxLength={config.text_max_characters} value={activeDesign.text} onChange={(event) => { updateDesign(activeAreaId, { text: event.target.value }); setSelected('text') }} placeholder="Escreve aqui" /></label><small>{activeDesign.text.length} / {config.text_max_characters}</small><span className="personalizer-drag-hint"><Move /> Arrasta e dimensiona o texto dentro desta área.</span><span className="personalizer-control-label">Tipo de letra</span><div className="font-choice-grid">{fonts.map((value) => <button key={value} type="button" className={activeDesign.font === value ? 'selected' : ''} aria-pressed={activeDesign.font === value} onClick={() => updateDesign(activeAreaId, { font: value })}><b style={{ fontFamily: value }}>Ag</b><small>{value}</small></button>)}</div><label>Cor<select value={activeDesign.color} onChange={(event) => updateDesign(activeAreaId, { color: event.target.value })}>{colors.map((value) => <option key={value} value={value}>{colorName(value)} · {value}</option>)}</select></label><span className="selected-color"><i style={{ background: activeDesign.color }} />{colorName(activeDesign.color)}</span><label>Tamanho<input type="range" min={config.text_min_size} max={config.text_max_size} value={activeDesign.size} onChange={(event) => updateDesign(activeAreaId, { size: Number(event.target.value) })} /></label></div>}
       </div>
       <div className="personalizer-stage">
         {productImage ? <div className="personalizer-canvas"><img className="personalizer-product" src={productImage} alt="Pré-visualização do produto" />
-          {printAreas.map((area) => <div key={area.id} className={`personalizer-print-area${(selected === 'photo' ? photoAreaId : textAreaId) === area.id ? ' personalizer-print-area--active' : ''}`} aria-label={`Área de impressão: ${area.label}`} style={{ left: `${area.x}%`, top: `${area.y}%`, width: `${area.width}%`, height: `${area.height}%` }}>
-            <span className="personalizer-print-area-label">{area.label}</span>
-            {wantsPhoto && photoAreaId === area.id && <DesignElement frame={photoFrame} kind="photo" label="Fotografia" selected={selected === 'photo'} onSelect={() => setSelected('photo')} onChange={setPhotoFrame}>{photoUrl ? <img className="personalizer-photo" src={photoUrl} alt="Fotografia carregada" draggable={false} style={{ left: `${photoCrop.x}%`, top: `${photoCrop.y}%`, transform: `translate(-50%, -50%) scale(${photoCrop.scale})` }} /> : <span className="personalizer-placeholder"><ImagePlus /> Fotografia</span>}</DesignElement>}
-            {wantsText && textAreaId === area.id && <DesignElement frame={textFrame} kind="text" label="Texto" selected={selected === 'text'} onSelect={() => setSelected('text')} onChange={setTextFrame}>{text.trim() ? <span className="personalizer-text" style={{ color, fontFamily: font, fontSize: `${size}px` }}>{text}</span> : <span className="personalizer-placeholder"><Type /> Texto</span>}</DesignElement>}
-          </div>)}
+          {printAreas.map((area) => {
+            const design = designs[area.id] ?? newDesign()
+            const active = activeAreaId === area.id
+            return <div key={area.id} className={`personalizer-print-area${active ? ' personalizer-print-area--active' : ''}`} aria-label={`Área de impressão: ${area.label}`} style={{ left: `${area.x}%`, top: `${area.y}%`, width: `${area.width}%`, height: `${area.height}%` }} onClick={() => setActiveAreaId(area.id)}>
+              <span className="personalizer-print-area-label">{area.label}</span>
+              {wantsPhoto && (active || design.mediaId) && <DesignElement frame={design.photoFrame} kind="photo" label={`Fotografia em ${area.label}`} selected={active && selected === 'photo'} onSelect={() => { setActiveAreaId(area.id); setSelected('photo') }} onChange={(photoFrame) => updateDesign(area.id, { photoFrame })}>{design.photoUrl ? <img className="personalizer-photo" src={design.photoUrl} alt="Fotografia carregada" draggable={false} style={{ left: `${design.photoCrop.x}%`, top: `${design.photoCrop.y}%`, transform: `translate(-50%, -50%) scale(${design.photoCrop.scale})` }} /> : <span className="personalizer-placeholder"><ImagePlus /> Fotografia</span>}</DesignElement>}
+              {wantsText && (active || design.text.trim()) && <DesignElement frame={design.textFrame} kind="text" label={`Texto em ${area.label}`} selected={active && selected === 'text'} onSelect={() => { setActiveAreaId(area.id); setSelected('text') }} onChange={(textFrame) => updateDesign(area.id, { textFrame })}>{design.text.trim() ? <span className="personalizer-text" style={{ color: design.color, fontFamily: design.font, fontSize: `${design.size}px` }}>{design.text}</span> : <span className="personalizer-placeholder"><Type /> Texto</span>}</DesignElement>}
+            </div>
+          })}
         </div> : <div className="personalizer-product-empty">Pré-visualização do produto</div>}
       </div>
     </div>

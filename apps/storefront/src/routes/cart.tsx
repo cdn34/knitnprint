@@ -33,6 +33,20 @@ export const Route = createFileRoute('/cart')({
   component: CartPage,
 })
 
+function personalizationSummary(value: unknown, mediaIds: string[]) {
+  if (!value || typeof value !== 'object') return 'Personalizado'
+  const customization = value as { areas?: Array<{ photo?: unknown; text?: { content?: unknown } }>; photo?: unknown; text?: { content?: unknown } }
+  if (Array.isArray(customization.areas)) {
+    const textCount = customization.areas.filter((area) => typeof area.text?.content === 'string').length
+    const parts = [`${customization.areas.length} área${customization.areas.length === 1 ? '' : 's'}`]
+    if (mediaIds.length) parts.push(`${mediaIds.length} fotografia${mediaIds.length === 1 ? '' : 's'}`)
+    if (textCount) parts.push(`${textCount} texto${textCount === 1 ? '' : 's'}`)
+    return `Personalizado · ${parts.join(' · ')}`
+  }
+  const text = customization.text?.content
+  return `Personalizado${mediaIds.length || customization.photo ? ' com fotografia' : ''}${typeof text === 'string' ? ` · “${text}”` : ''}`
+}
+
 function CartPage() {
   const { t, formatCurrency } = useI18n()
   const [cart, setCart] = useState<Cart | null>(null)
@@ -319,7 +333,7 @@ function CartPage() {
                     <div className="cart-item-copy">
                       <h3><a href={`/products/${item.product_slug}`}>{item.product_title}</a></h3>
                       <p>{item.variant_title} · {t('cart.sku')} {item.sku}</p>
-                      {Boolean(item.customization) && <p className="cart-item-personalization">Personalizado{item.customization_media_asset_id ? ' com fotografia' : ''}{typeof (item.customization as { text?: { content?: unknown } }).text?.content === 'string' ? ` · “${(item.customization as { text: { content: string } }).text.content}”` : ''}</p>}
+                      {Boolean(item.customization) && <p className="cart-item-personalization">{personalizationSummary(item.customization, item.customization_media_asset_ids?.length ? item.customization_media_asset_ids : item.customization_media_asset_id ? [item.customization_media_asset_id] : [])}</p>}
                       <label>
                         <span>{t('cart.quantity')}</span>
                         <select
