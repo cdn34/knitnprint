@@ -1,3 +1,4 @@
+import { ApiError } from '@knitprint/api-client'
 import { createFileRoute, notFound } from '@tanstack/react-router'
 import { ArrowLeft, ShoppingBag } from 'lucide-react'
 import { useState } from 'react'
@@ -23,22 +24,33 @@ function PersonalizeProductPage() {
   const variant = product.variants.find(({ id }) => id === variantId) ?? defaultVariant
   const [design, setDesign] = useState<{ customization: CustomerCustomization | null; mediaIds: string[]; ready: boolean; missing: string[] }>({ customization: null, mediaIds: [], ready: false, missing: [] })
   const [status, setStatus] = useState<'idle' | 'adding' | 'added' | 'error'>('idle')
+  const [errorMessage, setErrorMessage] = useState('')
   const [confirmingIncomplete, setConfirmingIncomplete] = useState(false)
   const selectedMedia = product.media.find(({ id }) => id === product.personalization.preview_media_id) ?? product.media[0]
+  const stock = variant ? variantStock(variant) : null
+  const soldOut = !stock || stock.state === 'sold-out'
 
   async function addToCart() {
     if (!variant) return
     setStatus('adding')
+    setErrorMessage('')
     setConfirmingIncomplete(false)
     try {
       const cart = await cartApi.addCartItem({ variant_id: variant.id, quantity: 1, ...(design.customization ? { customization: design.customization } : {}), ...(design.mediaIds.length ? { customization_media_asset_ids: design.mediaIds } : {}) }, cartMutationKey())
       announceCartUpdate(cart)
       setStatus('added')
-    } catch { setStatus('error') }
+    } catch (error) {
+      setStatus('error')
+      setErrorMessage(error instanceof ApiError && error.body.error.code === 'insufficient_stock'
+        ? 'Este produto está esgotado. Atualiza o stock no administrador antes de o adicionares ao carrinho.'
+        : error instanceof ApiError && error.body.error.code === 'invalid_customization'
+          ? 'Não foi possível validar esta personalização. Revê os elementos e tenta novamente.'
+          : 'Não foi possível adicionar o produto ao carrinho. Tenta novamente.')
+    }
   }
 
   function requestAddToCart() {
-    if (!variant || status === 'adding') return
+    if (!variant || soldOut || status === 'adding') return
     if (design.missing.length) { setConfirmingIncomplete(true); return }
     void addToCart()
   }
@@ -50,14 +62,14 @@ function PersonalizeProductPage() {
       <header className="personalization-page-header">
         <a className="text-link" href={`/products/${product.slug}`}><ArrowLeft /> Voltar ao produto</a>
         <div><p>Estúdio de personalização</p><h1>{product.title}</h1><span>Cria e confirma a tua composição antes de adicionares ao carrinho.</span></div>
-        {product.variants.length > 1 && <label>Opção<select value={variant?.id} onChange={(event) => setVariantId(event.target.value)}>{product.variants.map((option) => <option key={option.id} value={option.id} disabled={variantStock(option).state === 'sold-out'}>{option.title}</option>)}</select></label>}
+        {product.variants.length > 1 && <label>Opção<select value={variant?.id} onChange={(event) => { setVariantId(event.target.value); setStatus('idle'); setErrorMessage('') }}>{product.variants.map((option) => <option key={option.id} value={option.id} disabled={variantStock(option).state === 'sold-out'}>{option.title}</option>)}</select></label>}
       </header>
       <ProductPersonalizer config={product.personalization} productImage={selectedMedia ? mediaUrl(selectedMedia.detail_url) : undefined} onChange={setDesign} />
       <div className="personalization-checkout-bar">
-        <span>{design.ready ? 'A personalização está pronta.' : 'A personalização é opcional. Podes avançar sem preencher tudo.'}</span>
-        <button className="button button--primary" type="button" disabled={!variant || status === 'adding'} onClick={requestAddToCart}><ShoppingBag />{status === 'adding' ? 'A adicionar…' : status === 'added' ? 'Adicionado ao carrinho' : 'Adicionar ao carrinho'}</button>
+        <span>{soldOut ? 'Este produto está esgotado. Podes personalizá-lo, mas não adicioná-lo ao carrinho enquanto não houver stock.' : design.ready ? 'A personalização está pronta.' : 'A personalização é opcional. Podes avançar sem preencher tudo.'}</span>
+        <button className="button button--primary" type="button" disabled={!variant || soldOut || status === 'adding'} onClick={requestAddToCart}><ShoppingBag />{soldOut ? 'Produto esgotado' : status === 'adding' ? 'A adicionar…' : status === 'added' ? 'Adicionado ao carrinho' : 'Adicionar ao carrinho'}</button>
         {status === 'added' && <a className="text-link" href="/cart">Ver carrinho</a>}
-        {status === 'error' && <strong role="alert">Não foi possível guardar a personalização. Tenta novamente.</strong>}
+        {status === 'error' && <strong role="alert">{errorMessage}</strong>}
       </div>
       {confirmingIncomplete && <div className="personalization-confirmation-backdrop" role="presentation" onKeyDown={(event) => { if (event.key === 'Escape') setConfirmingIncomplete(false) }}><section className="personalization-confirmation" role="alertdialog" aria-modal="true" aria-labelledby="incomplete-personalization-title" aria-describedby="incomplete-personalization-description"><span>Confirmação</span><h2 id="incomplete-personalization-title">Queres avançar sem completar?</h2><p id="incomplete-personalization-description">Ainda falta {design.missing.slice(0, 3).join(', ')}{design.missing.length > 3 ? ` e mais ${design.missing.length - 3} opção(ões)` : ''}. O produto será colocado no carrinho apenas com as opções que preencheste.</p><div><button className="button button--secondary" type="button" autoFocus onClick={() => setConfirmingIncomplete(false)}>Continuar a editar</button><button className="button button--primary" type="button" onClick={() => void addToCart()}>Sim, adicionar</button></div></section></div>}
     </main>
