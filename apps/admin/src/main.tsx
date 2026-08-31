@@ -1699,21 +1699,25 @@ const PERSONALIZATION_COLOR_OPTIONS = [
 
 type PrintArea = { x: number; y: number; width: number; height: number }
 
-function EditablePrintArea({ area, label, kind, onChange }: Readonly<{
+function EditablePrintArea({ area, label, kind, active, onActivate, onChange }: Readonly<{
   area: PrintArea
   label: string
   kind: 'photo' | 'text'
+  active: boolean
+  onActivate: () => void
   onChange: (area: PrintArea) => void
 }>) {
+  const areaElement = useRef<HTMLDivElement>(null)
   const interaction = useRef<{ startX: number; startY: number; area: PrintArea; handle: string } | undefined>(undefined)
   function start(event: ReactPointerEvent<HTMLElement>, handle: string) {
     event.preventDefault()
+    onActivate()
     event.currentTarget.setPointerCapture(event.pointerId)
     interaction.current = { startX: event.clientX, startY: event.clientY, area, handle }
   }
   function move(event: ReactPointerEvent<HTMLElement>) {
     const active = interaction.current
-    const bounds = event.currentTarget.parentElement?.getBoundingClientRect()
+    const bounds = areaElement.current?.parentElement?.getBoundingClientRect()
     if (!active || !bounds) return
     const dx = (event.clientX - active.startX) / bounds.width * 100
     const dy = (event.clientY - active.startY) / bounds.height * 100
@@ -1728,7 +1732,7 @@ function EditablePrintArea({ area, label, kind, onChange }: Readonly<{
     }
     onChange({ x, y, width, height })
   }
-  return <div className={`editable-print-area editable-print-area--${kind}`} style={{ left: `${area.x}%`, top: `${area.y}%`, width: `${area.width}%`, height: `${area.height}%` }} onPointerDown={(event) => start(event, 'move')} onPointerMove={move} onPointerUp={() => { interaction.current = undefined }}>
+  return <div ref={areaElement} className={`editable-print-area editable-print-area--${kind}${active ? ' editable-print-area--active' : ''}`} aria-label={`Zona de ${label}`} aria-current={active ? 'true' : undefined} style={{ left: `${area.x}%`, top: `${area.y}%`, width: `${area.width}%`, height: `${area.height}%` }} onPointerDown={(event) => start(event, 'move')} onPointerMove={move} onPointerUp={() => { interaction.current = undefined }}>
     <span>{label}</span>
     {(['nw', 'ne', 'sw', 'se'] as const).map((handle) => <button key={handle} type="button" className={`resize-handle resize-handle--${handle}`} aria-label={`Redimensionar zona de ${label}`} onPointerDown={(event) => { event.stopPropagation(); start(event, handle) }} onPointerMove={move} onPointerUp={() => { interaction.current = undefined }}>{handle === 'nw' ? '↖' : handle === 'ne' ? '↗' : handle === 'sw' ? '↙' : '↘'}</button>)}
   </div>
@@ -1753,6 +1757,7 @@ function CatalogManagement({
   const [personalizationMode, setPersonalizationMode] = useState<'none' | 'photo' | 'text' | 'photo_text'>('none')
   const [photoArea, setPhotoArea] = useState<PrintArea>({ x: 25, y: 25, width: 50, height: 50 })
   const [textArea, setTextArea] = useState<PrintArea>({ x: 25, y: 65, width: 50, height: 20 })
+  const [activePrintArea, setActivePrintArea] = useState<'photo' | 'text'>('text')
   const [previewMediaId, setPreviewMediaId] = useState<string>()
   const [textMaxCharacters, setTextMaxCharacters] = useState(35)
   const [textMinSize, setTextMinSize] = useState(12)
@@ -1990,6 +1995,7 @@ function CatalogManagement({
     setProductCategoryIds(product.categories.map(({ id }) => id))
     const config = product.personalization
     setPersonalizationMode(config.mode as typeof personalizationMode)
+    setActivePrintArea(config.mode === 'photo' ? 'photo' : 'text')
     setPhotoArea({ x: config.area_x / 100, y: config.area_y / 100, width: config.area_width / 100, height: config.area_height / 100 })
     setTextArea({ x: config.text_area_x / 100, y: config.text_area_y / 100, width: config.text_area_width / 100, height: config.text_area_height / 100 })
     setPreviewMediaId(config.preview_media_id ?? product.media[0]?.id)
@@ -2014,6 +2020,7 @@ function CatalogManagement({
     setProductQuantity('0')
     setProductCategoryIds([])
     setPersonalizationMode('none')
+    setActivePrintArea('text')
     setPhotoArea({ x: 25, y: 25, width: 50, height: 50 })
     setTextArea({ x: 25, y: 65, width: 50, height: 20 })
     setPreviewMediaId(undefined)
@@ -2298,7 +2305,7 @@ function CatalogManagement({
             <fieldset className="personalization-settings">
               <legend>Personalização</legend>
               <label htmlFor="personalization-mode">O cliente pode adicionar</label>
-              <select id="personalization-mode" value={personalizationMode} onChange={(event) => setPersonalizationMode(event.target.value as typeof personalizationMode)}>
+              <select id="personalization-mode" value={personalizationMode} onChange={(event) => { const mode = event.target.value as typeof personalizationMode; setPersonalizationMode(mode); setActivePrintArea(mode === 'photo' ? 'photo' : 'text') }}>
                 <option value="none">Sem personalização</option>
                 <option value="photo">Só fotografia</option>
                 <option value="text">Só texto</option>
@@ -2308,10 +2315,11 @@ function CatalogManagement({
                 <>
                   <p className="field-help">Escolhe a fotografia que mostra melhor a área a personalizar. Arrasta cada caixa e usa as setas nos cantos para a dimensionar.</p>
                   {preview?.media.length ? <label htmlFor="personalization-preview-media">Fotografia apresentada no editor<select id="personalization-preview-media" value={personalizationPreviewMedia?.id ?? ''} onChange={(event) => setPreviewMediaId(event.target.value)}>{preview.media.map((media, index) => <option key={media.id} value={media.id}>{index === 0 ? 'Fotografia principal' : `Fotografia ${index + 1}`} · {media.alt_text}</option>)}</select></label> : <p className="field-help">Guarda o produto e adiciona fotografias para poderes escolher a vista do editor.</p>}
+                  {personalizationMode === 'photo_text' && <div className="print-area-layer-picker" role="group" aria-label="Zona a editar"><span>Editar zona:</span><button type="button" className={activePrintArea === 'text' ? 'active' : ''} aria-pressed={activePrintArea === 'text'} onClick={() => setActivePrintArea('text')}>Texto</button><button type="button" className={activePrintArea === 'photo' ? 'active' : ''} aria-pressed={activePrintArea === 'photo'} onClick={() => setActivePrintArea('photo')}>Fotografia</button></div>}
                   <div className="print-area-preview">
                     {personalizationPreviewMedia ? <div className="print-area-canvas"><img src={personalizationPreviewMedia.detail_url} alt="" />
-                      {(personalizationMode === 'photo' || personalizationMode === 'photo_text') && <EditablePrintArea area={photoArea} onChange={setPhotoArea} label="Fotografia" kind="photo" />}
-                      {(personalizationMode === 'text' || personalizationMode === 'photo_text') && <EditablePrintArea area={textArea} onChange={setTextArea} label="Texto" kind="text" />}
+                      {(personalizationMode === 'photo' || personalizationMode === 'photo_text') && <EditablePrintArea area={photoArea} active={activePrintArea === 'photo'} onActivate={() => setActivePrintArea('photo')} onChange={setPhotoArea} label="Fotografia" kind="photo" />}
+                      {(personalizationMode === 'text' || personalizationMode === 'photo_text') && <EditablePrintArea area={textArea} active={activePrintArea === 'text'} onActivate={() => setActivePrintArea('text')} onChange={setTextArea} label="Texto" kind="text" />}
                     </div> : <span>Adiciona uma fotografia para posicionar as zonas.</span>}
                   </div>
                 </>
