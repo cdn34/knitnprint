@@ -2365,7 +2365,22 @@ function CatalogManagement({
               {personalizationMode !== 'none' && (
                 <>
                   <p className="field-help">Escolhe a fotografia que mostra melhor o produto. Podes criar até oito áreas de impressão, dar-lhes nomes claros e posicioná-las nos diferentes bolsos ou faces do produto.</p>
-                  {preview?.media.length ? <label htmlFor="personalization-preview-media">Fotografia apresentada no editor<select id="personalization-preview-media" value={personalizationPreviewMedia?.id ?? ''} onChange={(event) => setPreviewMediaId(event.target.value)}>{preview.media.map((media, index) => <option key={media.id} value={media.id}>{index === 0 ? 'Fotografia principal' : `Fotografia ${index + 1}`} · {media.alt_text}</option>)}</select></label> : <p className="field-help">Guarda o produto e adiciona fotografias para poderes escolher a vista do editor.</p>}
+                  {preview?.media.length ? <fieldset className="personalization-media-picker">
+                    <legend>Fotografia onde aparecem as áreas</legend>
+                    <p>Escolhe a vista que permite posicionar melhor a personalização. Não precisa de ser a fotografia principal do produto.</p>
+                    <div>
+                      {preview.media.map((media, index) => {
+                        const selected = media.id === personalizationPreviewMedia?.id
+                        return <label key={media.id} className={selected ? 'selected' : ''}>
+                          <input type="radio" name="personalization-preview-media" value={media.id} checked={selected} onChange={() => setPreviewMediaId(media.id)} />
+                          <span className="personalization-media-thumbnail"><img src={media.thumbnail_url || media.card_url} alt={media.alt_text} /><i>{index === 0 ? 'Principal' : index + 1}</i></span>
+                          <span><strong>{index === 0 ? 'Fotografia principal' : `Fotografia ${index + 1}`}</strong><small>{media.alt_text}</small></span>
+                          <CircleCheck aria-hidden="true" />
+                        </label>
+                      })}
+                    </div>
+                    <small>A fotografia selecionada aparece já abaixo com todas as áreas de impressão. Clica em “Save product” para guardar a escolha.</small>
+                  </fieldset> : <p className="field-help">Guarda o produto e adiciona fotografias para poderes escolher a vista do editor.</p>}
                   <div className="print-area-manager">
                     <div className="print-area-tabs" role="tablist" aria-label="Áreas de impressão">
                       {printAreas.map((area, index) => <button key={area.id} type="button" role="tab" aria-selected={area.id === activePrintArea.id} className={area.id === activePrintArea.id ? 'active' : ''} onClick={() => setActivePrintAreaId(area.id)}><span>{index + 1}</span>{area.label || `Área ${index + 1}`}</button>)}
@@ -2383,7 +2398,7 @@ function CatalogManagement({
                     </div>
                   </div>
                   <div className="print-area-preview">
-                    {personalizationPreviewMedia ? <div className="print-area-canvas"><img src={personalizationPreviewMedia.detail_url} alt="" />
+                    {personalizationPreviewMedia ? <div className="print-area-canvas"><img src={personalizationPreviewMedia.detail_url} alt={`Pré-visualização das áreas sobre ${personalizationPreviewMedia.alt_text}`} />
                       {printAreas.map((area) => <EditablePrintArea key={area.id} area={area} label={area.label || 'Área sem nome'} active={area.id === activePrintArea.id} onActivate={() => setActivePrintAreaId(area.id)} onChange={(change) => updatePrintArea(area.id, change)} />)}
                     </div> : <span>Adiciona uma fotografia para posicionar as zonas.</span>}
                   </div>
