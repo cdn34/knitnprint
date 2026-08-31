@@ -29,7 +29,6 @@ function PersonalizeProductPage() {
   const [status, setStatus] = useState<'idle' | 'adding' | 'added' | 'error'>('idle')
   const [errorMessage, setErrorMessage] = useState('')
   const [confirmingIncomplete, setConfirmingIncomplete] = useState(false)
-  const selectedMedia = product.media.find(({ id }) => id === product.personalization.preview_media_id) ?? product.media[0]
   const stock = variant ? variantStock(variant) : null
   const soldOut = !stock || stock.state === 'sold-out'
 
@@ -67,7 +66,7 @@ function PersonalizeProductPage() {
         <div><p>Estúdio de personalização</p><h1>{product.title}</h1><span>Cria e confirma a tua composição antes de adicionares ao carrinho.</span></div>
         {product.variants.length > 1 && <label>Opção<select value={variant?.id} onChange={(event) => { setVariantId(event.target.value); setStatus('idle'); setErrorMessage('') }}>{product.variants.map((option) => <option key={option.id} value={option.id} disabled={variantStock(option).state === 'sold-out'}>{option.title}</option>)}</select></label>}
       </header>
-      <ProductPersonalizer config={product.personalization} productImage={selectedMedia ? mediaUrl(selectedMedia.detail_url) : undefined} onChange={setDesign} />
+      <ProductPersonalizer config={product.personalization} productMedia={product.media.map((media) => ({ id: media.id, url: mediaUrl(media.detail_url) }))} onChange={setDesign} />
       <div className="personalization-checkout-bar">
         <span>{soldOut ? 'Este produto está esgotado. Podes personalizá-lo, mas não adicioná-lo ao carrinho enquanto não houver stock.' : design.ready ? 'A personalização está pronta.' : 'A personalização é opcional. Podes avançar sem preencher tudo.'}</span>
         <button className="button button--primary" type="button" disabled={!variant || soldOut || status === 'adding'} onClick={requestAddToCart}><ShoppingBag />{soldOut ? 'Produto esgotado' : status === 'adding' ? 'A adicionar…' : status === 'added' ? 'Adicionado ao carrinho' : 'Adicionar ao carrinho'}</button>

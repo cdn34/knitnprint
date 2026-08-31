@@ -793,11 +793,12 @@ function OrderDetail({
 
 function customizationLabel(value: unknown) {
   if (!value || typeof value !== 'object') return 'configuração guardada'
-  const areas = (value as { areas?: Array<{ photo?: unknown; text?: { content?: unknown } }> }).areas
+  const areas = (value as { areas?: Array<{ view_id?: unknown; photo?: unknown; text?: { content?: unknown } }> }).areas
   if (Array.isArray(areas)) {
     const photoCount = areas.filter((area) => area.photo).length
     const textCount = areas.filter((area) => typeof area.text?.content === 'string').length
-    return [`${areas.length} área${areas.length === 1 ? '' : 's'}`, photoCount ? `${photoCount} fotografia${photoCount === 1 ? '' : 's'}` : '', textCount ? `${textCount} texto${textCount === 1 ? '' : 's'}` : ''].filter(Boolean).join(' · ')
+    const viewCount = new Set(areas.flatMap((area) => typeof area.view_id === 'string' ? [area.view_id] : [])).size
+    return [viewCount > 1 ? `${viewCount} lados` : '', `${areas.length} área${areas.length === 1 ? '' : 's'}`, photoCount ? `${photoCount} fotografia${photoCount === 1 ? '' : 's'}` : '', textCount ? `${textCount} texto${textCount === 1 ? '' : 's'}` : ''].filter(Boolean).join(' · ')
   }
   const text = (value as { text?: { content?: unknown }; photo?: unknown }).text?.content
   const parts = [(value as { photo?: unknown }).photo ? 'fotografia' : '', typeof text === 'string' ? `texto “${text}”` : ''].filter(Boolean)
@@ -1706,7 +1707,9 @@ const PERSONALIZATION_COLOR_OPTIONS = [
 
 type PrintArea = { x: number; y: number; width: number; height: number }
 type NamedPrintArea = PrintArea & { id: string; label: string }
+type PersonalizationView = { id: string; label: string; mediaId?: string; printAreas: NamedPrintArea[] }
 const DEFAULT_PRINT_AREA: NamedPrintArea = { id: 'area-1', label: 'Área 1', x: 25, y: 25, width: 50, height: 50 }
+const DEFAULT_PERSONALIZATION_VIEW: PersonalizationView = { id: 'view-front', label: 'Frente', printAreas: [{ ...DEFAULT_PRINT_AREA }] }
 
 function printAreaFromBasisPoints(values: unknown[], fallback: PrintArea): PrintArea {
   if (values.length !== 4 || values.some((value) => typeof value !== 'number' || !Number.isFinite(value))) return { ...fallback }
@@ -1726,6 +1729,19 @@ function namedPrintAreas(value: unknown, fallback: NamedPrintArea): NamedPrintAr
     return [{ id, label, ...area }]
   })
   return areas.length ? areas.slice(0, 8) : [{ ...fallback }]
+}
+
+function namedPersonalizationViews(value: unknown, fallbackArea: NamedPrintArea, fallbackMediaId?: string): PersonalizationView[] {
+  if (!Array.isArray(value)) return [{ ...DEFAULT_PERSONALIZATION_VIEW, mediaId: fallbackMediaId, printAreas: namedPrintAreas(undefined, fallbackArea) }]
+  const views = value.flatMap((item, index) => {
+    if (!item || typeof item !== 'object') return []
+    const candidate = item as Record<string, unknown>
+    const id = typeof candidate.id === 'string' && candidate.id.trim() ? candidate.id.trim() : `view-${index + 1}`
+    const label = typeof candidate.label === 'string' && candidate.label.trim() ? candidate.label.trim() : index === 0 ? 'Frente' : `Vista ${index + 1}`
+    const mediaId = typeof candidate.media_id === 'string' && candidate.media_id ? candidate.media_id : undefined
+    return [{ id, label, mediaId, printAreas: namedPrintAreas(candidate.print_areas, fallbackArea) }]
+  })
+  return views.length ? views.slice(0, 6) : [{ ...DEFAULT_PERSONALIZATION_VIEW, mediaId: fallbackMediaId, printAreas: namedPrintAreas(undefined, fallbackArea) }]
 }
 
 function EditablePrintArea({ area, label, active, onActivate, onChange }: Readonly<{
@@ -1783,29 +1799,33 @@ function CatalogManagement({
   const [productQuantity, setProductQuantity] = useState('0')
   const [productCategoryIds, setProductCategoryIds] = useState<string[]>([])
   const [personalizationMode, setPersonalizationMode] = useState<'none' | 'photo' | 'text' | 'photo_text'>('none')
-  const [printAreas, setPrintAreas] = useState<NamedPrintArea[]>([{ ...DEFAULT_PRINT_AREA }])
+  const [personalizationViews, setPersonalizationViews] = useState<PersonalizationView[]>([{ ...DEFAULT_PERSONALIZATION_VIEW, printAreas: [{ ...DEFAULT_PRINT_AREA }] }])
+  const [activePersonalizationViewId, setActivePersonalizationViewId] = useState(DEFAULT_PERSONALIZATION_VIEW.id)
   const [activePrintAreaId, setActivePrintAreaId] = useState(DEFAULT_PRINT_AREA.id)
-  const [previewMediaId, setPreviewMediaId] = useState<string>()
   const [textMaxCharacters, setTextMaxCharacters] = useState(35)
   const [textMinSize, setTextMinSize] = useState(12)
   const [textMaxSize, setTextMaxSize] = useState(72)
   const [allowedFonts, setAllowedFonts] = useState('Roboto, Montserrat, Playfair Display, Dancing Script, Pacifico')
   const [allowedColors, setAllowedColors] = useState('#111111, #ffffff, #9c5263, #1f4f78, #b3232f')
-  const primaryPrintArea = printAreas[0] ?? DEFAULT_PRINT_AREA
+  const primaryPersonalizationView = personalizationViews[0] ?? DEFAULT_PERSONALIZATION_VIEW
+  const primaryPrintArea = primaryPersonalizationView.printAreas[0] ?? DEFAULT_PRINT_AREA
   const personalization = {
     mode: personalizationMode,
-    preview_media_id: previewMediaId,
+    preview_media_id: primaryPersonalizationView.mediaId,
     area_x: Math.round(primaryPrintArea.x * 100), area_y: Math.round(primaryPrintArea.y * 100),
     area_width: Math.round(primaryPrintArea.width * 100), area_height: Math.round(primaryPrintArea.height * 100),
     // Keep the legacy fields synchronized while older clients still understand them.
     text_area_x: Math.round(primaryPrintArea.x * 100), text_area_y: Math.round(primaryPrintArea.y * 100),
     text_area_width: Math.round(primaryPrintArea.width * 100), text_area_height: Math.round(primaryPrintArea.height * 100),
-    print_areas: printAreas.map((area) => ({ id: area.id, label: area.label.trim(), x: Math.round(area.x * 100), y: Math.round(area.y * 100), width: Math.round(area.width * 100), height: Math.round(area.height * 100) })),
+    print_areas: primaryPersonalizationView.printAreas.map((area) => ({ id: area.id, label: area.label.trim(), x: Math.round(area.x * 100), y: Math.round(area.y * 100), width: Math.round(area.width * 100), height: Math.round(area.height * 100) })),
+    views: personalizationViews.map((view) => ({ id: view.id, label: view.label.trim(), media_id: view.mediaId ?? null, print_areas: view.printAreas.map((area) => ({ id: area.id, label: area.label.trim(), x: Math.round(area.x * 100), y: Math.round(area.y * 100), width: Math.round(area.width * 100), height: Math.round(area.height * 100) })) })),
     text_max_characters: textMaxCharacters, text_min_size: textMinSize, text_max_size: textMaxSize,
     allowed_fonts: allowedFonts.split(',').map((value) => value.trim()).filter(Boolean),
     allowed_colors: allowedColors.split(',').map((value) => value.trim()).filter(Boolean),
   }
-  const personalizationPreviewMedia = preview?.media.find(({ id }) => id === previewMediaId) ?? preview?.media[0]
+  const activePersonalizationView = personalizationViews.find(({ id }) => id === activePersonalizationViewId) ?? personalizationViews[0] ?? DEFAULT_PERSONALIZATION_VIEW
+  const printAreas = activePersonalizationView.printAreas
+  const personalizationPreviewMedia = preview?.media.find(({ id }) => id === activePersonalizationView.mediaId)
   const activePrintArea = printAreas.find(({ id }) => id === activePrintAreaId) ?? printAreas[0] ?? DEFAULT_PRINT_AREA
   const editorDirty = useMemo(() => {
     if (!preview) {
@@ -1856,7 +1876,7 @@ function CatalogManagement({
       )
       client.invalidateQueries({ queryKey: productsKey })
       client.invalidateQueries({ queryKey: inventoryKey })
-      loadProduct(product, activePrintAreaId)
+      loadProduct(product, activePersonalizationViewId, activePrintAreaId)
     },
   })
   const updateProduct = useMutation({
@@ -1868,7 +1888,7 @@ function CatalogManagement({
       client.invalidateQueries({ queryKey: productsKey })
       client.invalidateQueries({ queryKey: inventoryKey })
       setPreview(product)
-      loadProduct(product, activePrintAreaId)
+      loadProduct(product, activePersonalizationViewId, activePrintAreaId)
     },
   })
   const deleteProduct = useMutation({
@@ -1971,8 +1991,40 @@ function CatalogManagement({
     if (images.length > 0) uploadImage.mutate({ images, product })
   }
 
+  function updatePersonalizationView(id: string, change: Partial<Omit<PersonalizationView, 'id' | 'printAreas'>>) {
+    setPersonalizationViews((current) => current.map((view) => view.id === id ? { ...view, ...change } : view))
+  }
+
+  function selectPersonalizationView(id: string) {
+    const view = personalizationViews.find((candidate) => candidate.id === id)
+    if (!view) return
+    setActivePersonalizationViewId(id)
+    setActivePrintAreaId(view.printAreas[0]?.id ?? DEFAULT_PRINT_AREA.id)
+  }
+
+  function addPersonalizationView() {
+    if (personalizationViews.length >= 6) return
+    const nextNumber = personalizationViews.length + 1
+    const id = `view-${Date.now()}-${nextNumber}`
+    const areaId = `area-${Date.now()}-${nextNumber}-1`
+    const view: PersonalizationView = { id, label: nextNumber === 2 ? 'Costas' : `Vista ${nextNumber}`, printAreas: [{ ...DEFAULT_PRINT_AREA, id: areaId }] }
+    setPersonalizationViews((current) => [...current, view])
+    setActivePersonalizationViewId(id)
+    setActivePrintAreaId(areaId)
+  }
+
+  function removeActivePersonalizationView() {
+    if (personalizationViews.length <= 1) return
+    const remaining = personalizationViews.filter(({ id }) => id !== activePersonalizationView.id)
+    setPersonalizationViews(remaining)
+    setActivePersonalizationViewId(remaining[0].id)
+    setActivePrintAreaId(remaining[0].printAreas[0]?.id ?? DEFAULT_PRINT_AREA.id)
+  }
+
   function updatePrintArea(id: string, change: Partial<NamedPrintArea>) {
-    setPrintAreas((current) => current.map((area) => area.id === id ? { ...area, ...change } : area))
+    setPersonalizationViews((current) => current.map((view) => view.id === activePersonalizationView.id
+      ? { ...view, printAreas: view.printAreas.map((area) => area.id === id ? { ...area, ...change } : area) }
+      : view))
   }
 
   function addPrintArea() {
@@ -1980,14 +2032,16 @@ function CatalogManagement({
     const nextNumber = printAreas.length + 1
     const id = `area-${Date.now()}-${nextNumber}`
     const offset = Math.min(35, 15 + nextNumber * 5)
-    setPrintAreas((current) => [...current, { id, label: `Área ${nextNumber}`, x: offset, y: offset, width: 40, height: 40 }])
+    setPersonalizationViews((current) => current.map((view) => view.id === activePersonalizationView.id
+      ? { ...view, printAreas: [...view.printAreas, { id, label: `Área ${nextNumber}`, x: offset, y: offset, width: 40, height: 40 }] }
+      : view))
     setActivePrintAreaId(id)
   }
 
   function removeActivePrintArea() {
     if (printAreas.length <= 1) return
     const remaining = printAreas.filter(({ id }) => id !== activePrintArea.id)
-    setPrintAreas(remaining)
+    setPersonalizationViews((current) => current.map((view) => view.id === activePersonalizationView.id ? { ...view, printAreas: remaining } : view))
     setActivePrintAreaId(remaining[0].id)
   }
 
@@ -2032,7 +2086,7 @@ function CatalogManagement({
     )
   }
 
-  function loadProduct(product: Product, preferredPrintAreaId?: string) {
+  function loadProduct(product: Product, preferredViewId?: string, preferredPrintAreaId?: string) {
     const base = product.variants[0]
     setPreview(product)
     setProductTitle(product.title)
@@ -2047,10 +2101,11 @@ function CatalogManagement({
     const config = product.personalization
     setPersonalizationMode(config.mode as typeof personalizationMode)
     const fallbackArea = { ...DEFAULT_PRINT_AREA, ...printAreaFromBasisPoints([config.area_x, config.area_y, config.area_width, config.area_height], DEFAULT_PRINT_AREA) }
-    const configuredAreas = namedPrintAreas(config.print_areas, fallbackArea)
-    setPrintAreas(configuredAreas)
-    setActivePrintAreaId(configuredAreas.find(({ id }) => id === preferredPrintAreaId)?.id ?? configuredAreas[0].id)
-    setPreviewMediaId(config.preview_media_id ?? product.media[0]?.id)
+    const configuredViews = namedPersonalizationViews(config.views, fallbackArea, config.preview_media_id ?? product.media[0]?.id)
+    const selectedView = configuredViews.find(({ id }) => id === preferredViewId) ?? configuredViews[0]
+    setPersonalizationViews(configuredViews)
+    setActivePersonalizationViewId(selectedView.id)
+    setActivePrintAreaId(selectedView.printAreas.find(({ id }) => id === preferredPrintAreaId)?.id ?? selectedView.printAreas[0].id)
     setTextMaxCharacters(config.text_max_characters)
     setTextMinSize(config.text_min_size)
     setTextMaxSize(config.text_max_size)
@@ -2072,9 +2127,9 @@ function CatalogManagement({
     setProductQuantity('0')
     setProductCategoryIds([])
     setPersonalizationMode('none')
-    setPrintAreas([{ ...DEFAULT_PRINT_AREA }])
+    setPersonalizationViews([{ ...DEFAULT_PERSONALIZATION_VIEW, printAreas: [{ ...DEFAULT_PRINT_AREA }] }])
+    setActivePersonalizationViewId(DEFAULT_PERSONALIZATION_VIEW.id)
     setActivePrintAreaId(DEFAULT_PRINT_AREA.id)
-    setPreviewMediaId(undefined)
     setTextMaxCharacters(35)
     setTextMinSize(12)
     setTextMaxSize(72)
@@ -2364,25 +2419,35 @@ function CatalogManagement({
               </select>
               {personalizationMode !== 'none' && (
                 <>
-                  <p className="field-help">Escolhe a fotografia que mostra melhor o produto. Podes criar até oito áreas de impressão, dar-lhes nomes claros e posicioná-las nos diferentes bolsos ou faces do produto.</p>
+                  <p className="field-help">Cria uma vista para cada lado personalizável do produto. Cada vista escolhe a sua fotografia e pode ter até oito áreas de impressão.</p>
+                  <div className="personalization-view-manager">
+                    <div className="personalization-view-tabs" role="tablist" aria-label="Lados do produto">
+                      {personalizationViews.map((view, index) => <button key={view.id} type="button" role="tab" aria-selected={view.id === activePersonalizationView.id} className={view.id === activePersonalizationView.id ? 'active' : ''} onClick={() => selectPersonalizationView(view.id)}><span>{index + 1}</span>{view.label || `Vista ${index + 1}`}</button>)}
+                      <button type="button" className="personalization-view-add" disabled={personalizationViews.length >= 6} onClick={addPersonalizationView}>＋ Adicionar lado</button>
+                    </div>
+                    <div className="personalization-view-name-row">
+                      <label htmlFor="personalization-view-name">Nome do lado<input id="personalization-view-name" required maxLength={80} value={activePersonalizationView.label} onChange={(event) => updatePersonalizationView(activePersonalizationView.id, { label: event.target.value })} placeholder="Ex.: Frente, Costas ou Manga" /></label>
+                      <button type="button" disabled={personalizationViews.length <= 1} onClick={removeActivePersonalizationView}>Remover lado</button>
+                    </div>
+                  </div>
                   {preview?.media.length ? <fieldset className="personalization-media-picker">
-                    <legend>Fotografia onde aparecem as áreas</legend>
-                    <p>Escolhe a vista que permite posicionar melhor a personalização. Não precisa de ser a fotografia principal do produto.</p>
+                    <legend>Fotografia de {activePersonalizationView.label || 'esta vista'}</legend>
+                    <p>Escolhe a fotografia que representa este lado do produto. Não precisa de ser a fotografia principal.</p>
                     <div>
                       {preview.media.map((media, index) => {
                         const selected = media.id === personalizationPreviewMedia?.id
                         return <label key={media.id} className={selected ? 'selected' : ''}>
-                          <input type="radio" name="personalization-preview-media" value={media.id} checked={selected} onChange={() => setPreviewMediaId(media.id)} />
+                          <input type="radio" name={`personalization-preview-media-${activePersonalizationView.id}`} value={media.id} checked={selected} onChange={() => updatePersonalizationView(activePersonalizationView.id, { mediaId: media.id })} />
                           <span className="personalization-media-thumbnail"><img src={media.thumbnail_url || media.card_url} alt={media.alt_text} /><i>{index === 0 ? 'Principal' : index + 1}</i></span>
                           <span><strong>{index === 0 ? 'Fotografia principal' : `Fotografia ${index + 1}`}</strong><small>{media.alt_text}</small></span>
                           <CircleCheck aria-hidden="true" />
                         </label>
                       })}
                     </div>
-                    <small>A fotografia selecionada aparece já abaixo com todas as áreas de impressão. Clica em “Save product” para guardar a escolha.</small>
+                    <small>A fotografia selecionada aparece abaixo apenas com as áreas deste lado.</small>
                   </fieldset> : <p className="field-help">Guarda o produto e adiciona fotografias para poderes escolher a vista do editor.</p>}
                   <div className="print-area-manager">
-                    <div className="print-area-tabs" role="tablist" aria-label="Áreas de impressão">
+                    <div className="print-area-tabs" role="tablist" aria-label={`Áreas de impressão de ${activePersonalizationView.label}`}>
                       {printAreas.map((area, index) => <button key={area.id} type="button" role="tab" aria-selected={area.id === activePrintArea.id} className={area.id === activePrintArea.id ? 'active' : ''} onClick={() => setActivePrintAreaId(area.id)}><span>{index + 1}</span>{area.label || `Área ${index + 1}`}</button>)}
                       <button type="button" className="print-area-add" disabled={printAreas.length >= 8} onClick={addPrintArea}>＋ Adicionar área</button>
                     </div>
@@ -2400,7 +2465,7 @@ function CatalogManagement({
                   <div className="print-area-preview">
                     {personalizationPreviewMedia ? <div className="print-area-canvas"><img src={personalizationPreviewMedia.detail_url} alt={`Pré-visualização das áreas sobre ${personalizationPreviewMedia.alt_text}`} />
                       {printAreas.map((area) => <EditablePrintArea key={area.id} area={area} label={area.label || 'Área sem nome'} active={area.id === activePrintArea.id} onActivate={() => setActivePrintAreaId(area.id)} onChange={(change) => updatePrintArea(area.id, change)} />)}
-                    </div> : <span>Adiciona uma fotografia para posicionar as zonas.</span>}
+                    </div> : <span>Escolhe uma fotografia para {activePersonalizationView.label || 'esta vista'} antes de posicionares as áreas.</span>}
                   </div>
                 </>
               )}

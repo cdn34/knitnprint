@@ -35,10 +35,11 @@ export const Route = createFileRoute('/cart')({
 
 function personalizationSummary(value: unknown, mediaIds: string[]) {
   if (!value || typeof value !== 'object') return 'Personalizado'
-  const customization = value as { areas?: Array<{ photo?: unknown; text?: { content?: unknown } }>; photo?: unknown; text?: { content?: unknown } }
+  const customization = value as { areas?: Array<{ view_id?: unknown; photo?: unknown; text?: { content?: unknown } }>; photo?: unknown; text?: { content?: unknown } }
   if (Array.isArray(customization.areas)) {
     const textCount = customization.areas.filter((area) => typeof area.text?.content === 'string').length
-    const parts = [`${customization.areas.length} área${customization.areas.length === 1 ? '' : 's'}`]
+    const viewCount = new Set(customization.areas.flatMap((area) => typeof area.view_id === 'string' ? [area.view_id] : [])).size
+    const parts = [viewCount > 1 ? `${viewCount} lados` : '', `${customization.areas.length} área${customization.areas.length === 1 ? '' : 's'}`].filter(Boolean)
     if (mediaIds.length) parts.push(`${mediaIds.length} fotografia${mediaIds.length === 1 ? '' : 's'}`)
     if (textCount) parts.push(`${textCount} texto${textCount === 1 ? '' : 's'}`)
     return `Personalizado · ${parts.join(' · ')}`
