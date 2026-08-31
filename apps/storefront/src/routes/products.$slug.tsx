@@ -7,7 +7,6 @@ import {
   PackageCheck,
   PackageX,
   ShieldCheck,
-  TriangleAlert,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { announceCartUpdate, cartApi, cartMutationKey } from '../cart-api'
@@ -178,9 +177,8 @@ function ProductPage() {
               aria-live="polite"
             >
               {stock.state === 'available' && <CircleCheck aria-hidden="true" />}
-              {stock.state === 'low' && <TriangleAlert aria-hidden="true" />}
               {stock.state === 'sold-out' && <PackageX aria-hidden="true" />}
-              <span><strong>{localizedStock?.label}</strong><small>{localizedStock?.detail}</small></span>
+              <span><strong>{localizedStock?.label}</strong></span>
             </div>
           )}
           {product.personalization.mode !== 'none' && stock?.state !== 'sold-out' ? <a className="button button--primary personalization-start-button" href={`/products/${product.slug}/personalize`}>Começa a personalizar</a> : <button

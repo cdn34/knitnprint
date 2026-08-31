@@ -19,12 +19,6 @@ export function useLocalizedCatalog() {
     if (stock.state === 'sold-out') {
       return { label: t('stock.soldOut'), detail: t('stock.soldOutDetail') }
     }
-    if (stock.state === 'low') {
-      return {
-        label: t('stock.low', { count: stock.quantity }),
-        detail: t('stock.lowDetail'),
-      }
-    }
     return { label: t('stock.available'), detail: t('stock.availableDetail') }
   }
 

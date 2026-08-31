@@ -20,8 +20,6 @@ export const pt = {
   'common.priceUnavailable': 'Preço indisponível',
   'stock.soldOut': 'Esgotado',
   'stock.soldOutDetail': 'Esta opção não está disponível neste momento.',
-  'stock.low': 'Apenas {count} disponíveis',
-  'stock.lowDetail': 'Restam poucas unidades no estúdio.',
   'stock.available': 'Em stock',
   'stock.availableDetail': 'Disponível no inventário do nosso estúdio.',
   'shell.announcement': 'Peças em pequenas séries, criadas com tempo em Portugal',
