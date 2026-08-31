@@ -3832,6 +3832,7 @@ html[lang='pt'] .home-section-title--categories h2 {
 .personalizer-layout { margin-top: 1.4rem; display: grid; grid-template-columns: minmax(220px, .55fr) minmax(320px, 1.45fr); gap: 1.25rem; }
 .personalizer-tools { display: flex; flex-direction: column; gap: .8rem; }
 .personalizer-tool { padding: 1rem; display: grid; gap: .75rem; border: 1px solid #e8dfda; border-radius: .8rem; background: #fcfaf8; }
+.personalizer-tool--selected { border-color: #c894a1; box-shadow: 0 0 0 2px rgb(164 82 101 / 10%); background: #fffafb; }
 .personalizer-tool strong { display: flex; align-items: center; gap: .45rem; font-size: .82rem; }
 .personalizer-tool strong svg { width: 18px; color: #a45265; }
 .personalizer-tool label { display: grid; gap: .3rem; color: #554f4b; font-size: .72rem; font-weight: 650; }
@@ -3843,18 +3844,28 @@ html[lang='pt'] .home-section-title--categories h2 {
 .personalizer-canvas { max-width: 100%; position: relative; display: inline-block; line-height: 0; }
 .personalizer-product { width: auto; height: auto; max-width: 100%; max-height: min(70vh, 760px); display: block; }
 .personalizer-product-empty { color: #817872; }
-.personalizer-zone { position: absolute; overflow: hidden; border: 2px dashed #a45265; background: rgb(255 255 255 / 12%); touch-action: none; }
-.personalizer-photo { width: 100%; height: 100%; position: absolute; max-width: none; object-fit: cover; cursor: grab; user-select: none; }
-.personalizer-photo:active { cursor: grabbing; }
-.personalizer-text { max-width: 94%; position: absolute; transform: translate(-50%, -50%); overflow-wrap: anywhere; font-weight: 700; line-height: 1; text-align: center; text-shadow: 0 1px 2px rgb(255 255 255 / 50%); cursor: grab; touch-action: none; user-select: none; }
-.personalizer-text:active { cursor: grabbing; }
-.personalizer-text:focus-visible { outline: 2px solid #39749d; outline-offset: 4px; }
-.personalizer-placeholder { position: absolute; inset: 0; display: grid; place-items: center; padding: 1rem; color: #8b626c; font-size: .72rem; text-align: center; }
-.personalizer-zone--text { border-color: #39749d; background: rgb(232 246 255 / 15%); }
-.personalizer-zone--text .personalizer-text { width: max-content; }
+.personalizer-print-area { position: absolute; overflow: visible; border: 2px dashed #8f4558; background: rgb(255 255 255 / 8%); box-shadow: 0 0 0 1px rgb(255 255 255 / 65%); }
+.personalizer-element { position: absolute; z-index: 1; border: 1px dashed rgb(83 76 73 / 65%); background: rgb(255 255 255 / 14%); cursor: grab; touch-action: none; }
+.personalizer-element:active { cursor: grabbing; }
+.personalizer-element:focus-visible { outline: 2px solid #39749d; outline-offset: 3px; }
+.personalizer-element--selected { z-index: 3; border: 2px solid #a45265; box-shadow: 0 3px 14px rgb(59 44 49 / 20%); }
+.personalizer-element--text { border-color: #39749d; background: rgb(232 246 255 / 10%); }
+.personalizer-element--text.personalizer-element--selected { border-color: #39749d; }
+.personalizer-element-content { position: absolute; inset: 0; overflow: hidden; display: grid; place-items: center; line-height: normal; pointer-events: none; }
+.personalizer-photo { width: 100%; height: 100%; position: absolute; max-width: none; object-fit: cover; user-select: none; }
+.personalizer-text { max-width: 100%; max-height: 100%; padding: .2rem; overflow: hidden; overflow-wrap: anywhere; font-weight: 700; line-height: 1.05; text-align: center; text-shadow: 0 1px 2px rgb(255 255 255 / 50%); user-select: none; }
+.personalizer-placeholder { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: .35rem; padding: .45rem; color: #8b626c; font-size: .65rem; font-weight: 700; text-align: center; }
+.personalizer-placeholder svg { width: 17px; height: 17px; flex: 0 0 auto; }
+.personalizer-resize-handle { width: 26px; height: 26px; padding: 0; position: absolute; z-index: 5; display: grid; place-items: center; opacity: 0; pointer-events: none; border: 1px solid currentColor; border-radius: 50%; color: #7d4050; background: #fffaf8; box-shadow: 0 2px 8px rgb(53 40 45 / 24%); font-size: .72rem; line-height: 1; touch-action: none; }
+.personalizer-element--selected .personalizer-resize-handle { opacity: 1; pointer-events: auto; }
+.personalizer-resize-handle--nw { left: -13px; top: -13px; cursor: nwse-resize; }
+.personalizer-resize-handle--ne { right: -13px; top: -13px; cursor: nesw-resize; }
+.personalizer-resize-handle--sw { left: -13px; bottom: -13px; cursor: nesw-resize; }
+.personalizer-resize-handle--se { right: -13px; bottom: -13px; cursor: nwse-resize; }
 .selected-color { display: flex; align-items: center; gap: .45rem; color: #6d6661; font-size: .68rem; }
 .selected-color i { width: 1.1rem; height: 1.1rem; border: 1px solid #cfc6c0; border-radius: 50%; }
-.personalizer-drag-hint { padding: .55rem .65rem; border-left: 3px solid #39749d; color: #536875; background: #f0f7fb; font-size: .65rem; line-height: 1.35; }
+.personalizer-drag-hint { padding: .55rem .65rem; display: flex; align-items: flex-start; gap: .4rem; border-left: 3px solid #39749d; color: #536875; background: #f0f7fb; font-size: .65rem; line-height: 1.35; }
+.personalizer-drag-hint svg { width: 14px; height: 14px; flex: 0 0 auto; }
 .personalizer-control-label { color: #554f4b; font-size: .72rem; font-weight: 650; }
 .font-choice-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .4rem; }
 .font-choice-grid button { min-width: 0; padding: .45rem .25rem; display: grid; gap: .18rem; place-items: center; border: 1px solid #ddd3cd; border-radius: .4rem; color: #393432; background: #fff; cursor: pointer; }
