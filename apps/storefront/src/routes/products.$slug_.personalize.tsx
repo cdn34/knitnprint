@@ -1,5 +1,5 @@
 import { ApiError } from '@knitprint/api-client'
-import { createFileRoute, notFound } from '@tanstack/react-router'
+import { createFileRoute, notFound, redirect } from '@tanstack/react-router'
 import { ArrowLeft, ShoppingBag } from 'lucide-react'
 import { useState } from 'react'
 import { announceCartUpdate, cartApi, cartMutationKey } from '../cart-api'
@@ -11,6 +11,9 @@ export const Route = createFileRoute('/products/$slug_/personalize')({
   loader: async ({ params }) => {
     const product = await publishedProduct(params.slug)
     if (!product || product.personalization.mode === 'none') throw notFound()
+    if (!product.variants.some(({ available_quantity }) => available_quantity > 0)) {
+      throw redirect({ to: '/products/$slug', params: { slug: params.slug }, replace: true })
+    }
     return product
   },
   head: ({ loaderData }) => ({ meta: [{ title: loaderData ? `Personalizar ${loaderData.title} — KnitnPrint` : 'KnitnPrint' }] }),
