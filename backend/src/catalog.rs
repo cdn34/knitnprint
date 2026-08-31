@@ -20,6 +20,13 @@ use crate::{
 
 const CATALOG_READ: &str = "catalog.read";
 const CATALOG_WRITE: &str = "catalog.write";
+const PERSONALIZATION_FONTS: &[&str] = &[
+    "Roboto",
+    "Montserrat",
+    "Playfair Display",
+    "Dancing Script",
+    "Pacifico",
+];
 
 #[derive(Clone, Serialize, ToSchema, FromRow)]
 pub struct Variant {
@@ -1150,17 +1157,33 @@ fn valid_personalization(config: &PersonalizationConfig) -> bool {
         && (1..=500).contains(&config.text_max_characters)
         && (8..=200).contains(&config.text_min_size)
         && (config.text_min_size..=300).contains(&config.text_max_size)
-        && valid_string_options(&config.allowed_fonts, 20)
-        && valid_string_options(&config.allowed_colors, 30)
+        && valid_font_options(&config.allowed_fonts)
+        && valid_color_options(&config.allowed_colors)
 }
 
-fn valid_string_options(value: &Value, maximum: usize) -> bool {
+fn valid_font_options(value: &Value) -> bool {
     value.as_array().is_some_and(|items| {
         !items.is_empty()
-            && items.len() <= maximum
+            && items.len() <= PERSONALIZATION_FONTS.len()
             && items.iter().all(|item| {
                 item.as_str()
-                    .is_some_and(|text| !text.trim().is_empty() && text.len() <= 100)
+                    .is_some_and(|font| PERSONALIZATION_FONTS.contains(&font))
+            })
+    })
+}
+
+fn valid_color_options(value: &Value) -> bool {
+    value.as_array().is_some_and(|items| {
+        !items.is_empty()
+            && items.len() <= 30
+            && items.iter().all(|item| {
+                item.as_str().is_some_and(|color| {
+                    color.len() == 7
+                        && color.starts_with('#')
+                        && color[1..]
+                            .chars()
+                            .all(|character| character.is_ascii_hexdigit())
+                })
             })
     })
 }

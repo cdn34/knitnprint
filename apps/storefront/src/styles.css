@@ -3818,8 +3818,9 @@ html[lang='pt'] .home-section-title--categories h2 {
 .personalizer-tool small { color: #817872; font-size: .64rem; text-align: right; }
 .personalizer-upload { padding: .7rem !important; display: block !important; border-radius: .5rem; color: #fff !important; background: #9c5263; text-align: center; cursor: pointer; }
 .personalizer-upload input { width: 1px; height: 1px; position: absolute; opacity: 0; }
-.personalizer-stage { min-height: 430px; position: relative; display: grid; place-items: center; overflow: hidden; border-radius: .9rem; background: #fff; box-shadow: inset 0 0 0 1px #eee8e4; }
-.personalizer-product { width: 100%; height: 100%; position: absolute; inset: 0; object-fit: contain; }
+.personalizer-stage { min-height: 430px; padding: 1rem; position: relative; display: grid; place-items: center; overflow: hidden; border-radius: .9rem; background: #fff; box-shadow: inset 0 0 0 1px #eee8e4; }
+.personalizer-canvas { max-width: 100%; position: relative; display: inline-block; line-height: 0; }
+.personalizer-product { width: auto; height: auto; max-width: 100%; max-height: min(70vh, 760px); display: block; }
 .personalizer-product-empty { color: #817872; }
 .personalizer-zone { position: absolute; overflow: hidden; border: 2px dashed #a45265; background: rgb(255 255 255 / 12%); touch-action: none; }
 .personalizer-photo { width: 100%; height: 100%; position: absolute; max-width: none; object-fit: cover; cursor: grab; user-select: none; }
@@ -3830,6 +3831,12 @@ html[lang='pt'] .home-section-title--categories h2 {
 .personalizer-zone--text .personalizer-text { inset: 0; max-width: none; display: grid; place-items: center; transform: none; }
 .selected-color { display: flex; align-items: center; gap: .45rem; color: #6d6661; font-size: .68rem; }
 .selected-color i { width: 1.1rem; height: 1.1rem; border: 1px solid #cfc6c0; border-radius: 50%; }
+.personalizer-control-label { color: #554f4b; font-size: .72rem; font-weight: 650; }
+.font-choice-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .4rem; }
+.font-choice-grid button { min-width: 0; padding: .45rem .25rem; display: grid; gap: .18rem; place-items: center; border: 1px solid #ddd3cd; border-radius: .4rem; color: #393432; background: #fff; cursor: pointer; }
+.font-choice-grid button.selected { border-color: #9c5263; box-shadow: inset 0 0 0 1px #9c5263; background: #fbf1f4; }
+.font-choice-grid b { font-size: 1.25rem; line-height: 1; }
+.font-choice-grid small { width: 100%; overflow: hidden; font-family: var(--body); font-size: .52rem; text-overflow: ellipsis; white-space: nowrap; }
 .personalization-start-button { text-align: center; }
 .personalization-page { width: min(1500px, calc(100% - 2rem)); margin: 0 auto; padding: clamp(1.25rem, 3vw, 3rem) 0 7rem; }
 .personalization-page-header { display: grid; grid-template-columns: 1fr auto 1fr; align-items: end; gap: 1rem; }

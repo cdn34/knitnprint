@@ -1690,6 +1690,12 @@ function InventoryManagement({ initialVariantId }: Readonly<{ initialVariantId?:
 }
 
 const productsKey = ['admin-products'] as const
+const GOOGLE_FONT_OPTIONS = ['Roboto', 'Montserrat', 'Playfair Display', 'Dancing Script', 'Pacifico'] as const
+const PERSONALIZATION_COLOR_OPTIONS = [
+  { value: '#111111', label: 'Preto' }, { value: '#ffffff', label: 'Branco' },
+  { value: '#9c5263', label: 'Rosa antigo' }, { value: '#1f4f78', label: 'Azul' },
+  { value: '#b3232f', label: 'Vermelho' },
+] as const
 
 type PrintArea = { x: number; y: number; width: number; height: number }
 
@@ -1990,8 +1996,10 @@ function CatalogManagement({
     setTextMaxCharacters(config.text_max_characters)
     setTextMinSize(config.text_min_size)
     setTextMaxSize(config.text_max_size)
-    setAllowedFonts((config.allowed_fonts as string[]).join(', '))
-    setAllowedColors((config.allowed_colors as string[]).join(', '))
+    const configuredFonts = Array.isArray(config.allowed_fonts) ? config.allowed_fonts.filter((font): font is string => GOOGLE_FONT_OPTIONS.includes(font as typeof GOOGLE_FONT_OPTIONS[number])) : []
+    const configuredColors = Array.isArray(config.allowed_colors) ? config.allowed_colors.filter((color): color is string => typeof color === 'string' && /^#[0-9a-f]{6}$/i.test(color)) : []
+    setAllowedFonts((configuredFonts.length ? configuredFonts : [...GOOGLE_FONT_OPTIONS]).join(', '))
+    setAllowedColors((configuredColors.length ? configuredColors : PERSONALIZATION_COLOR_OPTIONS.map(({ value }) => value)).join(', '))
   }
 
   function clearEditor() {
@@ -2301,9 +2309,10 @@ function CatalogManagement({
                   <p className="field-help">Escolhe a fotografia que mostra melhor a área a personalizar. Arrasta cada caixa e usa as setas nos cantos para a dimensionar.</p>
                   {preview?.media.length ? <label htmlFor="personalization-preview-media">Fotografia apresentada no editor<select id="personalization-preview-media" value={personalizationPreviewMedia?.id ?? ''} onChange={(event) => setPreviewMediaId(event.target.value)}>{preview.media.map((media, index) => <option key={media.id} value={media.id}>{index === 0 ? 'Fotografia principal' : `Fotografia ${index + 1}`} · {media.alt_text}</option>)}</select></label> : <p className="field-help">Guarda o produto e adiciona fotografias para poderes escolher a vista do editor.</p>}
                   <div className="print-area-preview">
-                    {personalizationPreviewMedia ? <img src={personalizationPreviewMedia.detail_url} alt="" /> : <span>Adiciona uma fotografia para posicionar as zonas.</span>}
-                    {(personalizationMode === 'photo' || personalizationMode === 'photo_text') && <EditablePrintArea area={photoArea} onChange={setPhotoArea} label="Fotografia" kind="photo" />}
-                    {(personalizationMode === 'text' || personalizationMode === 'photo_text') && <EditablePrintArea area={textArea} onChange={setTextArea} label="Texto" kind="text" />}
+                    {personalizationPreviewMedia ? <div className="print-area-canvas"><img src={personalizationPreviewMedia.detail_url} alt="" />
+                      {(personalizationMode === 'photo' || personalizationMode === 'photo_text') && <EditablePrintArea area={photoArea} onChange={setPhotoArea} label="Fotografia" kind="photo" />}
+                      {(personalizationMode === 'text' || personalizationMode === 'photo_text') && <EditablePrintArea area={textArea} onChange={setTextArea} label="Texto" kind="text" />}
+                    </div> : <span>Adiciona uma fotografia para posicionar as zonas.</span>}
                   </div>
                 </>
               )}
@@ -2314,9 +2323,8 @@ function CatalogManagement({
                     <label>Tamanho mínimo<input type="number" min="8" max="200" value={textMinSize} onChange={(event) => setTextMinSize(Number(event.target.value))} /></label>
                     <label>Tamanho máximo<input type="number" min={textMinSize} max="300" value={textMaxSize} onChange={(event) => setTextMaxSize(Number(event.target.value))} /></label>
                   </div>
-                  <label>Tipos de letra permitidos<input value={allowedFonts} onChange={(event) => setAllowedFonts(event.target.value)} placeholder="Arial, Georgia" /></label>
-                  <small className="field-help">Separa várias opções com vírgulas.</small>
-                  <label>Cores permitidas<input value={allowedColors} onChange={(event) => setAllowedColors(event.target.value)} placeholder="#111111, #ffffff" /></label>
+                  <fieldset className="personalization-option-grid"><legend>Tipos de letra disponíveis</legend>{GOOGLE_FONT_OPTIONS.map((font) => { const values = allowedFonts.split(',').map((value) => value.trim()).filter(Boolean); const selected = values.includes(font); return <label key={font} style={{ fontFamily: font }}><input type="checkbox" checked={selected} disabled={selected && values.length === 1} onChange={(event) => setAllowedFonts((current) => { const currentValues = current.split(',').map((value) => value.trim()).filter(Boolean); return (event.target.checked ? [...new Set([...currentValues, font])] : currentValues.filter((value) => value !== font)).join(', ') })} /><b>Ag</b><span>{font}</span></label> })}</fieldset>
+                  <fieldset className="personalization-color-grid"><legend>Cores disponíveis</legend>{PERSONALIZATION_COLOR_OPTIONS.map(({ value, label }) => { const values = allowedColors.split(',').map((color) => color.trim().toLowerCase()).filter(Boolean); const selected = values.includes(value); return <label key={value}><input type="checkbox" checked={selected} disabled={selected && values.length === 1} onChange={(event) => setAllowedColors((current) => { const currentValues = current.split(',').map((color) => color.trim()).filter(Boolean); return (event.target.checked ? [...new Set([...currentValues, value])] : currentValues.filter((color) => color.toLowerCase() !== value)).join(', ') })} /><i style={{ background: value }} /><span>{label}</span></label> })}</fieldset>
                 </div>
               )}
             </fieldset>
