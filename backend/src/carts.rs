@@ -1123,6 +1123,22 @@ fn valid_customization(value: Option<&Value>) -> bool {
     value.is_none_or(|value| value.is_object() && value.to_string().len() <= 20_000)
 }
 
+fn valid_element_frame(value: &Value) -> bool {
+    let Some(x) = value.get("x").and_then(Value::as_f64) else {
+        return false;
+    };
+    let Some(y) = value.get("y").and_then(Value::as_f64) else {
+        return false;
+    };
+    let Some(width) = value.get("width").and_then(Value::as_f64) else {
+        return false;
+    };
+    let Some(height) = value.get("height").and_then(Value::as_f64) else {
+        return false;
+    };
+    x >= 0.0 && y >= 0.0 && width > 0.0 && height > 0.0 && x + width <= 100.0 && y + height <= 100.0
+}
+
 fn customization_allowed(
     variant: &VariantForCart,
     customization: Option<&Value>,
@@ -1130,6 +1146,10 @@ fn customization_allowed(
 ) -> bool {
     let photo = customization.and_then(|value| value.get("photo"));
     let text = customization.and_then(|value| value.get("text"));
+    let version = customization
+        .and_then(|value| value.get("version"))
+        .and_then(Value::as_i64)
+        .unwrap_or(1);
     let has_personalization = photo.is_some() || text.is_some();
     let photo_upload_matches = photo.is_some() == media_id.is_some();
     let shape_valid = match variant.personalization_mode.as_str() {
@@ -1149,6 +1169,28 @@ fn customization_allowed(
     };
     if !shape_valid {
         return false;
+    }
+    if let Some(photo) = photo {
+        if !photo.is_object() {
+            return false;
+        }
+        if version >= 2 {
+            let crop_valid = photo
+                .get("crop_x")
+                .and_then(Value::as_f64)
+                .is_some_and(|value| (0.0..=100.0).contains(&value))
+                && photo
+                    .get("crop_y")
+                    .and_then(Value::as_f64)
+                    .is_some_and(|value| (0.0..=100.0).contains(&value))
+                && photo
+                    .get("scale")
+                    .and_then(Value::as_f64)
+                    .is_some_and(|value| (1.0..=3.0).contains(&value));
+            if !valid_element_frame(photo) || !crop_valid {
+                return false;
+            }
+        }
     }
     let Some(text) = text else {
         return true;
@@ -1176,6 +1218,7 @@ fn customization_allowed(
         && (variant.text_min_size as i64..=variant.text_max_size as i64).contains(&size)
         && (0.0..=100.0).contains(&x)
         && (0.0..=100.0).contains(&y)
+        && (version < 2 || valid_element_frame(text))
         && variant
             .allowed_fonts
             .as_array()
@@ -1659,6 +1702,13 @@ mod personalization_tests {
         serde_json::json!({ "text": { "content": "Olá", "font": "Roboto", "color": "#111111", "size": 24, "x": x, "y": y } })
     }
 
+    fn framed_text(x: f64, y: f64, width: f64, height: f64) -> Value {
+        serde_json::json!({
+            "version": 2,
+            "text": { "content": "Olá", "font": "Roboto", "color": "#111111", "size": 24, "x": x, "y": y, "width": width, "height": height }
+        })
+    }
+
     #[test]
     fn personalization_is_optional_for_personalizable_products() {
         for mode in ["photo", "text", "photo_text"] {
@@ -1669,10 +1719,11 @@ mod personalization_tests {
     #[test]
     fn combined_mode_accepts_partial_or_complete_personalization() {
         let media_id = Uuid::new_v4();
-        let photo = serde_json::json!({ "photo": { "x": 50, "y": 50, "scale": 1 } });
+        let photo = serde_json::json!({ "version": 2, "photo": { "x": 10, "y": 10, "width": 80, "height": 60, "crop_x": 50, "crop_y": 50, "scale": 1 } });
         let both = serde_json::json!({
-            "photo": { "x": 50, "y": 50, "scale": 1 },
-            "text": { "content": "Olá", "font": "Roboto", "color": "#111111", "size": 24, "x": 50, "y": 50 }
+            "version": 2,
+            "photo": { "x": 10, "y": 10, "width": 80, "height": 60, "crop_x": 50, "crop_y": 50, "scale": 1 },
+            "text": { "content": "Olá", "font": "Roboto", "color": "#111111", "size": 24, "x": 15, "y": 72, "width": 70, "height": 20 }
         });
         assert!(customization_allowed(
             &variant("photo_text"),
@@ -1702,6 +1753,39 @@ mod personalization_tests {
             &variant("text"),
             Some(&text_at(101.0, 50.0)),
             None
+        ));
+        assert!(customization_allowed(
+            &variant("text"),
+            Some(&framed_text(10.0, 20.0, 60.0, 30.0)),
+            None
+        ));
+        assert!(!customization_allowed(
+            &variant("text"),
+            Some(&framed_text(50.0, 20.0, 60.0, 30.0)),
+            None
+        ));
+    }
+
+    #[test]
+    fn photo_frame_and_crop_must_be_valid() {
+        let media_id = Uuid::new_v4();
+        let outside = serde_json::json!({
+            "version": 2,
+            "photo": { "x": 30, "y": 10, "width": 80, "height": 60, "crop_x": 50, "crop_y": 50, "scale": 1 }
+        });
+        let excessive_zoom = serde_json::json!({
+            "version": 2,
+            "photo": { "x": 10, "y": 10, "width": 80, "height": 60, "crop_x": 50, "crop_y": 50, "scale": 4 }
+        });
+        assert!(!customization_allowed(
+            &variant("photo"),
+            Some(&outside),
+            Some(media_id)
+        ));
+        assert!(!customization_allowed(
+            &variant("photo"),
+            Some(&excessive_zoom),
+            Some(media_id)
         ));
     }
 }

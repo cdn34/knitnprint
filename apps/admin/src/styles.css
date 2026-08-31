@@ -141,14 +141,8 @@ h1 { margin: .25rem 0 0; font: 500 2rem Georgia, serif; }
 .print-area-preview { margin-top: .75rem; min-height: 310px; position: relative; display: grid; place-items: center; overflow: hidden; border-radius: .5rem; color: #746b65; background: #f4f0ed; font-size: .65rem; text-align: center; }
 .print-area-canvas { max-width: 100%; position: relative; display: inline-block; line-height: 0; }
 .print-area-canvas > img { width: auto; height: auto; max-width: 100%; max-height: 520px; display: block; }
-.print-area-layer-picker { margin-top: .75rem; padding: .38rem; display: flex; align-items: center; gap: .35rem; border: 1px solid #ded4cc; border-radius: .5rem; background: #f7f3ef; }
-.print-area-layer-picker span { margin: 0 auto 0 .2rem; color: #625b57; font-size: .62rem; font-weight: 700; }
-.print-area-layer-picker button { width: auto; padding: .42rem .65rem; border: 1px solid transparent; border-radius: .35rem; color: #625b57; background: transparent; font-size: .62rem; font-weight: 700; cursor: pointer; }
-.print-area-layer-picker button.active { border-color: #8e6a7a; color: #fff; background: #5f4652; box-shadow: 0 2px 8px rgb(95 70 82 / 18%); }
-.editable-print-area { z-index: 1; position: absolute; display: grid; place-items: center; border: 2px dashed; background: rgb(255 255 255 / 24%); opacity: .5; pointer-events: none; cursor: move; touch-action: none; }
-.editable-print-area--active { z-index: 2; opacity: 1; pointer-events: auto; box-shadow: 0 0 0 2px rgb(255 255 255 / 70%), 0 4px 14px rgb(58 45 50 / 22%); }
-.editable-print-area--photo { border-color: #d05e75; color: #8a3045; background: rgb(255 239 242 / 42%); }
-.editable-print-area--text { border-color: #39749d; color: #174d72; background: rgb(232 246 255 / 42%); }
+.editable-print-area { z-index: 1; position: absolute; display: grid; place-items: center; border: 2px dashed; cursor: move; touch-action: none; }
+.editable-print-area--print { border-color: #8f4558; color: #713143; background: rgb(255 239 242 / 30%); box-shadow: 0 0 0 2px rgb(255 255 255 / 70%), 0 4px 14px rgb(58 45 50 / 22%); }
 .editable-print-area > span { padding: .2rem .35rem; border-radius: 1rem; background: rgb(255 255 255 / 82%); font-size: .58rem; font-weight: 800; pointer-events: none; }
 .resize-handle { z-index: 3; width: 22px !important; height: 22px; padding: 0 !important; position: absolute; display: grid; place-items: center; border: 1px solid currentColor !important; border-radius: 50% !important; color: inherit !important; background: #fff !important; box-shadow: 0 2px 6px rgb(48 37 42 / 24%); font-size: .72rem; line-height: 1; cursor: nwse-resize; touch-action: none; }
 .resize-handle--nw { left: 6px; top: 6px; }
