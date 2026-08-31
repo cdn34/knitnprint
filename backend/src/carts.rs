@@ -1142,6 +1142,7 @@ fn valid_customization(value: Option<&Value>) -> bool {
 }
 
 fn valid_element_frame(value: &Value) -> bool {
+    const FRAME_ROUNDING_TOLERANCE: f64 = 0.0001;
     let Some(x) = value.get("x").and_then(Value::as_f64) else {
         return false;
     };
@@ -1154,7 +1155,12 @@ fn valid_element_frame(value: &Value) -> bool {
     let Some(height) = value.get("height").and_then(Value::as_f64) else {
         return false;
     };
-    x >= 0.0 && y >= 0.0 && width > 0.0 && height > 0.0 && x + width <= 100.0 && y + height <= 100.0
+    x >= 0.0
+        && y >= 0.0
+        && width > 0.0
+        && height > 0.0
+        && x + width <= 100.0 + FRAME_ROUNDING_TOLERANCE
+        && y + height <= 100.0 + FRAME_ROUNDING_TOLERANCE
 }
 
 fn valid_print_area_assignment(element: &Value, print_areas: &Value) -> bool {
@@ -1949,6 +1955,22 @@ mod personalization_tests {
             Some(&excessive_zoom),
             &[media_id]
         ));
+    }
+
+    #[test]
+    fn frame_validation_tolerates_browser_rounding_at_the_boundary() {
+        assert!(valid_element_frame(&serde_json::json!({
+            "x": 5.0000001,
+            "y": 10.0000001,
+            "width": 95.0,
+            "height": 90.0
+        })));
+        assert!(!valid_element_frame(&serde_json::json!({
+            "x": 5.0,
+            "y": 10.0,
+            "width": 95.01,
+            "height": 90.0
+        })));
     }
 
     #[test]

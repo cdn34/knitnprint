@@ -11,6 +11,18 @@ type ElementFrame = { x: number; y: number; width: number; height: number }
 type Interaction = { pointerX: number; pointerY: number; frame: ElementFrame; handle: 'move' | 'nw' | 'ne' | 'sw' | 'se' }
 type PrintArea = ElementFrame & { id: string; label: string }
 
+function normalizedFrame(frame: ElementFrame): ElementFrame {
+  const round = (value: number) => Math.round(value * 10_000) / 10_000
+  const x = round(Math.max(0, Math.min(100, frame.x)))
+  const y = round(Math.max(0, Math.min(100, frame.y)))
+  return {
+    x,
+    y,
+    width: round(Math.max(0.0001, Math.min(100 - x, frame.width))),
+    height: round(Math.max(0.0001, Math.min(100 - y, frame.height))),
+  }
+}
+
 function configuredPrintAreas(config: PersonalizationConfig): PrintArea[] {
   const raw = config.print_areas
   if (Array.isArray(raw)) {
@@ -171,8 +183,8 @@ export function ProductPersonalizer({ config, productImage, onChange }: Readonly
     areas: printAreas.flatMap((area) => {
       const design = designs[area.id]
       if (!design) return []
-      const photo = wantsPhoto && design.mediaId ? { media_id: design.mediaId, ...design.photoFrame, crop_x: design.photoCrop.x, crop_y: design.photoCrop.y, scale: design.photoCrop.scale } : undefined
-      const text = wantsText && design.text.trim() ? { content: design.text.trim(), font: design.font, color: design.color, size: design.size, ...design.textFrame } : undefined
+      const photo = wantsPhoto && design.mediaId ? { media_id: design.mediaId, ...normalizedFrame(design.photoFrame), crop_x: design.photoCrop.x, crop_y: design.photoCrop.y, scale: design.photoCrop.scale } : undefined
+      const text = wantsText && design.text.trim() ? { content: design.text.trim(), font: design.font, color: design.color, size: design.size, ...normalizedFrame(design.textFrame) } : undefined
       return photo || text ? [{ area_id: area.id, ...(photo ? { photo } : {}), ...(text ? { text } : {}) }] : []
     }),
   }), [designs, printAreas, wantsPhoto, wantsText])
