@@ -54,9 +54,12 @@ function PersonalizeProductPage() {
 
   function requestAddToCart() {
     if (!variant || soldOut || status === 'adding') return
+    setPreviewOpen(false)
     if (design.missing.length) { setConfirmingIncomplete(true); return }
     void addToCart()
   }
+
+  const addToCartLabel = soldOut ? 'Produto esgotado' : status === 'adding' ? 'A adicionar…' : status === 'added' ? 'Adicionado ao carrinho' : 'Adicionar ao carrinho'
 
   return <>
     <StorefrontAnnouncement />
@@ -67,11 +70,11 @@ function PersonalizeProductPage() {
         <div><p>Estúdio de personalização</p><h1>{product.title}</h1><span>Cria e confirma a tua composição antes de adicionares ao carrinho.</span></div>
         {product.variants.length > 1 && <label>Opção<select value={variant?.id} onChange={(event) => { setVariantId(event.target.value); setStatus('idle'); setErrorMessage('') }}>{product.variants.map((option) => <option key={option.id} value={option.id} disabled={variantStock(option).state === 'sold-out'}>{option.title}</option>)}</select></label>}
       </header>
-      <ProductPersonalizer config={product.personalization} productMedia={product.media.map((media) => ({ id: media.id, url: mediaUrl(media.detail_url) }))} onChange={setDesign} previewOpen={previewOpen} onPreviewClose={() => setPreviewOpen(false)} />
+      <ProductPersonalizer config={product.personalization} productMedia={product.media.map((media) => ({ id: media.id, url: mediaUrl(media.detail_url) }))} onChange={setDesign} previewOpen={previewOpen} onPreviewClose={() => setPreviewOpen(false)} onAddToCart={requestAddToCart} addToCartDisabled={!variant || soldOut || status === 'adding'} addToCartLabel={addToCartLabel} />
       <div className="personalization-checkout-bar">
         <span>{soldOut ? 'Este produto está esgotado. Podes personalizá-lo, mas não adicioná-lo ao carrinho enquanto não houver stock.' : design.ready ? 'A personalização está pronta.' : 'A personalização é opcional. Podes avançar sem preencher tudo.'}</span>
         <button className="button button--secondary personalization-preview-button" type="button" onClick={() => setPreviewOpen(true)}><Eye /> Pré-visualizar resultado</button>
-        <button className="button button--primary" type="button" disabled={!variant || soldOut || status === 'adding'} onClick={requestAddToCart}><ShoppingBag />{soldOut ? 'Produto esgotado' : status === 'adding' ? 'A adicionar…' : status === 'added' ? 'Adicionado ao carrinho' : 'Adicionar ao carrinho'}</button>
+        <button className="button button--primary" type="button" disabled={!variant || soldOut || status === 'adding'} onClick={requestAddToCart}><ShoppingBag />{addToCartLabel}</button>
         {status === 'added' && <a className="text-link" href="/cart">Ver carrinho</a>}
         {status === 'error' && <strong role="alert">{errorMessage}</strong>}
       </div>

@@ -1,5 +1,5 @@
 import type { PersonalizationConfig } from '@knitprint/api-client'
-import { ImagePlus, Move, Type } from 'lucide-react'
+import { ImagePlus, Move, ShoppingBag, Type } from 'lucide-react'
 import { type KeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import { cartApi } from '../cart-api'
 
@@ -92,7 +92,6 @@ type AreaDesign = {
   textFrame: ElementFrame
   photoUrl?: string
   mediaId?: string
-  photoCrop: { x: number; y: number; scale: number }
   photoFrame: ElementFrame
 }
 
@@ -175,12 +174,15 @@ function DesignElement({ frame, kind, label, measurement, selected, onSelect, on
   </div>
 }
 
-export function ProductPersonalizer({ config, productMedia, onChange, previewOpen, onPreviewClose }: Readonly<{
+export function ProductPersonalizer({ config, productMedia, onChange, previewOpen, onPreviewClose, onAddToCart, addToCartDisabled, addToCartLabel }: Readonly<{
   config: PersonalizationConfig
   productMedia: ProductMediaForPersonalizer[]
   onChange: (value: { customization: CustomerCustomization | null; mediaIds: string[]; ready: boolean; missing: string[] }) => void
   previewOpen: boolean
   onPreviewClose: () => void
+  onAddToCart: () => void
+  addToCartDisabled: boolean
+  addToCartLabel: string
 }>) {
   const fonts = useMemo(() => { const valid = Array.isArray(config.allowed_fonts) ? config.allowed_fonts.filter((value): value is typeof SUPPORTED_FONTS[number] => typeof value === 'string' && SUPPORTED_FONTS.includes(value as typeof SUPPORTED_FONTS[number])) : []; return valid.length ? valid : [...SUPPORTED_FONTS] }, [config.allowed_fonts])
   const colors = useMemo(() => { const valid = Array.isArray(config.allowed_colors) ? config.allowed_colors.filter((value): value is string => typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value)) : []; return valid.length ? valid : DEFAULT_COLORS }, [config.allowed_colors])
@@ -195,7 +197,6 @@ export function ProductPersonalizer({ config, productMedia, onChange, previewOpe
     color: colors[0] ?? '#111111',
     size: config.text_min_size,
     textFrame: combined ? { x: 10, y: 58, width: 80, height: 40 } : { x: 15, y: 35, width: 70, height: 30 },
-    photoCrop: { x: 50, y: 50, scale: 1 },
     photoFrame: combined ? { x: 5, y: 5, width: 90, height: 50 } : { x: 15, y: 15, width: 70, height: 70 },
   })
   const [designs, setDesigns] = useState<Record<string, AreaDesign>>(() => Object.fromEntries(views.flatMap((view) => view.printAreas.map((area) => [designKey(view.id, area.id), newDesign()]))))
@@ -233,7 +234,7 @@ export function ProductPersonalizer({ config, productMedia, onChange, previewOpe
     areas: views.flatMap((view) => view.printAreas.flatMap((area) => {
       const design = designs[designKey(view.id, area.id)]
       if (!design) return []
-      const photo = wantsPhoto && design.mediaId ? { media_id: design.mediaId, ...normalizedFrame(design.photoFrame), crop_x: design.photoCrop.x, crop_y: design.photoCrop.y, scale: design.photoCrop.scale } : undefined
+      const photo = wantsPhoto && design.mediaId ? { media_id: design.mediaId, ...normalizedFrame(design.photoFrame), crop_x: 50, crop_y: 50, scale: 1 } : undefined
       const text = wantsText && design.text.trim() ? { content: design.text.trim(), font: design.font, color: design.color, size: design.size, ...normalizedFrame(design.textFrame) } : undefined
       return photo || text ? [{ view_id: view.id, view_label: view.label, area_id: area.id, area_label: area.label, print_width_cm: area.physicalWidthCm, print_height_cm: area.physicalHeightCm, ...(photo ? { photo } : {}), ...(text ? { text } : {}) }] : []
     })),
@@ -295,7 +296,6 @@ export function ProductPersonalizer({ config, productMedia, onChange, previewOpe
           <strong><ImagePlus /> Fotografia · {activePrintArea.label}</strong>
           <span className="personalizer-measure"><small>Tamanho final</small><b>{activePhotoMeasurement}</b></span>
           <label className="personalizer-upload">{uploadingAreas[activeDesignKey] ? 'A preparar fotografia…' : activeDesign.photoUrl ? 'Trocar fotografia' : 'Carregar fotografia'}<input type="file" accept="image/jpeg,image/png,image/webp" disabled={uploadingAreas[activeDesignKey]} onChange={(event) => void upload(activeDesignKey, event.currentTarget.files?.[0])} /></label>
-          {activeDesign.photoUrl && <label>Zoom<input type="range" min="1" max="3" step="0.05" value={activeDesign.photoCrop.scale} onChange={(event) => updateDesign(activeDesignKey, (current) => ({ ...current, photoCrop: { ...current.photoCrop, scale: Number(event.target.value) } }))} /></label>}
           <span className="personalizer-drag-hint"><Move /> Arrasta e dimensiona a fotografia dentro desta área.</span>
         </div>}
         {wantsText && <div className={`personalizer-tool${selected === 'text' ? ' personalizer-tool--selected' : ''}`} onClick={() => setSelected('text')}>
@@ -319,7 +319,7 @@ export function ProductPersonalizer({ config, productMedia, onChange, previewOpe
             const active = activeAreaId === area.id
             return <div key={area.id} className={`personalizer-print-area${active ? ' personalizer-print-area--active' : ''}`} aria-label={`Área de impressão: ${area.label}, ${formatCm(area.physicalWidthCm)} × ${formatCm(area.physicalHeightCm)} cm`} style={{ left: `${area.x}%`, top: `${area.y}%`, width: `${area.width}%`, height: `${area.height}%` }} onClick={() => setActiveAreaId(area.id)}>
               <span className="personalizer-print-area-label">{area.label} · {formatCm(area.physicalWidthCm)} × {formatCm(area.physicalHeightCm)} cm</span>
-              {wantsPhoto && (active || design.mediaId) && <DesignElement frame={design.photoFrame} kind="photo" label={`Fotografia em ${activeView.label} · ${area.label}`} measurement={physicalFrameSize(area, design.photoFrame)} selected={active && selected === 'photo'} onSelect={() => { setActiveAreaId(area.id); setSelected('photo') }} onChange={(photoFrame) => updateDesign(key, { photoFrame })}>{design.photoUrl ? <img className="personalizer-photo" src={design.photoUrl} alt="Fotografia carregada" draggable={false} style={{ left: `${design.photoCrop.x}%`, top: `${design.photoCrop.y}%`, transform: `translate(-50%, -50%) scale(${design.photoCrop.scale})` }} /> : <span className="personalizer-placeholder"><ImagePlus /> Fotografia</span>}</DesignElement>}
+              {wantsPhoto && (active || design.mediaId) && <DesignElement frame={design.photoFrame} kind="photo" label={`Fotografia em ${activeView.label} · ${area.label}`} measurement={physicalFrameSize(area, design.photoFrame)} selected={active && selected === 'photo'} onSelect={() => { setActiveAreaId(area.id); setSelected('photo') }} onChange={(photoFrame) => updateDesign(key, { photoFrame })}>{design.photoUrl ? <img className="personalizer-photo" src={design.photoUrl} alt="Fotografia carregada" draggable={false} /> : <span className="personalizer-placeholder"><ImagePlus /> Fotografia</span>}</DesignElement>}
               {wantsText && (active || design.text.trim()) && <DesignElement frame={design.textFrame} kind="text" label={`Texto em ${activeView.label} · ${area.label}`} measurement={physicalFrameSize(area, design.textFrame)} selected={active && selected === 'text'} onSelect={() => { setActiveAreaId(area.id); setSelected('text') }} onChange={(textFrame) => updateDesign(key, { textFrame })}>{design.text.trim() ? <span className="personalizer-text" style={{ color: design.color, fontFamily: design.font, fontSize: `${design.size}px` }}>{design.text}</span> : <span className="personalizer-placeholder"><Type /> Texto</span>}</DesignElement>}
             </div>
           })}
@@ -339,13 +339,13 @@ export function ProductPersonalizer({ config, productMedia, onChange, previewOpe
               const design = designs[designKey(previewView.id, area.id)] ?? newDesign()
               if (!design.photoUrl && !design.text.trim()) return null
               return <div key={area.id} className="personalization-final-area" style={{ left: `${area.x}%`, top: `${area.y}%`, width: `${area.width}%`, height: `${area.height}%` }}>
-                {design.photoUrl && <div className="personalization-final-element" style={{ left: `${design.photoFrame.x}%`, top: `${design.photoFrame.y}%`, width: `${design.photoFrame.width}%`, height: `${design.photoFrame.height}%` }}><img className="personalization-final-photo" src={design.photoUrl} alt="Fotografia da personalização" style={{ left: `${design.photoCrop.x}%`, top: `${design.photoCrop.y}%`, transform: `translate(-50%, -50%) scale(${design.photoCrop.scale})` }} /></div>}
+                {design.photoUrl && <div className="personalization-final-element" style={{ left: `${design.photoFrame.x}%`, top: `${design.photoFrame.y}%`, width: `${design.photoFrame.width}%`, height: `${design.photoFrame.height}%` }}><img className="personalization-final-photo" src={design.photoUrl} alt="Fotografia da personalização" /></div>}
                 {design.text.trim() && <div className="personalization-final-element personalization-final-element--text" style={{ left: `${design.textFrame.x}%`, top: `${design.textFrame.y}%`, width: `${design.textFrame.width}%`, height: `${design.textFrame.height}%` }}><span style={{ color: design.color, fontFamily: design.font, fontSize: `${design.size}px` }}>{design.text}</span></div>}
               </div>
             })}
           </div> : <p>Esta vista ainda não tem uma fotografia associada.</p>}
         </div>
-        <footer><span>Ainda podes alterar qualquer fotografia, texto, tamanho ou posição.</span><button className="button button--primary" type="button" autoFocus onClick={onPreviewClose}>Continuar a personalizar</button></footer>
+        <footer><span>Ainda podes alterar qualquer fotografia, texto, tamanho ou posição.</span><div className="personalization-final-preview-actions"><button className="button button--secondary" type="button" autoFocus onClick={onPreviewClose}>Continuar a personalizar</button><button className="button button--primary" type="button" disabled={addToCartDisabled} onClick={onAddToCart}><ShoppingBag />{addToCartLabel}</button></div></footer>
       </section>
     </div>}
   </section>
