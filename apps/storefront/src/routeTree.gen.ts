@@ -26,7 +26,7 @@ import { Route as CollectionsIndexRouteImport } from './routes/collections.index
 import { Route as CollectionsSlugRouteImport } from './routes/collections.$slug'
 import { Route as ProductsIndexRouteImport } from './routes/products.index'
 import { Route as ProductsSlugRouteImport } from './routes/products.$slug'
-import { Route as ProductsSlugPersonalizeRouteImport } from './routes/products.$slug.personalize'
+import { Route as ProductsSlugPersonalizeRouteImport } from './routes/products.$slug_.personalize'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -114,9 +114,9 @@ const ProductsSlugRoute = ProductsSlugRouteImport.update({
   getParentRoute: () => rootRouteImport,
 } as any)
 const ProductsSlugPersonalizeRoute = ProductsSlugPersonalizeRouteImport.update({
-  id: '/personalize',
-  path: '/personalize',
-  getParentRoute: () => ProductsSlugRoute,
+  id: '/products/$slug_/personalize',
+  path: '/products/$slug/personalize',
+  getParentRoute: () => rootRouteImport,
 } as any)
 
 export interface FileRoutesByFullPath {
@@ -134,7 +134,7 @@ export interface FileRoutesByFullPath {
   '/returns': typeof ReturnsRoute
   '/terms': typeof TermsRoute
   '/collections/$slug': typeof CollectionsSlugRoute
-  '/products/$slug': typeof ProductsSlugRouteWithChildren
+  '/products/$slug': typeof ProductsSlugRoute
   '/collections/': typeof CollectionsIndexRoute
   '/products/': typeof ProductsIndexRoute
   '/products/$slug/personalize': typeof ProductsSlugPersonalizeRoute
@@ -154,7 +154,7 @@ export interface FileRoutesByTo {
   '/returns': typeof ReturnsRoute
   '/terms': typeof TermsRoute
   '/collections/$slug': typeof CollectionsSlugRoute
-  '/products/$slug': typeof ProductsSlugRouteWithChildren
+  '/products/$slug': typeof ProductsSlugRoute
   '/collections': typeof CollectionsIndexRoute
   '/products': typeof ProductsIndexRoute
   '/products/$slug/personalize': typeof ProductsSlugPersonalizeRoute
@@ -175,10 +175,10 @@ export interface FileRoutesById {
   '/returns': typeof ReturnsRoute
   '/terms': typeof TermsRoute
   '/collections/$slug': typeof CollectionsSlugRoute
-  '/products/$slug': typeof ProductsSlugRouteWithChildren
+  '/products/$slug': typeof ProductsSlugRoute
   '/collections/': typeof CollectionsIndexRoute
   '/products/': typeof ProductsIndexRoute
-  '/products/$slug/personalize': typeof ProductsSlugPersonalizeRoute
+  '/products/$slug_/personalize': typeof ProductsSlugPersonalizeRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -240,7 +240,7 @@ export interface FileRouteTypes {
     | '/products/$slug'
     | '/collections/'
     | '/products/'
-    | '/products/$slug/personalize'
+    | '/products/$slug_/personalize'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -258,9 +258,10 @@ export interface RootRouteChildren {
   ReturnsRoute: typeof ReturnsRoute
   TermsRoute: typeof TermsRoute
   CollectionsSlugRoute: typeof CollectionsSlugRoute
-  ProductsSlugRoute: typeof ProductsSlugRouteWithChildren
+  ProductsSlugRoute: typeof ProductsSlugRoute
   CollectionsIndexRoute: typeof CollectionsIndexRoute
   ProductsIndexRoute: typeof ProductsIndexRoute
+  ProductsSlugPersonalizeRoute: typeof ProductsSlugPersonalizeRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -384,27 +385,15 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProductsSlugRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/products/$slug/personalize': {
-      id: '/products/$slug/personalize'
-      path: '/personalize'
+    '/products/$slug_/personalize': {
+      id: '/products/$slug_/personalize'
+      path: '/products/$slug/personalize'
       fullPath: '/products/$slug/personalize'
       preLoaderRoute: typeof ProductsSlugPersonalizeRouteImport
-      parentRoute: typeof ProductsSlugRoute
+      parentRoute: typeof rootRouteImport
     }
   }
 }
-
-interface ProductsSlugRouteChildren {
-  ProductsSlugPersonalizeRoute: typeof ProductsSlugPersonalizeRoute
-}
-
-const ProductsSlugRouteChildren: ProductsSlugRouteChildren = {
-  ProductsSlugPersonalizeRoute: ProductsSlugPersonalizeRoute,
-}
-
-const ProductsSlugRouteWithChildren = ProductsSlugRoute._addFileChildren(
-  ProductsSlugRouteChildren,
-)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
@@ -421,9 +410,10 @@ const rootRouteChildren: RootRouteChildren = {
   ReturnsRoute: ReturnsRoute,
   TermsRoute: TermsRoute,
   CollectionsSlugRoute: CollectionsSlugRoute,
-  ProductsSlugRoute: ProductsSlugRouteWithChildren,
+  ProductsSlugRoute: ProductsSlugRoute,
   CollectionsIndexRoute: CollectionsIndexRoute,
   ProductsIndexRoute: ProductsIndexRoute,
+  ProductsSlugPersonalizeRoute: ProductsSlugPersonalizeRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

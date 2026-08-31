@@ -6,7 +6,7 @@ import { mediaUrl, preferredVariant, publishedProduct, variantStock } from '../c
 import { ProductPersonalizer, type CustomerCustomization } from '../components/product-personalizer'
 import { StorefrontAnnouncement, StorefrontHeader } from '../components/storefront-shell'
 
-export const Route = createFileRoute('/products/$slug/personalize')({
+export const Route = createFileRoute('/products/$slug_/personalize')({
   loader: async ({ params }) => {
     const product = await publishedProduct(params.slug)
     if (!product || product.personalization.mode === 'none') throw notFound()
