@@ -188,6 +188,13 @@ h1 { margin: .25rem 0 0; font: 500 2rem Georgia, serif; }
 .print-area-coordinate-grid { padding-top: .55rem; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .45rem; border-top: 1px solid #e7ddd7; }
 .print-area-coordinate-grid label { display: grid; gap: .25rem; color: #625a56; font-size: .56rem; font-weight: 700; }
 .print-area-coordinate-grid input { width: 100%; min-width: 0; }
+.print-area-physical-settings { padding: .65rem; display: grid; grid-template-columns: minmax(0, 1fr) minmax(170px, .75fr); align-items: end; gap: .7rem; border: 1px solid #d8c5ca; border-radius: .5rem; background: #fff8fa; }
+.print-area-physical-settings > span { display: grid; gap: .2rem; }
+.print-area-physical-settings > span strong { color: #693f4c; font-size: .64rem; }
+.print-area-physical-settings > span small { color: #766a66; font-size: .55rem; line-height: 1.4; }
+.print-area-physical-settings > div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .45rem; }
+.print-area-physical-settings label { display: grid; gap: .25rem; color: #625a56; font-size: .56rem; font-weight: 700; }
+.print-area-physical-settings input { width: 100%; min-width: 0; }
 .editable-print-area { z-index: 1; position: absolute; display: grid; place-items: center; opacity: .45; border: 2px dashed; cursor: move; touch-action: none; }
 .editable-print-area--print { border-color: #8f4558; color: #713143; background: rgb(255 239 242 / 30%); box-shadow: 0 0 0 2px rgb(255 255 255 / 70%), 0 4px 14px rgb(58 45 50 / 22%); }
 .editable-print-area--active { z-index: 3; opacity: 1; border-style: solid; }
@@ -508,6 +515,7 @@ h1 { margin: .25rem 0 0; font: 500 2rem Georgia, serif; }
   .staff-layout { grid-template-columns: 1fr; }
   .catalog-layout, .product-preview, .catalog-editor, .inventory-layout, .customer-layout, .orders-layout, .discounts-layout, .settings-layout { grid-template-columns: 1fr; }
   .personalization-media-picker > div { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .print-area-physical-settings { grid-template-columns: 1fr; }
   .discount-field-row { grid-template-columns: 1fr; }
   .order-list > button { grid-template-columns: 1fr auto; }
   .order-list-customer { grid-column: 1; }
@@ -531,3 +539,7 @@ h1 { margin: .25rem 0 0; font: 500 2rem Georgia, serif; }
 .order-customization-images { max-width: 142px; display: flex; flex-wrap: wrap; gap: .35rem; }
 .order-customization-image { width: 62px; height: 62px; border-radius: .5rem; object-fit: cover; }
 .order-customization-summary { margin-top: .25rem; color: #8a3045 !important; font-weight: 700; }
+.order-customization-specs { margin-top: .45rem; display: grid; gap: .35rem; }
+.order-customization-spec { padding: .45rem .55rem; display: grid; gap: .18rem; border-left: 3px solid #9c5263; border-radius: 0 .4rem .4rem 0; background: #faf3f5; }
+.order-customization-spec strong { color: #68414c; font-size: .61rem; }
+.order-customization-spec small { color: #625b57 !important; font-size: .56rem !important; line-height: 1.45; }
