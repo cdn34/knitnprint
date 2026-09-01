@@ -78,6 +78,7 @@ use crate::{
         customers::create_guest,
         customers::list,
         customers::detail,
+        customers::order_history,
         staff::list,
         staff::create,
         staff::disable

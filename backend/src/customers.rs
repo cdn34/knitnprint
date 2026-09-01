@@ -14,9 +14,11 @@ use crate::{
     AppState,
     auth::{AuthenticatedStaff, require_capability},
     error::ErrorBody,
+    orders::OrderSummary,
 };
 
 const CUSTOMERS_READ: &str = "customers.read";
+const ORDERS_READ: &str = "orders.read";
 
 #[derive(Deserialize, Serialize, ToSchema)]
 pub struct GuestCustomerRequest {
@@ -447,6 +449,87 @@ pub async fn detail(
         order_count,
     })
     .into_response()
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/admin/customers/{customer_id}/orders",
+    params(("customer_id" = Uuid, Path)),
+    tag = "admin customers",
+    responses(
+        (status = 200, body = [OrderSummary]),
+        (status = 401, body = ErrorBody),
+        (status = 403, body = ErrorBody),
+        (status = 404, body = ErrorBody),
+        (status = 503, body = ErrorBody)
+    )
+)]
+pub async fn order_history(
+    State(state): State<AppState>,
+    actor: AuthenticatedStaff,
+    Path(customer_id): Path<Uuid>,
+) -> Response {
+    if let Err(response) = require_capability(&actor, CUSTOMERS_READ) {
+        return response.into_response();
+    }
+    if let Err(response) = require_capability(&actor, ORDERS_READ) {
+        return response.into_response();
+    }
+    let Some(pool) = state.database else {
+        return unavailable();
+    };
+    let mut transaction = match pool.begin().await {
+        Ok(transaction) => transaction,
+        Err(_) => return unavailable(),
+    };
+    let customer_exists = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM customers WHERE id = $1 AND anonymized_at IS NULL AND retention_expires_at > now())",
+    )
+    .bind(customer_id)
+    .fetch_one(&mut *transaction)
+    .await;
+    match customer_exists {
+        Ok(true) => {}
+        Ok(false) => return not_found(),
+        Err(_) => return unavailable(),
+    }
+    let orders = match sqlx::query_as::<_, OrderSummary>(
+        r#"
+        SELECT order_record.id, order_record.order_number,
+               btrim(order_record.customer_first_name || ' ' || order_record.customer_last_name) AS customer_name,
+               order_record.customer_email, order_record.order_status,
+               order_record.payment_status, order_record.fulfillment_status,
+               COALESCE(sum(line.quantity), 0)::bigint AS item_count,
+               order_record.total_minor, order_record.currency::text AS currency,
+               to_char(order_record.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at
+        FROM orders order_record
+        LEFT JOIN order_lines line ON line.order_id = order_record.id
+        WHERE order_record.customer_id = $1
+        GROUP BY order_record.id
+        ORDER BY order_record.created_at DESC, order_record.id DESC
+        LIMIT 200
+        "#,
+    )
+    .bind(customer_id)
+    .fetch_all(&mut *transaction)
+    .await
+    {
+        Ok(orders) => orders,
+        Err(_) => return unavailable(),
+    };
+    if audit(
+        &mut transaction,
+        Some(actor.id),
+        "customer.order_history_view",
+        Some(customer_id),
+    )
+    .await
+    .is_err()
+        || transaction.commit().await.is_err()
+    {
+        return unavailable();
+    }
+    Json(orders).into_response()
 }
 
 async fn audit(

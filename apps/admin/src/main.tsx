@@ -341,7 +341,9 @@ function AdminShell({ profile }: Readonly<{ profile: StaffProfile }>) {
           )}
         {page === 'customers' &&
           profile.capabilities.includes('customers.read') && (
-            <CustomerManagement />
+            <CustomerManagement
+              canReadOrders={profile.capabilities.includes('orders.read')}
+            />
           )}
         {page === 'discounts' &&
           profile.capabilities.includes('discounts.manage') && (
@@ -1298,7 +1300,9 @@ function formatCustomerDate(value: string) {
   }).format(new Date(value))
 }
 
-function CustomerManagement() {
+function CustomerManagement({
+  canReadOrders,
+}: Readonly<{ canReadOrders: boolean }>) {
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -1317,6 +1321,11 @@ function CustomerManagement() {
     queryKey: ['customer', selectedId],
     queryFn: () => api.customer(selectedId ?? ''),
     enabled: Boolean(selectedId),
+  })
+  const orderHistory = useQuery({
+    queryKey: ['customer-orders', selectedId],
+    queryFn: () => api.customerOrders(selectedId ?? ''),
+    enabled: Boolean(selectedId) && canReadOrders,
   })
 
   return (
@@ -1404,7 +1413,13 @@ function CustomerManagement() {
               Customer details could not be loaded.
             </p>
           ) : (
-            <CustomerDetailPanel customer={detail.data} />
+            <CustomerDetailPanel
+              customer={detail.data}
+              orders={orderHistory.data}
+              ordersLoading={orderHistory.isPending && canReadOrders}
+              ordersError={orderHistory.isError}
+              canReadOrders={canReadOrders}
+            />
           )}
         </div>
       </div>
@@ -1414,7 +1429,17 @@ function CustomerManagement() {
 
 function CustomerDetailPanel({
   customer,
-}: Readonly<{ customer: CustomerDetail }>) {
+  orders,
+  ordersLoading,
+  ordersError,
+  canReadOrders,
+}: Readonly<{
+  customer: CustomerDetail
+  orders?: OrderSummary[]
+  ordersLoading: boolean
+  ordersError: boolean
+  canReadOrders: boolean
+}>) {
   const name = customerName(customer)
 
   return (
@@ -1469,13 +1494,40 @@ function CustomerDetailPanel({
         )}
       </section>
       <section className="customer-orders" aria-labelledby="customer-orders-heading">
-        <div>
+        <div className="customer-orders-heading">
           <History aria-hidden="true" />
           <h4 id="customer-orders-heading">Order history</h4>
           <span>{customer.order_count}</span>
         </div>
         {customer.order_count === 0 && (
           <p>No orders yet. Completed checkouts will appear here.</p>
+        )}
+        {customer.order_count > 0 && !canReadOrders && (
+          <p>You do not have permission to view order details.</p>
+        )}
+        {customer.order_count > 0 && canReadOrders && ordersLoading && (
+          <p>Loading order history…</p>
+        )}
+        {customer.order_count > 0 && canReadOrders && ordersError && (
+          <p className="customer-orders-error" role="alert">Order history could not be loaded.</p>
+        )}
+        {customer.order_count > 0 && canReadOrders && orders && (
+          <div className="customer-order-list">
+            {orders.map((order) => (
+              <a className="customer-order-record" href={`#orders/${order.id}`} key={order.id}>
+                <span className="customer-order-identity">
+                  <strong>{order.order_number}</strong>
+                  <small>{orderDate(order.created_at)} · {order.item_count} {order.item_count === 1 ? 'item' : 'items'}</small>
+                </span>
+                <span className="customer-order-statuses">
+                  <small className={`order-state ${order.payment_status}`}>{order.payment_status}</small>
+                  <small className="order-state">{order.fulfillment_status}</small>
+                </span>
+                <strong className="customer-order-total">{formatMoney(order.total_minor, order.currency)}</strong>
+                <span className="customer-order-open"><Eye size={14} aria-hidden="true" /> View order</span>
+              </a>
+            ))}
+          </div>
         )}
       </section>
       <p className="customer-retention">

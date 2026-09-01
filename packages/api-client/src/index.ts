@@ -280,6 +280,8 @@ export function createApiClient(options: ApiClientOptions = {}) {
       send<Array<CustomerSummary>>(withQuery('/api/admin/customers', query)),
     customer: (customerId: string) =>
       send<CustomerDetail>(`/api/admin/customers/${customerId}`),
+    customerOrders: (customerId: string) =>
+      send<Array<OrderSummary>>(`/api/admin/customers/${customerId}/orders`),
     cart: () => send<Cart>('/api/cart'),
     addCartItem: (input: AddCartItemRequest, idempotencyKey: string) =>
       send<Cart>('/api/cart/items', {

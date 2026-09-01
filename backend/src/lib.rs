@@ -134,6 +134,10 @@ pub fn app(state: AppState) -> Router {
         .route("/api/admin/inventory", get(inventory::list))
         .route("/api/admin/customers", get(customers::list))
         .route("/api/admin/customers/{customer_id}", get(customers::detail))
+        .route(
+            "/api/admin/customers/{customer_id}/orders",
+            get(customers::order_history),
+        )
         .route("/api/admin/orders", get(orders::admin_list))
         .route("/api/admin/dashboard", get(dashboard::get))
         .route(
