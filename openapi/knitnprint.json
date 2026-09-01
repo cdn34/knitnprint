@@ -916,6 +916,107 @@
         }
       }
     },
+    "/api/admin/discounts/{discount_id}": {
+      "put": {
+        "tags": [
+          "admin discounts"
+        ],
+        "operationId": "update",
+        "parameters": [
+          {
+            "name": "discount_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateDiscountRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Discount"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/admin/discounts/{discount_id}/status": {
       "post": {
         "tags": [
@@ -7287,6 +7388,64 @@
             "items": {
               "$ref": "#/components/schemas/TaxRuleInput"
             }
+          }
+        }
+      },
+      "UpdateDiscountRequest": {
+        "type": "object",
+        "required": [
+          "code",
+          "kind",
+          "value",
+          "currency",
+          "reason"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "ends_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "type": "string"
+          },
+          "minimum_order_minor": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "per_customer_limit": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "starts_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "usage_limit": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "value": {
+            "type": "integer",
+            "format": "int64"
           }
         }
       },

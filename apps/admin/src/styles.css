@@ -374,6 +374,7 @@ h1 { margin: .25rem 0 0; font: 500 2rem Georgia, serif; }
 .order-list-number small, .order-list-customer small { overflow: hidden; color: #6e6864; font-size: .58rem; text-overflow: ellipsis; white-space: nowrap; }
 .order-state { padding: .25rem .45rem; border-radius: 2rem; color: #765c47; background: #eee7dd; font-size: .58rem; font-weight: 700; text-transform: capitalize; }
 .order-state.paid { color: #315b49; background: #dfece5; }
+.order-state.disabled { color: #8b3f51; background: #f6e4e8; }
 .order-list > button > b { font-size: .68rem; white-space: nowrap; }
 .order-empty, .order-detail-empty { min-height: 220px; display: grid; place-content: center; justify-items: center; gap: .45rem; color: #6e6864; text-align: center; }
 .order-empty svg, .order-detail-empty svg { color: #8a6877; }
@@ -411,14 +412,26 @@ h1 { margin: .25rem 0 0; font: 500 2rem Georgia, serif; }
 .discount-form, .discount-list { min-width: 0; padding: 1.1rem; border: 1px solid #ded4cc; border-radius: .8rem; background: #fffdfc; }
 .discount-form { display: grid; align-content: start; gap: .7rem; }
 .discount-form h3 { margin: 0 0 .25rem; font: 500 1.15rem Georgia, serif; }
+.discount-form--editing { border-color: #a97889; box-shadow: 0 12px 30px rgba(95, 70, 82, .1); }
+.discount-form-heading { display: flex; align-items: start; justify-content: space-between; gap: .75rem; }
+.discount-form-heading span { color: #a8526b; font-size: .55rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.discount-form-heading .discount-cancel-button { padding: .35rem .55rem; border: 1px solid #cfc4bc; border-radius: 2rem; color: #6e6864; background: white; font: inherit; font-size: .58rem; font-weight: 700; cursor: pointer; }
 .discount-form label { min-width: 0; display: grid; gap: .3rem; color: #6e6864; font-size: .62rem; }
 .discount-form input, .discount-form select, .discount-form textarea { width: 100%; min-width: 0; padding: .55rem .65rem; border: 1px solid #cfc4bc; border-radius: .4rem; color: #2e2e2d; background: white; font: inherit; }
+.discount-form input:focus, .discount-form select:focus, .discount-form textarea:focus { outline: 2px solid rgba(168, 82, 107, .22); border-color: #a8526b; }
+.discount-form-note { margin: 0; padding: .65rem .7rem; border-left: 3px solid #bf7a3d; color: #74522f; background: #fff6e9; font-size: .6rem; line-height: 1.45; }
 .discount-field-row { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem; }
 .discount-list { display: grid; align-content: start; gap: .7rem; }
 .discount-record { display: grid; gap: .35rem; padding: .9rem; border: 1px solid #ede6e1; border-radius: .65rem; }
-.discount-record > div { display: flex; justify-content: space-between; align-items: center; gap: .7rem; }
+.discount-record--editing { border-color: #c99aaa; background: #fffafb; }
+.discount-record-header { display: flex; justify-content: space-between; align-items: center; gap: .7rem; }
 .discount-record p, .discount-record small { margin: 0; color: #6e6864; font-size: .64rem; }
-.discount-record button { justify-self: start; margin-top: .2rem; padding: .4rem .65rem; border: 1px solid #765c47; border-radius: .4rem; color: #765c47; background: white; font: inherit; font-size: .62rem; font-weight: 700; }
+.discount-record .discount-expired-note { color: #99465a; font-weight: 700; }
+.discount-record-actions { display: flex; flex-wrap: wrap; gap: .45rem; margin-top: .2rem; }
+.discount-record button { display: inline-flex; align-items: center; gap: .3rem; padding: .4rem .65rem; border: 1px solid #765c47; border-radius: .4rem; color: #765c47; background: white; font: inherit; font-size: .62rem; font-weight: 700; cursor: pointer; }
+.discount-record button:hover { background: #f7f0f2; }
+.discount-record button:focus-visible { outline: 2px solid #a8526b; outline-offset: 2px; }
+.discount-record button:disabled { cursor: wait; opacity: .6; }
 .settings-layout { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; align-items: start; }
 .settings-column { min-width: 0; display: grid; gap: 1rem; }
 .settings-card { padding: 1.2rem; display: grid; gap: .85rem; border: 1px solid #ded4cc; border-radius: .8rem; background: #fffdfc; }
