@@ -111,7 +111,9 @@ pub fn app(state: AppState) -> Router {
         )
         .route(
             "/api/admin/products/{product_id}",
-            get(catalog::admin_detail),
+            get(catalog::admin_detail)
+                .put(catalog::update)
+                .delete(catalog::delete),
         )
         .route(
             "/api/admin/products/{product_id}/status",
@@ -132,11 +134,19 @@ pub fn app(state: AppState) -> Router {
         .route("/api/admin/inventory", get(inventory::list))
         .route("/api/admin/customers", get(customers::list))
         .route("/api/admin/customers/{customer_id}", get(customers::detail))
+        .route(
+            "/api/admin/customers/{customer_id}/orders",
+            get(customers::order_history),
+        )
         .route("/api/admin/orders", get(orders::admin_list))
         .route("/api/admin/dashboard", get(dashboard::get))
         .route(
             "/api/admin/discounts",
             get(discounts::list).post(discounts::create),
+        )
+        .route(
+            "/api/admin/discounts/{discount_id}",
+            axum::routing::put(discounts::update),
         )
         .route(
             "/api/admin/discounts/{discount_id}/status",
@@ -178,6 +188,18 @@ pub fn app(state: AppState) -> Router {
         .route(
             "/api/admin/media/uploads/{media_id}/complete",
             axum::routing::post(media::complete),
+        )
+        .route(
+            "/api/personalization/uploads",
+            axum::routing::post(media::initiate_personalization),
+        )
+        .route(
+            "/api/personalization/uploads/{media_id}/complete",
+            axum::routing::post(media::complete_personalization),
+        )
+        .route(
+            "/api/admin/personalization/media/{media_id}/{variant}",
+            get(media::admin_personalization_asset),
         )
         .route("/api/admin/staff", get(staff::list).post(staff::create))
         .route(

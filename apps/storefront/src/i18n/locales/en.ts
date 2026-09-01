@@ -19,8 +19,6 @@ export const en = {
   'common.priceUnavailable': 'Price unavailable',
   'stock.soldOut': 'Sold out',
   'stock.soldOutDetail': 'This option is currently unavailable.',
-  'stock.low': 'Only {count} left',
-  'stock.lowDetail': 'A small number remains in the studio.',
   'stock.available': 'In stock',
   'stock.availableDetail': 'Available from our studio inventory.',
   'shell.announcement': 'Small-batch objects, made slowly in Portugal',

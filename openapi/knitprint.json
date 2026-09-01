@@ -745,6 +745,80 @@
         }
       }
     },
+    "/api/admin/customers/{customer_id}/orders": {
+      "get": {
+        "tags": [
+          "admin customers"
+        ],
+        "operationId": "order_history",
+        "parameters": [
+          {
+            "name": "customer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/OrderSummary"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/admin/dashboard": {
       "get": {
         "tags": [
@@ -874,6 +948,107 @@
             }
           },
           "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/discounts/{discount_id}": {
+      "put": {
+        "tags": [
+          "admin discounts"
+        ],
+        "operationId": "update",
+        "parameters": [
+          {
+            "name": "discount_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateDiscountRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Discount"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
             "description": "",
             "content": {
               "application/json": {
@@ -1898,6 +2073,68 @@
         }
       }
     },
+    "/api/admin/personalization/media/{media_id}/{variant}": {
+      "get": {
+        "tags": [
+          "admin personalization"
+        ],
+        "operationId": "admin_personalization_asset",
+        "parameters": [
+          {
+            "name": "media_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "variant",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Processed customer personalization image"
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/admin/products": {
       "get": {
         "tags": [
@@ -2082,6 +2319,117 @@
             }
           },
           "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "admin catalog"
+        ],
+        "operationId": "update",
+        "parameters": [
+          {
+            "name": "product_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateProductRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Product"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "admin catalog"
+        ],
+        "operationId": "delete",
+        "parameters": [
+          {
+            "name": "product_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
             "description": "",
             "content": {
               "application/json": {
@@ -3606,6 +3954,117 @@
         }
       }
     },
+    "/api/personalization/uploads": {
+      "post": {
+        "tags": [
+          "personalization"
+        ],
+        "operationId": "initiate_personalization",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InitiateUploadRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InitiateUploadResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/personalization/uploads/{media_id}/complete": {
+      "post": {
+        "tags": [
+          "personalization"
+        ],
+        "operationId": "complete_personalization",
+        "parameters": [
+          {
+            "name": "media_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonalizationMediaRecord"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/products": {
       "get": {
         "tags": [
@@ -3744,6 +4203,21 @@
           "quantity"
         ],
         "properties": {
+          "customization": {},
+          "customization_media_asset_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "customization_media_asset_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
           "quantity": {
             "type": "integer",
             "format": "int32"
@@ -4066,7 +4540,8 @@
           "currency",
           "line_total_minor",
           "available_quantity",
-          "available"
+          "available",
+          "customization_media_asset_ids"
         ],
         "properties": {
           "available": {
@@ -4078,6 +4553,21 @@
           },
           "currency": {
             "type": "string"
+          },
+          "customization": {},
+          "customization_media_asset_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "customization_media_asset_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
           },
           "id": {
             "type": "string",
@@ -4422,6 +4912,9 @@
           "description": {
             "type": "string"
           },
+          "personalization": {
+            "$ref": "#/components/schemas/PersonalizationConfig"
+          },
           "search_keywords": {
             "type": "string"
           },
@@ -4518,6 +5011,10 @@
           "currency"
         ],
         "properties": {
+          "available_quantity": {
+            "type": "integer",
+            "format": "int64"
+          },
           "currency": {
             "type": "string"
           },
@@ -5884,11 +6381,27 @@
           "fulfilled_quantity",
           "unit_price_minor",
           "line_total_minor",
-          "currency"
+          "currency",
+          "customization_media_asset_ids"
         ],
         "properties": {
           "currency": {
             "type": "string"
+          },
+          "customization": {},
+          "customization_media_asset_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "customization_media_asset_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
           },
           "fulfilled_quantity": {
             "type": "integer",
@@ -6239,6 +6752,101 @@
           }
         }
       },
+      "PersonalizationConfig": {
+        "type": "object",
+        "required": [
+          "mode",
+          "area_x",
+          "area_y",
+          "area_width",
+          "area_height",
+          "text_area_x",
+          "text_area_y",
+          "text_area_width",
+          "text_area_height",
+          "text_max_characters",
+          "text_min_size",
+          "text_max_size",
+          "allowed_fonts",
+          "allowed_colors"
+        ],
+        "properties": {
+          "allowed_colors": {},
+          "allowed_fonts": {},
+          "area_height": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "area_width": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "area_x": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "area_y": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "preview_media_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "print_areas": {},
+          "text_area_height": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "text_area_width": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "text_area_x": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "text_area_y": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "text_max_characters": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "text_max_size": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "text_min_size": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "views": {}
+        }
+      },
+      "PersonalizationMediaRecord": {
+        "type": "object",
+        "required": [
+          "id",
+          "preview_url"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "preview_url": {
+            "type": "string"
+          }
+        }
+      },
       "Product": {
         "type": "object",
         "required": [
@@ -6250,7 +6858,8 @@
           "search_keywords",
           "variants",
           "media",
-          "categories"
+          "categories",
+          "personalization"
         ],
         "properties": {
           "categories": {
@@ -6271,6 +6880,9 @@
             "items": {
               "$ref": "#/components/schemas/ProductMedia"
             }
+          },
+          "personalization": {
+            "$ref": "#/components/schemas/PersonalizationConfig"
           },
           "search_keywords": {
             "type": "string"
@@ -6850,6 +7462,106 @@
             "items": {
               "$ref": "#/components/schemas/TaxRuleInput"
             }
+          }
+        }
+      },
+      "UpdateDiscountRequest": {
+        "type": "object",
+        "required": [
+          "code",
+          "kind",
+          "value",
+          "currency",
+          "reason"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "ends_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "type": "string"
+          },
+          "minimum_order_minor": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "per_customer_limit": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "starts_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "usage_limit": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "value": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "UpdateProductRequest": {
+        "type": "object",
+        "required": [
+          "title",
+          "slug",
+          "sku",
+          "price_minor",
+          "currency",
+          "available_quantity"
+        ],
+        "properties": {
+          "available_quantity": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "personalization": {
+            "$ref": "#/components/schemas/PersonalizationConfig"
+          },
+          "price_minor": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "search_keywords": {
+            "type": "string"
+          },
+          "sku": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
           }
         }
       },

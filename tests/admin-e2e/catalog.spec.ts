@@ -14,6 +14,7 @@ test('lets an owner manage commercial settings and complete an order journey', a
   const plumSku = `PLANTER-PLUM-${unique}`
   const oatSku = `PLANTER-OAT-${unique}`
   const discountCode = `BROWSER-${unique}`.toUpperCase()
+  const orderEmail = `order-${unique}@example.com`
 
   await page.goto('/')
   await page.getByLabel('Email address').fill(ownerEmail)
@@ -83,12 +84,25 @@ test('lets an owner manage commercial settings and complete an order journey', a
   const discountRecord = discounts.getByRole('article').filter({ hasText: discountCode })
   await expect(discountRecord).toContainText('10% off')
   await expect(discountRecord).toContainText('active')
+  await discountRecord.getByRole('button', { name: 'Edit' }).click()
+  await expect(discounts.getByLabel('Code')).toHaveValue(discountCode)
+  await expect(discounts.getByRole('spinbutton', { name: 'Percentage' })).toHaveValue('10')
+  await discounts.getByLabel('Global usage limit').fill('12')
+  await discounts.getByLabel('Audit reason').fill('Correct browser promotion details')
+  await discounts.getByRole('button', { name: 'Save changes' }).click()
+  await expect(discountRecord).toContainText('0 / 12 uses')
 
+  const categoryName = `Homewares ${unique}`
+  const categorySlug = `homewares-${unique}`
+  await page.request.post('/api/admin/categories', {
+    data: { name: categoryName, slug: categorySlug, description: '' },
+  })
   await page.getByRole('link', { name: 'Products' }).click()
 
   const catalog = page.getByRole('region', { name: 'Products' })
   await expect(catalog).toBeVisible()
   await catalog.getByLabel('Product title').fill(title)
+  await expect(catalog.getByLabel('URL slug').first()).toHaveValue(slug)
   await catalog.getByLabel('URL slug').fill(slug)
   await catalog
     .getByLabel('Description')
@@ -96,55 +110,57 @@ test('lets an owner manage commercial settings and complete an order journey', a
   await catalog.getByLabel('Search keywords').fill(`browsercatalog ${unique}`)
   await catalog.getByLabel('SKU').fill(sku)
   await catalog.getByLabel('Price').fill('42.00')
+  await catalog.getByLabel('Stock').fill('5')
+  await catalog.getByLabel(categoryName).check()
   await catalog.getByRole('button', { name: 'Create draft' }).click()
 
   const product = catalog.getByRole('article').filter({ hasText: slug })
   await expect(product).toContainText(title)
   await expect(product).toContainText('draft')
-  await expect(
-    catalog.getByRole('article', { name: 'Product preview' }),
-  ).toContainText(title)
+  await product.getByRole('button', { name: 'Edit' }).click()
+  await expect(catalog.getByLabel('SKU')).toHaveValue(sku)
+  await expect(catalog.getByLabel('Stock')).toHaveValue('5')
+  await catalog.getByRole('button', { name: 'Save product' }).click()
+  const adminProducts = await page.request.get(`/api/admin/products?q=${slug}`)
+  const [createdProduct] = await adminProducts.json()
+  expect(createdProduct.categories).toEqual(
+    expect.arrayContaining([expect.objectContaining({ slug: categorySlug })]),
+  )
+  for (const variant of [
+    { title: 'Plum', sku: plumSku, price_minor: 4600 },
+    { title: 'Oat', sku: oatSku, price_minor: 4800 },
+  ]) {
+    await page.request.post(`/api/admin/products/${createdProduct.id}/variants`, {
+      data: { ...variant, currency: 'EUR', option_values: {} },
+    })
+  }
 
-  const editor = catalog.getByLabel(`Edit ${title}`)
-  const categoryName = `Homewares ${unique}`
-  const categorySlug = `homewares-${unique}`
-  await editor.getByLabel('Name').fill(categoryName)
-  await editor.getByLabel('URL slug').fill(categorySlug)
-  await editor.getByRole('button', { name: 'Create category' }).click()
-  await expect(editor.getByLabel(categoryName)).toBeVisible()
-  await editor.getByLabel(categoryName).check()
-  await editor.getByRole('button', { name: 'Save categories' }).click()
-
-  await editor.getByLabel('Variant title').fill('Plum')
-  await editor.getByLabel('SKU').fill(plumSku)
-  await editor.getByLabel('Price').fill('46.00')
-  await editor.getByRole('button', { name: 'Add variant' }).click()
-  await expect(editor).toContainText('2 configured for this product')
-
-  await editor.getByLabel('Variant title').fill('Oat')
-  await editor.getByLabel('SKU').fill(oatSku)
-  await editor.getByLabel('Price').fill('48.00')
-  await editor.getByRole('button', { name: 'Add variant' }).click()
-  await expect(editor).toContainText('3 configured for this product')
-  await expect(editor).toContainText(categoryName)
-
-  page.once('dialog', async (dialog) => {
+  let uploadedPhoto = 0
+  const describePhoto = async (dialog: import('@playwright/test').Dialog) => {
     expect(dialog.message()).toContain(title)
-    await dialog.accept(`${title} in a soft neutral finish`)
-  })
-  await product.getByLabel('Image').setInputFiles({
-    name: 'woven-planter.png',
-    mimeType: 'image/png',
-    buffer: Buffer.from(
-      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
-      'base64',
-    ),
-  })
+    uploadedPhoto += 1
+    await dialog.accept(`${title} product view ${uploadedPhoto}`)
+  }
+  page.on('dialog', describePhoto)
+  const photoBuffer = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+    'base64',
+  )
+  await product.getByLabel('Add product photos').setInputFiles([
+    { name: 'woven-planter-front.png', mimeType: 'image/png', buffer: photoBuffer },
+    { name: 'woven-planter-detail.png', mimeType: 'image/png', buffer: photoBuffer },
+  ])
+  page.off('dialog', describePhoto)
   await expect(product.locator('.product-thumbnail img')).toBeVisible()
 
   await catalog.getByLabel('Search products').fill(`browsercatalog ${unique}`)
   await expect(product).toBeVisible()
   await product.getByRole('button', { name: 'Publish' }).click()
+  await expect(product).toContainText('active')
+
+  await product.getByRole('button', { name: 'Archive' }).click()
+  await expect(product).toContainText('archived')
+  await product.getByRole('button', { name: 'Restore' }).click()
   await expect(product).toContainText('active')
 
   const publicResponse = await page.request.get(`/api/products/${slug}`)
@@ -154,6 +170,7 @@ test('lets an owner manage commercial settings and complete an order journey', a
     title,
     slug,
     status: 'active',
+    search_keywords: '',
     variants: [
       { sku, price_minor: 4200, currency: 'EUR' },
       {
@@ -170,11 +187,15 @@ test('lets an owner manage commercial settings and complete an order journey', a
     categories: [{ name: categoryName, slug: categorySlug }],
     media: [
       {
-        alt_text: `${title} in a soft neutral finish`,
+        alt_text: `${title} product view 1`,
         position: 0,
         thumbnail_url: expect.stringContaining('/thumbnail'),
         card_url: expect.stringContaining('/card'),
         detail_url: expect.stringContaining('/detail'),
+      },
+      {
+        alt_text: `${title} product view 2`,
+        position: 1,
       },
     ],
   })
@@ -272,6 +293,9 @@ test('lets an owner manage commercial settings and complete an order journey', a
   await page.goto(`http://127.0.0.1:3000/products/${slug}`)
   await page.waitForLoadState('networkidle')
   await expect(page.getByRole('heading', { level: 1 })).toHaveText(title)
+  await expect(page.getByRole('button', { name: 'Show product photo 1' })).toHaveAttribute('aria-pressed', 'true')
+  await page.getByRole('button', { name: 'Next product photo' }).click()
+  await expect(page.getByRole('button', { name: 'Show product photo 2' })).toHaveAttribute('aria-pressed', 'true')
   await expect(page.getByRole('radio', { name: /Default/ })).toBeDisabled()
   await expect(page.getByRole('radio', { name: /Plum/ })).toBeChecked()
   await expect(page.locator('.product-detail-price')).toContainText('46.00')
@@ -301,7 +325,7 @@ test('lets an owner manage commercial settings and complete an order journey', a
   await page.locator('.variant-option').filter({ hasText: 'Oat' }).click()
   await page.getByRole('button', { name: 'Add to cart' }).click()
   await page.getByRole('link', { name: 'View your cart' }).click()
-  await page.getByLabel('Email').fill(`order-${unique}@example.com`)
+  await page.getByLabel('Email').fill(orderEmail)
   await page.getByLabel('First name').fill('Order')
   await page.getByLabel('Last name').fill('Browser')
   await page.getByLabel('Recipient').fill('Order Browser')
@@ -322,7 +346,17 @@ test('lets an owner manage commercial settings and complete an order journey', a
   const orderNumber = (await page.locator('.order-confirmation .eyebrow').textContent())?.trim()
   expect(orderNumber).toMatch(/KP-\d{4}-\d{6}/)
 
-  await page.goto('http://127.0.0.1:3001/#orders')
+  await page.goto('http://127.0.0.1:3001/#customers')
+  const customers = page.getByRole('region', { name: 'Customers' })
+  await customers.getByLabel('Search customers').fill(orderEmail)
+  const customerRow = customers.getByRole('button').filter({ hasText: orderEmail })
+  await customerRow.click()
+  const customerDetail = customers.getByRole('region', { name: 'Order Browser' })
+  const customerOrderHistory = customerDetail.getByRole('region', { name: 'Order history' })
+  const customerOrderLink = customerOrderHistory.getByRole('link', { name: new RegExp(orderNumber ?? '') })
+  await expect(customerOrderLink).toContainText('1 item')
+  await customerOrderLink.click()
+
   const orders = page.getByRole('region', { name: 'Orders' })
   await expect(orders).toBeVisible()
   const orderRow = orders.getByRole('button').filter({ hasText: orderNumber ?? '' })

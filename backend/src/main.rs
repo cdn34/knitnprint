@@ -51,6 +51,19 @@ async fn main() {
         std::process::exit(2);
     }
 
+    if let Some(pool) = database.clone() {
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(30));
+            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            loop {
+                interval.tick().await;
+                if let Err(error) = knitprint_api::discounts::expire_due(&pool).await {
+                    warn!(%error, "automatic discount expiry failed");
+                }
+            }
+        });
+    }
+
     let address = SocketAddr::from((config.host, config.port));
     let listener = tokio::net::TcpListener::bind(address)
         .await

@@ -66,6 +66,7 @@ export type {
   PaymentCheckout,
   PaymentOptions,
   PaymentStatusEvent,
+  PersonalizationConfig,
   Product,
   ProductMedia,
   Refund,
@@ -83,6 +84,8 @@ export type {
   TaxRuleInput,
   TaxSelection,
   UpdateCommercialSettingsRequest,
+  UpdateDiscountRequest,
+  UpdateProductRequest,
   Variant,
   UpdateCartItemRequest,
 } from './schema'
@@ -140,6 +143,8 @@ import type {
   StaffProfile,
   StaffRecord,
   UpdateCommercialSettingsRequest,
+  UpdateDiscountRequest,
+  UpdateProductRequest,
   UpdateCartItemRequest,
 } from './schema'
 
@@ -275,6 +280,8 @@ export function createApiClient(options: ApiClientOptions = {}) {
       send<Array<CustomerSummary>>(withQuery('/api/admin/customers', query)),
     customer: (customerId: string) =>
       send<CustomerDetail>(`/api/admin/customers/${customerId}`),
+    customerOrders: (customerId: string) =>
+      send<Array<OrderSummary>>(`/api/admin/customers/${customerId}/orders`),
     cart: () => send<Cart>('/api/cart'),
     addCartItem: (input: AddCartItemRequest, idempotencyKey: string) =>
       send<Cart>('/api/cart/items', {
@@ -362,6 +369,12 @@ export function createApiClient(options: ApiClientOptions = {}) {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(input),
       }),
+    updateDiscount: (discountId: string, input: UpdateDiscountRequest) =>
+      send<Discount>(`/api/admin/discounts/${discountId}`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(input),
+      }),
     changeDiscountStatus: (
       discountId: string,
       input: ChangeDiscountStatusRequest,
@@ -435,6 +448,14 @@ export function createApiClient(options: ApiClientOptions = {}) {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(input),
       }),
+    updateProduct: (productId: string, input: UpdateProductRequest) =>
+      send<Product>(`/api/admin/products/${productId}`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(input),
+      }),
+    deleteProduct: (productId: string) =>
+      send<void>(`/api/admin/products/${productId}`, { method: 'DELETE' }),
     changeProductStatus: (
       productId: string,
       input: ChangeProductStatusRequest,
@@ -487,6 +508,16 @@ export function createApiClient(options: ApiClientOptions = {}) {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(input),
+      }),
+    initiatePersonalizationUpload: (input: InitiateUploadRequest) =>
+      send<InitiateUploadResponse>('/api/personalization/uploads', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(input),
+      }),
+    completePersonalizationUpload: (mediaId: string) =>
+      send<{ id: string; preview_url: string }>(`/api/personalization/uploads/${mediaId}/complete`, {
+        method: 'POST',
       }),
     uploadMediaObject: async (
       uploadUrl: string,

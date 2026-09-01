@@ -20,6 +20,13 @@ use crate::{
 
 const CATALOG_READ: &str = "catalog.read";
 const CATALOG_WRITE: &str = "catalog.write";
+const PERSONALIZATION_FONTS: &[&str] = &[
+    "Roboto",
+    "Montserrat",
+    "Playfair Display",
+    "Dancing Script",
+    "Pacifico",
+];
 
 #[derive(Clone, Serialize, ToSchema, FromRow)]
 pub struct Variant {
@@ -45,6 +52,84 @@ pub struct Product {
     pub variants: Vec<Variant>,
     pub media: Vec<ProductMedia>,
     pub categories: Vec<Category>,
+    pub personalization: PersonalizationConfig,
+}
+
+#[derive(Clone, Serialize, Deserialize, ToSchema, FromRow)]
+pub struct PersonalizationConfig {
+    pub mode: String,
+    pub preview_media_id: Option<Uuid>,
+    pub area_x: i32,
+    pub area_y: i32,
+    pub area_width: i32,
+    pub area_height: i32,
+    pub text_area_x: i32,
+    pub text_area_y: i32,
+    pub text_area_width: i32,
+    pub text_area_height: i32,
+    #[serde(default = "default_print_areas")]
+    pub print_areas: Value,
+    #[serde(default)]
+    pub views: Option<Value>,
+    pub text_max_characters: i32,
+    pub text_min_size: i32,
+    pub text_max_size: i32,
+    pub allowed_fonts: Value,
+    pub allowed_colors: Value,
+}
+
+impl Default for PersonalizationConfig {
+    fn default() -> Self {
+        Self {
+            mode: "none".into(),
+            preview_media_id: None,
+            area_x: 2500,
+            area_y: 2500,
+            area_width: 5000,
+            area_height: 5000,
+            text_area_x: 2500,
+            text_area_y: 3000,
+            text_area_width: 5000,
+            text_area_height: 2500,
+            print_areas: default_print_areas(),
+            views: Some(default_personalization_views()),
+            text_max_characters: 35,
+            text_min_size: 12,
+            text_max_size: 72,
+            allowed_fonts: serde_json::json!([
+                "Roboto",
+                "Montserrat",
+                "Playfair Display",
+                "Dancing Script",
+                "Pacifico"
+            ]),
+            allowed_colors: serde_json::json!([
+                "#111111", "#ffffff", "#9c5263", "#1f4f78", "#b3232f"
+            ]),
+        }
+    }
+}
+
+fn default_print_areas() -> Value {
+    serde_json::json!([{
+        "id": "area-1",
+        "label": "Área 1",
+        "x": 2500,
+        "y": 2500,
+        "width": 5000,
+        "height": 5000,
+        "physical_width_cm": 20,
+        "physical_height_cm": 20
+    }])
+}
+
+fn default_personalization_views() -> Value {
+    serde_json::json!([{
+        "id": "view-front",
+        "label": "Frente",
+        "media_id": null,
+        "print_areas": default_print_areas()
+    }])
 }
 
 #[derive(Clone, Serialize, ToSchema, FromRow)]
@@ -85,6 +170,8 @@ pub struct CreateProductRequest {
     #[serde(default)]
     pub search_keywords: String,
     pub variants: Vec<CreateVariantRequest>,
+    #[serde(default)]
+    pub personalization: PersonalizationConfig,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -95,6 +182,24 @@ pub struct CreateVariantRequest {
     pub currency: String,
     #[serde(default = "empty_object")]
     pub option_values: Value,
+    #[serde(default)]
+    pub available_quantity: i64,
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct UpdateProductRequest {
+    pub title: String,
+    pub slug: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub search_keywords: String,
+    pub sku: String,
+    pub price_minor: i64,
+    pub currency: String,
+    pub available_quantity: i64,
+    #[serde(default)]
+    pub personalization: PersonalizationConfig,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -238,6 +343,7 @@ pub async fn create(
         return database_write_error(error);
     }
     for (position, variant) in input.variants.iter().enumerate() {
+        let variant_id = Uuid::now_v7();
         if let Err(error) = sqlx::query(
             r#"
             INSERT INTO product_variants (
@@ -246,7 +352,7 @@ pub async fn create(
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             "#,
         )
-        .bind(Uuid::now_v7())
+        .bind(variant_id)
         .bind(product_id)
         .bind(variant.title.trim())
         .bind(variant.sku.trim())
@@ -259,6 +365,27 @@ pub async fn create(
         {
             return database_write_error(error);
         }
+        if variant.available_quantity <= 0 {
+            continue;
+        }
+        if sqlx::query("UPDATE inventory_items SET available_quantity = $2 WHERE variant_id = $1")
+            .bind(variant_id)
+            .bind(variant.available_quantity)
+            .execute(&mut *transaction)
+            .await
+            .is_err()
+            || sqlx::query("INSERT INTO inventory_movements (id, variant_id, actor_staff_user_id, movement_type, quantity_delta, resulting_available_quantity, reason) VALUES ($1, $2, $3, 'adjustment', $4, $4, 'Initial product stock')")
+                .bind(Uuid::now_v7()).bind(variant_id).bind(actor.id).bind(variant.available_quantity)
+                .execute(&mut *transaction).await.is_err()
+        {
+            return unavailable();
+        }
+    }
+    if upsert_personalization(&mut transaction, product_id, &input.personalization)
+        .await
+        .is_err()
+    {
+        return unavailable();
     }
     if audit(
         &mut transaction,
@@ -276,6 +403,139 @@ pub async fn create(
     let mut response = product_by_id(&pool, product_id).await;
     *response.status_mut() = StatusCode::CREATED;
     response
+}
+
+#[utoipa::path(
+    put,
+    path = "/api/admin/products/{product_id}",
+    params(("product_id" = Uuid, Path)),
+    tag = "admin catalog",
+    request_body = UpdateProductRequest,
+    responses((status = 200, body = Product), (status = 404, body = ErrorBody), (status = 409, body = ErrorBody), (status = 422, body = ErrorBody))
+)]
+pub async fn update(
+    State(state): State<AppState>,
+    actor: AuthenticatedStaff,
+    Path(product_id): Path<Uuid>,
+    Json(input): Json<UpdateProductRequest>,
+) -> Response {
+    if let Err(response) = require_capability(&actor, CATALOG_WRITE) {
+        return response.into_response();
+    }
+    let variant = CreateVariantRequest {
+        title: "Default".into(),
+        sku: input.sku.clone(),
+        price_minor: input.price_minor,
+        currency: input.currency.clone(),
+        option_values: empty_object(),
+        available_quantity: input.available_quantity,
+    };
+    if input.title.trim().is_empty()
+        || input.title.trim().len() > 200
+        || !valid_slug(input.slug.trim())
+        || input.description.len() > 50_000
+        || input.search_keywords.len() > 2_000
+        || !valid_variant(&variant)
+        || !valid_personalization(&input.personalization)
+    {
+        return invalid_input();
+    }
+    let Some(pool) = state.database else {
+        return unavailable();
+    };
+    let mut tx = match pool.begin().await {
+        Ok(tx) => tx,
+        Err(_) => return unavailable(),
+    };
+    let base = sqlx::query_as::<_, (Uuid, i64)>("SELECT variant.id, inventory.available_quantity FROM product_variants variant JOIN inventory_items inventory ON inventory.variant_id=variant.id WHERE variant.product_id=$1 ORDER BY variant.position, variant.id LIMIT 1 FOR UPDATE OF inventory")
+        .bind(product_id).fetch_optional(&mut *tx).await;
+    let Some((variant_id, old_quantity)) = (match base {
+        Ok(value) => value,
+        Err(_) => return unavailable(),
+    }) else {
+        return not_found();
+    };
+    if let Err(error) = sqlx::query("UPDATE products SET title=$2, slug=$3, description=$4, search_keywords=$5, updated_at=now() WHERE id=$1")
+        .bind(product_id).bind(input.title.trim()).bind(input.slug.trim()).bind(input.description.trim()).bind(input.search_keywords.trim()).execute(&mut *tx).await { return database_write_error(error); }
+    if let Err(error) = sqlx::query("UPDATE product_variants SET sku=$2, price_minor=$3, currency=$4, updated_at=now() WHERE id=$1")
+        .bind(variant_id).bind(input.sku.trim()).bind(input.price_minor).bind(input.currency.trim()).execute(&mut *tx).await { return database_write_error(error); }
+    if old_quantity != input.available_quantity {
+        let delta = input.available_quantity - old_quantity;
+        if sqlx::query("UPDATE inventory_items SET available_quantity=$2, updated_at=now() WHERE variant_id=$1").bind(variant_id).bind(input.available_quantity).execute(&mut *tx).await.is_err()
+            || sqlx::query("INSERT INTO inventory_movements (id, variant_id, actor_staff_user_id, movement_type, quantity_delta, resulting_available_quantity, reason) VALUES ($1,$2,$3,'adjustment',$4,$5,'Product editor stock correction')")
+                .bind(Uuid::now_v7()).bind(variant_id).bind(actor.id).bind(delta).bind(input.available_quantity).execute(&mut *tx).await.is_err() { return unavailable(); }
+    }
+    if upsert_personalization(&mut tx, product_id, &input.personalization)
+        .await
+        .is_err()
+    {
+        return unavailable();
+    }
+    if audit(&mut tx, actor.id, "product.update", product_id, None)
+        .await
+        .is_err()
+        || tx.commit().await.is_err()
+    {
+        return unavailable();
+    }
+    product_by_id(&pool, product_id).await
+}
+
+#[utoipa::path(delete, path = "/api/admin/products/{product_id}", params(("product_id" = Uuid, Path)), tag = "admin catalog", responses((status = 204), (status = 404, body = ErrorBody), (status = 409, body = ErrorBody)))]
+pub async fn delete(
+    State(state): State<AppState>,
+    actor: AuthenticatedStaff,
+    Path(product_id): Path<Uuid>,
+) -> Response {
+    if let Err(response) = require_capability(&actor, CATALOG_WRITE) {
+        return response.into_response();
+    }
+    let Some(pool) = state.database else {
+        return unavailable();
+    };
+    let sold = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM order_lines WHERE product_id=$1)",
+    )
+    .bind(product_id)
+    .fetch_one(&pool)
+    .await;
+    match sold {
+        Ok(true) => {
+            return (
+                StatusCode::CONFLICT,
+                Json(ErrorBody::new(
+                    "product_has_sales",
+                    "Products with sales history cannot be deleted. Archive this product instead.",
+                )),
+            )
+                .into_response();
+        }
+        Err(_) => return unavailable(),
+        _ => {}
+    }
+    let mut tx = match pool.begin().await {
+        Ok(tx) => tx,
+        Err(_) => return unavailable(),
+    };
+    if audit(&mut tx, actor.id, "product.delete", product_id, None)
+        .await
+        .is_err()
+    {
+        return unavailable();
+    }
+    match sqlx::query("DELETE FROM products WHERE id=$1")
+        .bind(product_id)
+        .execute(&mut *tx)
+        .await
+    {
+        Ok(result) if result.rows_affected() == 0 => return not_found(),
+        Ok(_) => {}
+        Err(_) => return unavailable(),
+    }
+    if tx.commit().await.is_err() {
+        return unavailable();
+    }
+    StatusCode::NO_CONTENT.into_response()
 }
 
 #[utoipa::path(
@@ -634,7 +894,7 @@ pub async fn public_list(
     )
     .await
     {
-        Ok(rows) => products_response(&pool, rows).await,
+        Ok(rows) => public_products_response(&pool, rows).await,
         Err(_) => unavailable(),
     }
 }
@@ -692,7 +952,7 @@ pub async fn public_detail(State(state): State<AppState>, Path(slug): Path<Strin
     .fetch_optional(&pool)
     .await;
     match row {
-        Ok(Some(row)) => product_response(&pool, row).await,
+        Ok(Some(row)) => public_product_response(&pool, row).await,
         Ok(None) => not_found(),
         Err(_) => unavailable(),
     }
@@ -716,7 +976,12 @@ async fn product_rows(
           AND (
             $2 = '' OR
             search_document @@ websearch_to_tsquery('simple', $2) OR
-            slug ILIKE '%' || $2 || '%'
+            slug ILIKE '%' || $2 || '%' OR
+            EXISTS (
+              SELECT 1 FROM product_variants variant
+              WHERE variant.product_id = products.id
+                AND variant.sku ILIKE '%' || $2 || '%'
+            )
           )
           AND (
             $3 = '' OR EXISTS (
@@ -750,6 +1015,30 @@ async fn products_response(pool: &PgPool, rows: Vec<ProductRow>) -> Response {
         }
     }
     Json(products).into_response()
+}
+
+async fn public_products_response(pool: &PgPool, rows: Vec<ProductRow>) -> Response {
+    let mut products = Vec::with_capacity(rows.len());
+    for row in rows {
+        match hydrate_product(pool, row).await {
+            Ok(mut product) => {
+                product.search_keywords.clear();
+                products.push(product);
+            }
+            Err(_) => return unavailable(),
+        }
+    }
+    Json(products).into_response()
+}
+
+async fn public_product_response(pool: &PgPool, row: ProductRow) -> Response {
+    match hydrate_product(pool, row).await {
+        Ok(mut product) => {
+            product.search_keywords.clear();
+            Json(product).into_response()
+        }
+        Err(_) => unavailable(),
+    }
 }
 
 async fn product_by_id(pool: &PgPool, id: Uuid) -> Response {
@@ -828,6 +1117,21 @@ async fn hydrate_product(pool: &PgPool, row: ProductRow) -> Result<Product, sqlx
     .bind(row.id)
     .fetch_all(pool)
     .await?;
+    let personalization = sqlx::query_as::<_, PersonalizationConfig>(
+        r#"
+        SELECT mode, preview_media_asset_id AS preview_media_id,
+               area_x, area_y, area_width, area_height,
+               text_area_x, text_area_y, text_area_width, text_area_height,
+               print_areas, views,
+               text_max_characters, text_min_size, text_max_size,
+               allowed_fonts, allowed_colors
+        FROM product_personalization WHERE product_id = $1
+        "#,
+    )
+    .bind(row.id)
+    .fetch_optional(pool)
+    .await?
+    .unwrap_or_default();
     Ok(Product {
         id: row.id,
         title: row.title,
@@ -838,6 +1142,7 @@ async fn hydrate_product(pool: &PgPool, row: ProductRow) -> Result<Product, sqlx
         variants,
         media,
         categories,
+        personalization,
     })
 }
 
@@ -860,6 +1165,211 @@ fn valid_product(input: &CreateProductRequest) -> bool {
         && input.search_keywords.len() <= 2_000
         && currency_and_variants_valid
         && unique_skus
+        && valid_personalization(&input.personalization)
+}
+
+fn valid_personalization(config: &PersonalizationConfig) -> bool {
+    matches!(
+        config.mode.as_str(),
+        "none" | "photo" | "text" | "photo_text"
+    ) && config.area_x >= 0
+        && config.area_y >= 0
+        && config.area_width >= 100
+        && config.area_height >= 100
+        && config.area_x + config.area_width <= 10_000
+        && config.area_y + config.area_height <= 10_000
+        && config.text_area_x >= 0
+        && config.text_area_y >= 0
+        && config.text_area_width >= 100
+        && config.text_area_height >= 100
+        && config.text_area_x + config.text_area_width <= 10_000
+        && config.text_area_y + config.text_area_height <= 10_000
+        && valid_print_areas(&config.print_areas)
+        && config
+            .views
+            .as_ref()
+            .is_none_or(valid_personalization_views)
+        && (1..=500).contains(&config.text_max_characters)
+        && (8..=200).contains(&config.text_min_size)
+        && (config.text_min_size..=300).contains(&config.text_max_size)
+        && valid_font_options(&config.allowed_fonts)
+        && valid_color_options(&config.allowed_colors)
+}
+
+fn valid_personalization_views(value: &Value) -> bool {
+    let Some(views) = value.as_array() else {
+        return false;
+    };
+    if views.is_empty() || views.len() > 6 {
+        return false;
+    }
+    let mut view_ids = BTreeSet::new();
+    let mut area_ids = BTreeSet::new();
+    views.iter().all(|view| {
+        let id = view.get("id").and_then(Value::as_str).unwrap_or("").trim();
+        let label = view
+            .get("label")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .trim();
+        let media_valid = view.get("media_id").is_none_or(|media_id| {
+            media_id.is_null()
+                || media_id
+                    .as_str()
+                    .is_some_and(|value| Uuid::parse_str(value).is_ok())
+        });
+        let Some(print_areas) = view.get("print_areas") else {
+            return false;
+        };
+        let unique_area_ids = print_areas.as_array().is_some_and(|areas| {
+            areas.iter().all(|area| {
+                area.get("id")
+                    .and_then(Value::as_str)
+                    .is_some_and(|area_id| area_ids.insert(area_id))
+            })
+        });
+        !id.is_empty()
+            && id.len() <= 80
+            && view_ids.insert(id)
+            && !label.is_empty()
+            && label.len() <= 80
+            && media_valid
+            && valid_print_areas(print_areas)
+            && unique_area_ids
+    })
+}
+
+fn normalized_personalization_views(config: &PersonalizationConfig) -> Value {
+    config.views.clone().unwrap_or_else(|| {
+        serde_json::json!([{
+            "id": "view-front",
+            "label": "Frente",
+            "media_id": config.preview_media_id,
+            "print_areas": config.print_areas
+        }])
+    })
+}
+
+fn valid_print_areas(value: &Value) -> bool {
+    let Some(areas) = value.as_array() else {
+        return false;
+    };
+    if areas.is_empty() || areas.len() > 8 {
+        return false;
+    }
+    let mut ids = BTreeSet::new();
+    areas.iter().all(|area| {
+        let id = area.get("id").and_then(Value::as_str).unwrap_or("").trim();
+        let label = area
+            .get("label")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .trim();
+        let coordinate = |key: &str| area.get(key).and_then(Value::as_i64);
+        let physical_dimension = |key: &str| {
+            area.get(key)
+                .map_or(Some(20.0), Value::as_f64)
+                .is_some_and(|value| (0.5..=200.0).contains(&value))
+        };
+        let (Some(x), Some(y), Some(width), Some(height)) = (
+            coordinate("x"),
+            coordinate("y"),
+            coordinate("width"),
+            coordinate("height"),
+        ) else {
+            return false;
+        };
+        !id.is_empty()
+            && id.len() <= 80
+            && ids.insert(id)
+            && !label.is_empty()
+            && label.len() <= 80
+            && x >= 0
+            && y >= 0
+            && width >= 100
+            && height >= 100
+            && x + width <= 10_000
+            && y + height <= 10_000
+            && physical_dimension("physical_width_cm")
+            && physical_dimension("physical_height_cm")
+    })
+}
+
+fn valid_font_options(value: &Value) -> bool {
+    value.as_array().is_some_and(|items| {
+        !items.is_empty()
+            && items.len() <= PERSONALIZATION_FONTS.len()
+            && items.iter().all(|item| {
+                item.as_str()
+                    .is_some_and(|font| PERSONALIZATION_FONTS.contains(&font))
+            })
+    })
+}
+
+fn valid_color_options(value: &Value) -> bool {
+    value.as_array().is_some_and(|items| {
+        !items.is_empty()
+            && items.len() <= 30
+            && items.iter().all(|item| {
+                item.as_str().is_some_and(|color| {
+                    color.len() == 7
+                        && color.starts_with('#')
+                        && color[1..]
+                            .chars()
+                            .all(|character| character.is_ascii_hexdigit())
+                })
+            })
+    })
+}
+
+async fn upsert_personalization(
+    tx: &mut Transaction<'_, Postgres>,
+    product_id: Uuid,
+    config: &PersonalizationConfig,
+) -> Result<(), sqlx::Error> {
+    let views = normalized_personalization_views(config);
+    sqlx::query(
+        r#"
+        INSERT INTO product_personalization (
+            product_id, mode, preview_media_asset_id, area_x, area_y, area_width, area_height,
+            text_area_x, text_area_y, text_area_width, text_area_height,
+            print_areas, views, text_max_characters, text_min_size, text_max_size, allowed_fonts, allowed_colors
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+        ON CONFLICT (product_id) DO UPDATE SET
+            mode=EXCLUDED.mode, preview_media_asset_id=EXCLUDED.preview_media_asset_id,
+            area_x=EXCLUDED.area_x, area_y=EXCLUDED.area_y,
+            area_width=EXCLUDED.area_width, area_height=EXCLUDED.area_height,
+            text_area_x=EXCLUDED.text_area_x, text_area_y=EXCLUDED.text_area_y,
+            text_area_width=EXCLUDED.text_area_width, text_area_height=EXCLUDED.text_area_height,
+            print_areas=EXCLUDED.print_areas,
+            views=EXCLUDED.views,
+            text_max_characters=EXCLUDED.text_max_characters,
+            text_min_size=EXCLUDED.text_min_size, text_max_size=EXCLUDED.text_max_size,
+            allowed_fonts=EXCLUDED.allowed_fonts, allowed_colors=EXCLUDED.allowed_colors,
+            updated_at=now()
+        "#,
+    )
+    .bind(product_id)
+    .bind(&config.mode)
+    .bind(config.preview_media_id)
+    .bind(config.area_x)
+    .bind(config.area_y)
+    .bind(config.area_width)
+    .bind(config.area_height)
+    .bind(config.text_area_x)
+    .bind(config.text_area_y)
+    .bind(config.text_area_width)
+    .bind(config.text_area_height)
+    .bind(&config.print_areas)
+    .bind(&views)
+    .bind(config.text_max_characters)
+    .bind(config.text_min_size)
+    .bind(config.text_max_size)
+    .bind(&config.allowed_fonts)
+    .bind(&config.allowed_colors)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
 }
 
 fn valid_variant(variant: &CreateVariantRequest) -> bool {
@@ -875,6 +1385,7 @@ fn valid_variant(variant: &CreateVariantRequest) -> bool {
             .chars()
             .all(|character| character.is_ascii_uppercase())
         && variant.option_values.is_object()
+        && variant.available_quantity >= 0
 }
 
 fn valid_slug(slug: &str) -> bool {

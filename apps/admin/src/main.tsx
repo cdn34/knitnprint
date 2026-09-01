@@ -1,9 +1,11 @@
 import {
   StrictMode,
   type FormEvent,
+  type PointerEvent as ReactPointerEvent,
   type ReactNode,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react'
 import { createRoot } from 'react-dom/client'
@@ -18,6 +20,7 @@ import {
   Eye,
   ImageUp,
   Archive,
+  ArchiveRestore,
   BadgePercent,
   CircleCheck,
   Boxes,
@@ -29,6 +32,7 @@ import {
   Mail,
   MapPin,
   Package,
+  Pencil,
   ReceiptText,
   Phone,
   Plus,
@@ -337,7 +341,9 @@ function AdminShell({ profile }: Readonly<{ profile: StaffProfile }>) {
           )}
         {page === 'customers' &&
           profile.capabilities.includes('customers.read') && (
-            <CustomerManagement />
+            <CustomerManagement
+              canReadOrders={profile.capabilities.includes('orders.read')}
+            />
           )}
         {page === 'discounts' &&
           profile.capabilities.includes('discounts.manage') && (
@@ -664,12 +670,15 @@ function OrderDetail({
       </section>
       <section className="order-detail-section">
         <h4>Items</h4>
-        {order.lines.map((line) => (
-          <div className="order-line" key={line.id}>
-            <span><strong>{line.product_title}</strong><small>{line.variant_title} · {line.sku} · Qty {line.quantity} · Shipped {line.fulfilled_quantity}</small></span>
+        {order.lines.map((line) => {
+          const mediaIds = line.customization_media_asset_ids?.length ? line.customization_media_asset_ids : line.customization_media_asset_id ? [line.customization_media_asset_id] : []
+          const productionSpecs = customizationProductionSpecs(line.customization)
+          return <div className="order-line order-line--customizable" key={line.id}>
+            {mediaIds.length > 0 && <div className="order-customization-images">{mediaIds.map((mediaId, index) => <a key={mediaId} href={`/api/admin/personalization/media/${mediaId}/detail`} target="_blank" rel="noreferrer"><img className="order-customization-image" src={`/api/admin/personalization/media/${mediaId}/thumbnail`} alt={`Fotografia ${index + 1} enviada pelo cliente`} /></a>)}</div>}
+            <span><strong>{line.product_title}</strong><small>{line.variant_title} · {line.sku} · Qty {line.quantity} · Shipped {line.fulfilled_quantity}</small>{Boolean(line.customization) && <small className="order-customization-summary">Personalização: {customizationLabel(line.customization)}</small>}{productionSpecs.length > 0 && <span className="order-customization-specs">{productionSpecs.map((spec) => <span className="order-customization-spec" key={spec.key}><strong>{spec.title}</strong>{spec.photo && <small>{spec.photo}</small>}{spec.text && <small>{spec.text}</small>}</span>)}</span>}</span>
             <b>{formatMoney(line.line_total_minor, line.currency)}</b>
           </div>
-        ))}
+        })}
       </section>
       {canRecordPayment && order.payment_status === 'paid' && order.fulfillment_status !== 'fulfilled' && (
         <form className="fulfillment-form order-detail-section" onSubmit={(event) => onFulfill(event, order)}>
@@ -786,16 +795,90 @@ function OrderDetail({
   )
 }
 
+function customizationLabel(value: unknown) {
+  if (!value || typeof value !== 'object') return 'configuração guardada'
+  const areas = (value as { areas?: Array<{ view_id?: unknown; photo?: unknown; text?: { content?: unknown } }> }).areas
+  if (Array.isArray(areas)) {
+    const photoCount = areas.filter((area) => area.photo).length
+    const textCount = areas.filter((area) => typeof area.text?.content === 'string').length
+    const viewCount = new Set(areas.flatMap((area) => typeof area.view_id === 'string' ? [area.view_id] : [])).size
+    return [viewCount > 1 ? `${viewCount} lados` : '', `${areas.length} área${areas.length === 1 ? '' : 's'}`, photoCount ? `${photoCount} fotografia${photoCount === 1 ? '' : 's'}` : '', textCount ? `${textCount} texto${textCount === 1 ? '' : 's'}` : ''].filter(Boolean).join(' · ')
+  }
+  const text = (value as { text?: { content?: unknown }; photo?: unknown }).text?.content
+  const parts = [(value as { photo?: unknown }).photo ? 'fotografia' : '', typeof text === 'string' ? `texto “${text}”` : ''].filter(Boolean)
+  return parts.join(' + ') || 'configuração guardada'
+}
+
+type CustomizationElementSnapshot = { width?: unknown; height?: unknown }
+type CustomizationTextSnapshot = CustomizationElementSnapshot & { content?: unknown; font?: unknown; color?: unknown; size?: unknown }
+type CustomizationAreaSnapshot = {
+  view_id?: unknown; view_label?: unknown; area_id?: unknown; area_label?: unknown
+  print_width_cm?: unknown; print_height_cm?: unknown
+  photo?: CustomizationElementSnapshot; text?: CustomizationTextSnapshot
+}
+
+function customizationProductionSpecs(value: unknown) {
+  if (!value || typeof value !== 'object') return []
+  const areas = (value as { areas?: unknown }).areas
+  if (!Array.isArray(areas)) return []
+  const formatCm = (measurement: number) => new Intl.NumberFormat('pt-PT', { maximumFractionDigits: 1 }).format(Math.round(measurement * 10) / 10)
+  const elementMeasure = (element: CustomizationElementSnapshot | undefined, printWidth: number, printHeight: number) => {
+    const width = typeof element?.width === 'number' ? element.width : undefined
+    const height = typeof element?.height === 'number' ? element.height : undefined
+    return width !== undefined && height !== undefined ? `${formatCm(printWidth * width / 100)} × ${formatCm(printHeight * height / 100)} cm` : undefined
+  }
+  return areas.flatMap((rawArea, index) => {
+    if (!rawArea || typeof rawArea !== 'object') return []
+    const area = rawArea as CustomizationAreaSnapshot
+    if (typeof area.print_width_cm !== 'number' || typeof area.print_height_cm !== 'number') return []
+    const viewLabel = typeof area.view_label === 'string' ? area.view_label : `Vista ${index + 1}`
+    const areaLabel = typeof area.area_label === 'string' ? area.area_label : `Área ${index + 1}`
+    const photoMeasure = elementMeasure(area.photo, area.print_width_cm, area.print_height_cm)
+    const textMeasure = elementMeasure(area.text, area.print_width_cm, area.print_height_cm)
+    const textContent = typeof area.text?.content === 'string' ? area.text.content : undefined
+    const font = typeof area.text?.font === 'string' ? area.text.font : undefined
+    const color = typeof area.text?.color === 'string' ? area.text.color : undefined
+    const size = typeof area.text?.size === 'number' ? area.text.size : undefined
+    const textDetails = textContent ? [`Texto “${textContent}”`, font, color, size !== undefined ? `tamanho de letra ${size}` : '', textMeasure ? `caixa ${textMeasure}` : ''].filter(Boolean).join(' · ') : undefined
+    return [{
+      key: `${String(area.view_id ?? index)}:${String(area.area_id ?? index)}`,
+      title: `${viewLabel} · ${areaLabel} — área máxima ${formatCm(area.print_width_cm)} × ${formatCm(area.print_height_cm)} cm`,
+      photo: photoMeasure ? `Fotografia a imprimir: ${photoMeasure}` : undefined,
+      text: textDetails,
+    }]
+  })
+}
+
 const discountsKey = ['discounts'] as const
 
 function DiscountManagement() {
   const client = useQueryClient()
   const [kind, setKind] = useState<'percentage' | 'fixed'>('percentage')
-  const discounts = useQuery({ queryKey: discountsKey, queryFn: api.listDiscounts })
+  const [editing, setEditing] = useState<Discount | null>(null)
+  const formRef = useRef<HTMLFormElement>(null)
+  const discounts = useQuery({
+    queryKey: discountsKey,
+    queryFn: api.listDiscounts,
+    refetchInterval: 15_000,
+    refetchIntervalInBackground: true,
+  })
   const createDiscount = useMutation({
     mutationFn: api.createDiscount,
     onSuccess: (discount) => {
       client.setQueryData<Discount[]>(discountsKey, (current = []) => [discount, ...current])
+      formRef.current?.reset()
+      setKind('percentage')
+    },
+  })
+  const updateDiscount = useMutation({
+    mutationFn: ({ id, input }: { id: string; input: Parameters<typeof api.updateDiscount>[1] }) =>
+      api.updateDiscount(id, input),
+    onSuccess: (discount) => {
+      client.setQueryData<Discount[]>(discountsKey, (current = []) =>
+        current.map((item) => item.id === discount.id ? discount : item),
+      )
+      setEditing(null)
+      setKind('percentage')
     },
   })
   const status = useMutation({
@@ -822,7 +905,7 @@ function DiscountManagement() {
     event.preventDefault()
     const form = new FormData(event.currentTarget)
     const enteredValue = Number(form.get('discount-value') ?? 0)
-    createDiscount.mutate({
+    const input = {
       code: String(form.get('discount-code') ?? ''),
       kind,
       value: Math.round(enteredValue * 100),
@@ -833,7 +916,26 @@ function DiscountManagement() {
       usage_limit: optionalPositive(form.get('discount-usage-limit')),
       per_customer_limit: optionalPositive(form.get('discount-customer-limit')),
       reason: String(form.get('discount-reason') ?? ''),
+    }
+    if (editing) updateDiscount.mutate({ id: editing.id, input })
+    else createDiscount.mutate(input)
+  }
+
+  function edit(discount: Discount) {
+    createDiscount.reset()
+    updateDiscount.reset()
+    setEditing(discount)
+    setKind(discount.kind as 'percentage' | 'fixed')
+    window.requestAnimationFrame(() => {
+      formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      formRef.current?.querySelector<HTMLInputElement>('[name="discount-code"]')?.focus()
     })
+  }
+
+  function cancelEdit() {
+    updateDiscount.reset()
+    setEditing(null)
+    setKind('percentage')
   }
 
   function toggle(discount: Discount) {
@@ -850,42 +952,68 @@ function DiscountManagement() {
         <div><p>Phase 10 · Pricing</p><h2 id="discounts-heading">Discounts</h2></div>
       </div>
       <div className="discounts-layout">
-        <form className="discount-form" onSubmit={submit}>
-          <h3>Create discount code</h3>
-          <label>Code<input name="discount-code" minLength={3} maxLength={32} required placeholder="WELCOME10" /></label>
+        <form ref={formRef} key={editing?.id ?? 'new'} className={`discount-form${editing ? ' discount-form--editing' : ''}`} onSubmit={submit}>
+          <div className="discount-form-heading">
+            <div>
+              <span>{editing ? 'Editing existing code' : 'New promotion'}</span>
+              <h3>{editing ? `Edit ${editing.code}` : 'Create discount code'}</h3>
+            </div>
+            {editing && <button type="button" className="discount-cancel-button" onClick={cancelEdit}>Cancel</button>}
+          </div>
+          <label>Code<input name="discount-code" minLength={3} maxLength={32} required placeholder="WELCOME10" defaultValue={editing?.code ?? ''} /></label>
           <label>Type<select name="discount-kind" value={kind} onChange={(event) => setKind(event.target.value as 'percentage' | 'fixed')}><option value="percentage">Percentage</option><option value="fixed">Fixed amount</option></select></label>
-          <label>{kind === 'percentage' ? 'Percentage' : 'Amount'}<input name="discount-value" type="number" min="0.01" max={kind === 'percentage' ? '100' : undefined} step="0.01" required /></label>
-          <label>Currency<input name="discount-currency" pattern="[A-Za-z]{3}" defaultValue="EUR" required /></label>
-          <label>Minimum order amount<input name="discount-minimum" type="number" min="0" step="0.01" defaultValue="0" /></label>
+          <label>{kind === 'percentage' ? 'Percentage' : 'Amount'}<input name="discount-value" type="number" min="0.01" max={kind === 'percentage' ? '100' : undefined} step="0.01" required defaultValue={editing ? editing.value / 100 : undefined} /></label>
+          <label>Currency<input name="discount-currency" pattern="[A-Za-z]{3}" defaultValue={editing?.currency ?? 'EUR'} required /></label>
+          <label>Minimum order amount<input name="discount-minimum" type="number" min="0" step="0.01" defaultValue={editing ? editing.minimum_order_minor / 100 : 0} /></label>
           <div className="discount-field-row">
-            <label>Starts<input name="discount-starts" type="datetime-local" /></label>
-            <label>Ends<input name="discount-ends" type="datetime-local" /></label>
+            <label>Starts<input name="discount-starts" type="datetime-local" defaultValue={dateTimeLocalValue(editing?.starts_at)} /></label>
+            <label>Ends<input name="discount-ends" type="datetime-local" defaultValue={dateTimeLocalValue(editing?.ends_at)} /></label>
           </div>
           <div className="discount-field-row">
-            <label>Global usage limit<input name="discount-usage-limit" type="number" min="1" /></label>
-            <label>Per-customer limit<input name="discount-customer-limit" type="number" min="1" /></label>
+            <label>Global usage limit<input name="discount-usage-limit" type="number" min="1" defaultValue={editing?.usage_limit ?? undefined} /></label>
+            <label>Per-customer limit<input name="discount-customer-limit" type="number" min="1" defaultValue={editing?.per_customer_limit ?? undefined} /></label>
           </div>
-          <label>Audit reason<textarea name="discount-reason" minLength={3} maxLength={500} required defaultValue="New storefront promotion" /></label>
-          <button className="primary-button" disabled={createDiscount.isPending}>{createDiscount.isPending ? 'Creating…' : 'Create discount'}</button>
+          <label>Audit reason<textarea name="discount-reason" minLength={3} maxLength={500} required defaultValue={editing ? 'Correct discount details' : 'New storefront promotion'} /></label>
+          {editing && discountHasExpired(editing) && <p className="discount-form-note">This code has expired. Set a future end date, save it, and then enable it again if you want to reuse it.</p>}
+          <button className="primary-button" disabled={createDiscount.isPending || updateDiscount.isPending}>{updateDiscount.isPending ? 'Saving…' : createDiscount.isPending ? 'Creating…' : editing ? 'Save changes' : 'Create discount'}</button>
           {createDiscount.isError && <p className="panel-error" role="alert">The discount could not be created. Check the code, dates, value, and limits.</p>}
+          {updateDiscount.isError && <p className="panel-error" role="alert">The changes could not be saved. Check whether the code already exists and whether the dates and values are valid.</p>}
         </form>
         <div className="discount-list">
           {discounts.isPending && <p className="panel-message">Loading discounts…</p>}
           {discounts.isError && <p className="panel-error" role="alert">Discounts could not be loaded.</p>}
           {discounts.data?.length === 0 && <div className="order-empty"><BadgePercent aria-hidden="true" /><strong>No discount codes yet</strong><span>Create a bounded promotion when the store needs one.</span></div>}
-          {discounts.data?.map((discount) => (
-            <article key={discount.id} className="discount-record">
-              <div><strong>{discount.code}</strong><span className={`order-state ${discount.status}`}>{discount.status}</span></div>
-              <p>{discount.kind === 'percentage' ? `${discount.value / 100}% off` : `${formatMoney(discount.value, discount.currency)} off`} · minimum {formatMoney(discount.minimum_order_minor, discount.currency)}</p>
-              <small>{discount.usage_count}{discount.usage_limit ? ` / ${discount.usage_limit}` : ''} uses{discount.per_customer_limit ? ` · ${discount.per_customer_limit} per customer` : ''}</small>
-              {(discount.starts_at || discount.ends_at) && <small>{discount.starts_at ? `Starts ${orderDate(discount.starts_at)}` : 'Active immediately'} · {discount.ends_at ? `Ends ${orderDate(discount.ends_at)}` : 'No end date'}</small>}
-              <button type="button" disabled={status.isPending} onClick={() => toggle(discount)}>{discount.status === 'active' ? 'Disable' : 'Enable'}</button>
-            </article>
-          ))}
+          {discounts.data?.map((discount) => {
+            const expired = discountHasExpired(discount)
+            return (
+              <article key={discount.id} className={`discount-record${editing?.id === discount.id ? ' discount-record--editing' : ''}`}>
+                <div className="discount-record-header"><strong>{discount.code}</strong><span className={`order-state ${discount.status}`}>{expired ? 'expired' : discount.status}</span></div>
+                <p>{discount.kind === 'percentage' ? `${discount.value / 100}% off` : `${formatMoney(discount.value, discount.currency)} off`} · minimum {formatMoney(discount.minimum_order_minor, discount.currency)}</p>
+                <small>{discount.usage_count}{discount.usage_limit ? ` / ${discount.usage_limit}` : ''} uses{discount.per_customer_limit ? ` · ${discount.per_customer_limit} per customer` : ''}</small>
+                {(discount.starts_at || discount.ends_at) && <small>{discount.starts_at ? `Starts ${orderDate(discount.starts_at)}` : 'Active immediately'} · {discount.ends_at ? `Ends ${orderDate(discount.ends_at)}` : 'No end date'}</small>}
+                {expired && <small className="discount-expired-note">Disabled automatically because its end time has passed.</small>}
+                <div className="discount-record-actions">
+                  <button type="button" onClick={() => edit(discount)}><Pencil size={13} aria-hidden="true" /> Edit</button>
+                  {!expired && <button type="button" disabled={status.isPending} onClick={() => toggle(discount)}>{discount.status === 'active' ? 'Disable' : 'Enable'}</button>}
+                </div>
+              </article>
+            )
+          })}
         </div>
       </div>
     </section>
   )
+}
+
+function dateTimeLocalValue(value?: string | null) {
+  if (!value) return ''
+  const date = new Date(value)
+  const offset = date.getTimezoneOffset() * 60_000
+  return new Date(date.getTime() - offset).toISOString().slice(0, 16)
+}
+
+function discountHasExpired(discount: Discount) {
+  return Boolean(discount.ends_at && new Date(discount.ends_at).getTime() <= Date.now())
 }
 
 const settingsKey = ['commercial-settings'] as const
@@ -1172,7 +1300,9 @@ function formatCustomerDate(value: string) {
   }).format(new Date(value))
 }
 
-function CustomerManagement() {
+function CustomerManagement({
+  canReadOrders,
+}: Readonly<{ canReadOrders: boolean }>) {
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -1191,6 +1321,11 @@ function CustomerManagement() {
     queryKey: ['customer', selectedId],
     queryFn: () => api.customer(selectedId ?? ''),
     enabled: Boolean(selectedId),
+  })
+  const orderHistory = useQuery({
+    queryKey: ['customer-orders', selectedId],
+    queryFn: () => api.customerOrders(selectedId ?? ''),
+    enabled: Boolean(selectedId) && canReadOrders,
   })
 
   return (
@@ -1278,7 +1413,13 @@ function CustomerManagement() {
               Customer details could not be loaded.
             </p>
           ) : (
-            <CustomerDetailPanel customer={detail.data} />
+            <CustomerDetailPanel
+              customer={detail.data}
+              orders={orderHistory.data}
+              ordersLoading={orderHistory.isPending && canReadOrders}
+              ordersError={orderHistory.isError}
+              canReadOrders={canReadOrders}
+            />
           )}
         </div>
       </div>
@@ -1288,7 +1429,17 @@ function CustomerManagement() {
 
 function CustomerDetailPanel({
   customer,
-}: Readonly<{ customer: CustomerDetail }>) {
+  orders,
+  ordersLoading,
+  ordersError,
+  canReadOrders,
+}: Readonly<{
+  customer: CustomerDetail
+  orders?: OrderSummary[]
+  ordersLoading: boolean
+  ordersError: boolean
+  canReadOrders: boolean
+}>) {
   const name = customerName(customer)
 
   return (
@@ -1343,13 +1494,40 @@ function CustomerDetailPanel({
         )}
       </section>
       <section className="customer-orders" aria-labelledby="customer-orders-heading">
-        <div>
+        <div className="customer-orders-heading">
           <History aria-hidden="true" />
           <h4 id="customer-orders-heading">Order history</h4>
           <span>{customer.order_count}</span>
         </div>
         {customer.order_count === 0 && (
           <p>No orders yet. Completed checkouts will appear here.</p>
+        )}
+        {customer.order_count > 0 && !canReadOrders && (
+          <p>You do not have permission to view order details.</p>
+        )}
+        {customer.order_count > 0 && canReadOrders && ordersLoading && (
+          <p>Loading order history…</p>
+        )}
+        {customer.order_count > 0 && canReadOrders && ordersError && (
+          <p className="customer-orders-error" role="alert">Order history could not be loaded.</p>
+        )}
+        {customer.order_count > 0 && canReadOrders && orders && (
+          <div className="customer-order-list">
+            {orders.map((order) => (
+              <a className="customer-order-record" href={`#orders/${order.id}`} key={order.id}>
+                <span className="customer-order-identity">
+                  <strong>{order.order_number}</strong>
+                  <small>{orderDate(order.created_at)} · {order.item_count} {order.item_count === 1 ? 'item' : 'items'}</small>
+                </span>
+                <span className="customer-order-statuses">
+                  <small className={`order-state ${order.payment_status}`}>{order.payment_status}</small>
+                  <small className="order-state">{order.fulfillment_status}</small>
+                </span>
+                <strong className="customer-order-total">{formatMoney(order.total_minor, order.currency)}</strong>
+                <span className="customer-order-open"><Eye size={14} aria-hidden="true" /> View order</span>
+              </a>
+            ))}
+          </div>
         )}
       </section>
       <p className="customer-retention">
@@ -1679,6 +1857,91 @@ function InventoryManagement({ initialVariantId }: Readonly<{ initialVariantId?:
 }
 
 const productsKey = ['admin-products'] as const
+const GOOGLE_FONT_OPTIONS = ['Roboto', 'Montserrat', 'Playfair Display', 'Dancing Script', 'Pacifico'] as const
+const PERSONALIZATION_COLOR_OPTIONS = [
+  { value: '#111111', label: 'Preto' }, { value: '#ffffff', label: 'Branco' },
+  { value: '#9c5263', label: 'Rosa antigo' }, { value: '#1f4f78', label: 'Azul' },
+  { value: '#b3232f', label: 'Vermelho' },
+] as const
+
+type PrintArea = { x: number; y: number; width: number; height: number }
+type NamedPrintArea = PrintArea & { id: string; label: string; physicalWidthCm: number; physicalHeightCm: number }
+type PersonalizationView = { id: string; label: string; mediaId?: string; printAreas: NamedPrintArea[] }
+const DEFAULT_PRINT_AREA: NamedPrintArea = { id: 'area-1', label: 'Área 1', x: 25, y: 25, width: 50, height: 50, physicalWidthCm: 20, physicalHeightCm: 20 }
+const DEFAULT_PERSONALIZATION_VIEW: PersonalizationView = { id: 'view-front', label: 'Frente', printAreas: [{ ...DEFAULT_PRINT_AREA }] }
+
+function printAreaFromBasisPoints(values: unknown[], fallback: PrintArea): PrintArea {
+  if (values.length !== 4 || values.some((value) => typeof value !== 'number' || !Number.isFinite(value))) return { ...fallback }
+  const [x, y, width, height] = values.map((value) => Number(value) / 100)
+  if (x < 0 || y < 0 || width <= 0 || height <= 0 || x + width > 100 || y + height > 100) return { ...fallback }
+  return { x, y, width, height }
+}
+
+function namedPrintAreas(value: unknown, fallback: NamedPrintArea): NamedPrintArea[] {
+  if (!Array.isArray(value)) return [{ ...fallback }]
+  const areas = value.flatMap((item, index) => {
+    if (!item || typeof item !== 'object') return []
+    const candidate = item as Record<string, unknown>
+    const area = printAreaFromBasisPoints([candidate.x, candidate.y, candidate.width, candidate.height], fallback)
+    const id = typeof candidate.id === 'string' && candidate.id.trim() ? candidate.id.trim() : `area-${index + 1}`
+    const label = typeof candidate.label === 'string' && candidate.label.trim() ? candidate.label.trim() : `Área ${index + 1}`
+    const physicalWidthCm = typeof candidate.physical_width_cm === 'number' && Number.isFinite(candidate.physical_width_cm) ? candidate.physical_width_cm : fallback.physicalWidthCm
+    const physicalHeightCm = typeof candidate.physical_height_cm === 'number' && Number.isFinite(candidate.physical_height_cm) ? candidate.physical_height_cm : fallback.physicalHeightCm
+    return [{ id, label, physicalWidthCm, physicalHeightCm, ...area }]
+  })
+  return areas.length ? areas.slice(0, 8) : [{ ...fallback }]
+}
+
+function namedPersonalizationViews(value: unknown, fallbackArea: NamedPrintArea, fallbackMediaId?: string): PersonalizationView[] {
+  if (!Array.isArray(value)) return [{ ...DEFAULT_PERSONALIZATION_VIEW, mediaId: fallbackMediaId, printAreas: namedPrintAreas(undefined, fallbackArea) }]
+  const views = value.flatMap((item, index) => {
+    if (!item || typeof item !== 'object') return []
+    const candidate = item as Record<string, unknown>
+    const id = typeof candidate.id === 'string' && candidate.id.trim() ? candidate.id.trim() : `view-${index + 1}`
+    const label = typeof candidate.label === 'string' && candidate.label.trim() ? candidate.label.trim() : index === 0 ? 'Frente' : `Vista ${index + 1}`
+    const mediaId = typeof candidate.media_id === 'string' && candidate.media_id ? candidate.media_id : undefined
+    return [{ id, label, mediaId, printAreas: namedPrintAreas(candidate.print_areas, fallbackArea) }]
+  })
+  return views.length ? views.slice(0, 6) : [{ ...DEFAULT_PERSONALIZATION_VIEW, mediaId: fallbackMediaId, printAreas: namedPrintAreas(undefined, fallbackArea) }]
+}
+
+function EditablePrintArea({ area, label, active, onActivate, onChange }: Readonly<{
+  area: PrintArea
+  label: string
+  active: boolean
+  onActivate: () => void
+  onChange: (area: PrintArea) => void
+}>) {
+  const areaElement = useRef<HTMLDivElement>(null)
+  const interaction = useRef<{ startX: number; startY: number; area: PrintArea; handle: string } | undefined>(undefined)
+  function start(event: ReactPointerEvent<HTMLElement>, handle: string) {
+    event.preventDefault()
+    onActivate()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    interaction.current = { startX: event.clientX, startY: event.clientY, area, handle }
+  }
+  function move(event: ReactPointerEvent<HTMLElement>) {
+    const active = interaction.current
+    const bounds = areaElement.current?.parentElement?.getBoundingClientRect()
+    if (!active || !bounds) return
+    const dx = (event.clientX - active.startX) / bounds.width * 100
+    const dy = (event.clientY - active.startY) / bounds.height * 100
+    let { x, y, width, height } = active.area
+    if (active.handle === 'move') {
+      x = Math.max(0, Math.min(100 - width, x + dx)); y = Math.max(0, Math.min(100 - height, y + dy))
+    } else {
+      if (active.handle.includes('w')) { const next = Math.max(0, Math.min(x + width - 5, x + dx)); width += x - next; x = next }
+      if (active.handle.includes('e')) width = Math.max(5, Math.min(100 - x, width + dx))
+      if (active.handle.includes('n')) { const next = Math.max(0, Math.min(y + height - 5, y + dy)); height += y - next; y = next }
+      if (active.handle.includes('s')) height = Math.max(5, Math.min(100 - y, height + dy))
+    }
+    onChange({ x, y, width, height })
+  }
+  return <div ref={areaElement} className={`editable-print-area editable-print-area--print${active ? ' editable-print-area--active' : ''}`} aria-label={label} aria-current={active ? 'true' : undefined} style={{ left: `${area.x}%`, top: `${area.y}%`, width: `${area.width}%`, height: `${area.height}%` }} onPointerDown={(event) => start(event, 'move')} onPointerMove={move} onPointerUp={() => { interaction.current = undefined }}>
+    <span>{label}</span>
+    {active && (['nw', 'ne', 'sw', 'se'] as const).map((handle) => <button key={handle} type="button" className={`resize-handle resize-handle--${handle}`} aria-label={`Redimensionar zona de ${label}`} onPointerDown={(event) => { event.stopPropagation(); start(event, handle) }} onPointerMove={move} onPointerUp={() => { interaction.current = undefined }}>{handle === 'nw' ? '↖' : handle === 'ne' ? '↗' : handle === 'sw' ? '↙' : '↘'}</button>)}
+  </div>
+}
 
 function CatalogManagement({
   canUpload,
@@ -1687,7 +1950,65 @@ function CatalogManagement({
   const client = useQueryClient()
   const [search, setSearch] = useState('')
   const [preview, setPreview] = useState<Product | null>(null)
-  const [imagePreviews, setImagePreviews] = useState<Record<string, string>>({})
+  const [productTitle, setProductTitle] = useState('')
+  const [productSlug, setProductSlug] = useState('')
+  const [productSlugEdited, setProductSlugEdited] = useState(false)
+  const [productDescription, setProductDescription] = useState('')
+  const [productKeywords, setProductKeywords] = useState('')
+  const [productSku, setProductSku] = useState('')
+  const [productPrice, setProductPrice] = useState('')
+  const [productQuantity, setProductQuantity] = useState('0')
+  const [productCategoryIds, setProductCategoryIds] = useState<string[]>([])
+  const [personalizationMode, setPersonalizationMode] = useState<'none' | 'photo' | 'text' | 'photo_text'>('none')
+  const [personalizationViews, setPersonalizationViews] = useState<PersonalizationView[]>([{ ...DEFAULT_PERSONALIZATION_VIEW, printAreas: [{ ...DEFAULT_PRINT_AREA }] }])
+  const [activePersonalizationViewId, setActivePersonalizationViewId] = useState(DEFAULT_PERSONALIZATION_VIEW.id)
+  const [activePrintAreaId, setActivePrintAreaId] = useState(DEFAULT_PRINT_AREA.id)
+  const [textMaxCharacters, setTextMaxCharacters] = useState(35)
+  const [textMinSize, setTextMinSize] = useState(12)
+  const [textMaxSize, setTextMaxSize] = useState(72)
+  const [allowedFonts, setAllowedFonts] = useState('Roboto, Montserrat, Playfair Display, Dancing Script, Pacifico')
+  const [allowedColors, setAllowedColors] = useState('#111111, #ffffff, #9c5263, #1f4f78, #b3232f')
+  const primaryPersonalizationView = personalizationViews[0] ?? DEFAULT_PERSONALIZATION_VIEW
+  const primaryPrintArea = primaryPersonalizationView.printAreas[0] ?? DEFAULT_PRINT_AREA
+  const personalization = {
+    mode: personalizationMode,
+    preview_media_id: primaryPersonalizationView.mediaId,
+    area_x: Math.round(primaryPrintArea.x * 100), area_y: Math.round(primaryPrintArea.y * 100),
+    area_width: Math.round(primaryPrintArea.width * 100), area_height: Math.round(primaryPrintArea.height * 100),
+    // Keep the legacy fields synchronized while older clients still understand them.
+    text_area_x: Math.round(primaryPrintArea.x * 100), text_area_y: Math.round(primaryPrintArea.y * 100),
+    text_area_width: Math.round(primaryPrintArea.width * 100), text_area_height: Math.round(primaryPrintArea.height * 100),
+    print_areas: primaryPersonalizationView.printAreas.map((area) => ({ id: area.id, label: area.label.trim(), x: Math.round(area.x * 100), y: Math.round(area.y * 100), width: Math.round(area.width * 100), height: Math.round(area.height * 100), physical_width_cm: area.physicalWidthCm, physical_height_cm: area.physicalHeightCm })),
+    views: personalizationViews.map((view) => ({ id: view.id, label: view.label.trim(), media_id: view.mediaId ?? null, print_areas: view.printAreas.map((area) => ({ id: area.id, label: area.label.trim(), x: Math.round(area.x * 100), y: Math.round(area.y * 100), width: Math.round(area.width * 100), height: Math.round(area.height * 100), physical_width_cm: area.physicalWidthCm, physical_height_cm: area.physicalHeightCm })) })),
+    text_max_characters: textMaxCharacters, text_min_size: textMinSize, text_max_size: textMaxSize,
+    allowed_fonts: allowedFonts.split(',').map((value) => value.trim()).filter(Boolean),
+    allowed_colors: allowedColors.split(',').map((value) => value.trim()).filter(Boolean),
+  }
+  const activePersonalizationView = personalizationViews.find(({ id }) => id === activePersonalizationViewId) ?? personalizationViews[0] ?? DEFAULT_PERSONALIZATION_VIEW
+  const printAreas = activePersonalizationView.printAreas
+  const personalizationPreviewMedia = preview?.media.find(({ id }) => id === activePersonalizationView.mediaId)
+  const activePrintArea = printAreas.find(({ id }) => id === activePrintAreaId) ?? printAreas[0] ?? DEFAULT_PRINT_AREA
+  const editorDirty = useMemo(() => {
+    if (!preview) {
+      return Boolean(productTitle || productSlug || productDescription || productKeywords || productSku || productPrice || productQuantity !== '0')
+    }
+    const base = preview.variants[0]
+    return productTitle !== preview.title
+      || productSlug !== preview.slug
+      || productDescription !== preview.description
+      || productKeywords !== preview.search_keywords
+      || productSku !== (base?.sku ?? '')
+      || Number(productPrice) !== (base?.price_minor ?? 0) / 100
+      || Number(productQuantity) !== (base?.available_quantity ?? 0)
+  }, [preview, productTitle, productSlug, productDescription, productKeywords, productSku, productPrice, productQuantity])
+  useEffect(() => {
+    function warnBeforeLeaving(event: BeforeUnloadEvent) {
+      if (!editorDirty) return
+      event.preventDefault()
+    }
+    window.addEventListener('beforeunload', warnBeforeLeaving)
+    return () => window.removeEventListener('beforeunload', warnBeforeLeaving)
+  }, [editorDirty])
   const products = useQuery({
     queryKey: [...productsKey, search],
     queryFn: () => api.listAdminProducts({ q: search }),
@@ -1697,7 +2018,12 @@ function CatalogManagement({
     queryFn: api.listCategories,
   })
   const createProduct = useMutation({
-    mutationFn: api.createProduct,
+    mutationFn: async ({ categoryIds, ...input }: Parameters<typeof api.createProduct>[0] & { categoryIds: string[] }) => {
+      const product = await api.createProduct(input)
+      return categoryIds.length > 0
+        ? api.assignProductCategories(product.id, { category_ids: categoryIds })
+        : product
+    },
     onMutate: async () => {
       await client.cancelQueries({ queryKey: productsKey })
     },
@@ -1711,7 +2037,27 @@ function CatalogManagement({
       )
       client.invalidateQueries({ queryKey: productsKey })
       client.invalidateQueries({ queryKey: inventoryKey })
+      loadProduct(product, activePersonalizationViewId, activePrintAreaId)
+    },
+  })
+  const updateProduct = useMutation({
+    mutationFn: async ({ id, categoryIds, ...input }: Parameters<typeof api.updateProduct>[1] & { id: string; categoryIds: string[] }) => {
+      const product = await api.updateProduct(id, input)
+      return api.assignProductCategories(product.id, { category_ids: categoryIds })
+    },
+    onSuccess: (product) => {
+      client.invalidateQueries({ queryKey: productsKey })
+      client.invalidateQueries({ queryKey: inventoryKey })
       setPreview(product)
+      loadProduct(product, activePersonalizationViewId, activePrintAreaId)
+    },
+  })
+  const deleteProduct = useMutation({
+    mutationFn: api.deleteProduct,
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: productsKey })
+      client.invalidateQueries({ queryKey: inventoryKey })
+      clearEditor()
     },
   })
   const changeStatus = useMutation({
@@ -1768,69 +2114,188 @@ function CatalogManagement({
   })
   const uploadImage = useMutation({
     mutationFn: async ({
-      altText,
-      file,
+      images,
       product,
     }: {
-      altText: string
-      file: File
+      images: Array<{ altText: string; file: File }>
       product: Product
     }) => {
-      const upload = await api.initiateMediaUpload({
-        filename: file.name,
-        content_type: file.type,
-        byte_size: file.size,
-      })
-      await api.uploadMediaObject(upload.upload_url, file, file.type)
-      await api.completeMediaUpload(upload.id, {
-        product_id: product.id,
-        alt_text: altText,
-      })
-      return { file, product }
+      for (const { altText, file } of images) {
+        const upload = await api.initiateMediaUpload({
+          filename: file.name,
+          content_type: file.type,
+          byte_size: file.size,
+        })
+        await api.uploadMediaObject(upload.upload_url, file, file.type)
+        await api.completeMediaUpload(upload.id, {
+          product_id: product.id,
+          alt_text: altText,
+        })
+      }
+      return api.adminProduct(product.id)
     },
-    onSuccess: ({ file, product }) => {
-      const previewUrl = URL.createObjectURL(file)
-      setImagePreviews((current) => ({
-        ...current,
-        [product.id]: previewUrl,
-      }))
-      setPreview(product)
+    onSuccess: (product) => {
+      client.invalidateQueries({ queryKey: productsKey })
+      loadProduct(product)
     },
   })
 
-  function selectImage(product: Product, file?: File) {
-    if (!file) return
-    const altText = window.prompt(
-      `Describe the image of ${product.title} for customers using assistive technology.`,
-    )
-    if (altText?.trim()) {
-      uploadImage.mutate({ altText: altText.trim(), file, product })
+  function selectImages(product: Product, files?: FileList | null) {
+    if (!files?.length) return
+    const images: Array<{ altText: string; file: File }> = []
+    for (const file of Array.from(files)) {
+      const altText = window.prompt(
+        `Describe ${file.name}, an image of ${product.title}, for customers using assistive technology.`,
+      )
+      if (altText?.trim()) images.push({ altText: altText.trim(), file })
     }
+    if (images.length > 0) uploadImage.mutate({ images, product })
+  }
+
+  function updatePersonalizationView(id: string, change: Partial<Omit<PersonalizationView, 'id' | 'printAreas'>>) {
+    setPersonalizationViews((current) => current.map((view) => view.id === id ? { ...view, ...change } : view))
+  }
+
+  function selectPersonalizationView(id: string) {
+    const view = personalizationViews.find((candidate) => candidate.id === id)
+    if (!view) return
+    setActivePersonalizationViewId(id)
+    setActivePrintAreaId(view.printAreas[0]?.id ?? DEFAULT_PRINT_AREA.id)
+  }
+
+  function addPersonalizationView() {
+    if (personalizationViews.length >= 6) return
+    const nextNumber = personalizationViews.length + 1
+    const id = `view-${Date.now()}-${nextNumber}`
+    const areaId = `area-${Date.now()}-${nextNumber}-1`
+    const view: PersonalizationView = { id, label: nextNumber === 2 ? 'Costas' : `Vista ${nextNumber}`, printAreas: [{ ...DEFAULT_PRINT_AREA, id: areaId }] }
+    setPersonalizationViews((current) => [...current, view])
+    setActivePersonalizationViewId(id)
+    setActivePrintAreaId(areaId)
+  }
+
+  function removeActivePersonalizationView() {
+    if (personalizationViews.length <= 1) return
+    const remaining = personalizationViews.filter(({ id }) => id !== activePersonalizationView.id)
+    setPersonalizationViews(remaining)
+    setActivePersonalizationViewId(remaining[0].id)
+    setActivePrintAreaId(remaining[0].printAreas[0]?.id ?? DEFAULT_PRINT_AREA.id)
+  }
+
+  function updatePrintArea(id: string, change: Partial<NamedPrintArea>) {
+    setPersonalizationViews((current) => current.map((view) => view.id === activePersonalizationView.id
+      ? { ...view, printAreas: view.printAreas.map((area) => area.id === id ? { ...area, ...change } : area) }
+      : view))
+  }
+
+  function addPrintArea() {
+    if (printAreas.length >= 8) return
+    const nextNumber = printAreas.length + 1
+    const id = `area-${Date.now()}-${nextNumber}`
+    const offset = Math.min(35, 15 + nextNumber * 5)
+    setPersonalizationViews((current) => current.map((view) => view.id === activePersonalizationView.id
+      ? { ...view, printAreas: [...view.printAreas, { id, label: `Área ${nextNumber}`, x: offset, y: offset, width: 40, height: 40, physicalWidthCm: 20, physicalHeightCm: 20 }] }
+      : view))
+    setActivePrintAreaId(id)
+  }
+
+  function removeActivePrintArea() {
+    if (printAreas.length <= 1) return
+    const remaining = printAreas.filter(({ id }) => id !== activePrintArea.id)
+    setPersonalizationViews((current) => current.map((view) => view.id === activePersonalizationView.id ? { ...view, printAreas: remaining } : view))
+    setActivePrintAreaId(remaining[0].id)
   }
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    const formElement = event.currentTarget
-    const form = new FormData(formElement)
-    const price = Number(form.get('product-price'))
+    const price = Number(productPrice)
+    if (preview) {
+      updateProduct.mutate({
+        id: preview.id,
+        categoryIds: productCategoryIds,
+        title: productTitle,
+        slug: productSlug,
+        description: productDescription,
+        search_keywords: productKeywords,
+        sku: productSku,
+        price_minor: Math.round(price * 100),
+        currency: 'EUR',
+        available_quantity: Number(productQuantity),
+        personalization,
+      })
+      return
+    }
     createProduct.mutate(
       {
-        title: String(form.get('product-title') ?? ''),
-        slug: String(form.get('product-slug') ?? ''),
-        description: String(form.get('product-description') ?? ''),
-        search_keywords: String(form.get('product-keywords') ?? ''),
+        title: productTitle,
+        slug: productSlug,
+        description: productDescription,
+        search_keywords: productKeywords,
         variants: [
           {
-            title: String(form.get('variant-title') ?? ''),
-            sku: String(form.get('variant-sku') ?? ''),
+            title: 'Default',
+            sku: productSku,
             price_minor: Math.round(price * 100),
-            currency: String(form.get('variant-currency') ?? ''),
+            currency: 'EUR',
             option_values: {},
+            available_quantity: Number(productQuantity),
           },
         ],
+        personalization,
+        categoryIds: productCategoryIds,
       },
-      { onSuccess: () => formElement.reset() },
     )
+  }
+
+  function loadProduct(product: Product, preferredViewId?: string, preferredPrintAreaId?: string) {
+    const base = product.variants[0]
+    setPreview(product)
+    setProductTitle(product.title)
+    setProductSlug(product.slug)
+    setProductSlugEdited(true)
+    setProductDescription(product.description)
+    setProductKeywords(product.search_keywords)
+    setProductSku(base?.sku ?? '')
+    setProductPrice(base ? String(base.price_minor / 100) : '')
+    setProductQuantity(String(base?.available_quantity ?? 0))
+    setProductCategoryIds(product.categories.map(({ id }) => id))
+    const config = product.personalization
+    setPersonalizationMode(config.mode as typeof personalizationMode)
+    const fallbackArea = { ...DEFAULT_PRINT_AREA, ...printAreaFromBasisPoints([config.area_x, config.area_y, config.area_width, config.area_height], DEFAULT_PRINT_AREA) }
+    const configuredViews = namedPersonalizationViews(config.views, fallbackArea, config.preview_media_id ?? product.media[0]?.id)
+    const selectedView = configuredViews.find(({ id }) => id === preferredViewId) ?? configuredViews[0]
+    setPersonalizationViews(configuredViews)
+    setActivePersonalizationViewId(selectedView.id)
+    setActivePrintAreaId(selectedView.printAreas.find(({ id }) => id === preferredPrintAreaId)?.id ?? selectedView.printAreas[0].id)
+    setTextMaxCharacters(config.text_max_characters)
+    setTextMinSize(config.text_min_size)
+    setTextMaxSize(config.text_max_size)
+    const configuredFonts = Array.isArray(config.allowed_fonts) ? config.allowed_fonts.filter((font): font is string => GOOGLE_FONT_OPTIONS.includes(font as typeof GOOGLE_FONT_OPTIONS[number])) : []
+    const configuredColors = Array.isArray(config.allowed_colors) ? config.allowed_colors.filter((color): color is string => typeof color === 'string' && /^#[0-9a-f]{6}$/i.test(color)) : []
+    setAllowedFonts((configuredFonts.length ? configuredFonts : [...GOOGLE_FONT_OPTIONS]).join(', '))
+    setAllowedColors((configuredColors.length ? configuredColors : PERSONALIZATION_COLOR_OPTIONS.map(({ value }) => value)).join(', '))
+  }
+
+  function clearEditor() {
+    setPreview(null)
+    setProductTitle('')
+    setProductSlug('')
+    setProductSlugEdited(false)
+    setProductDescription('')
+    setProductKeywords('')
+    setProductSku('')
+    setProductPrice('')
+    setProductQuantity('0')
+    setProductCategoryIds([])
+    setPersonalizationMode('none')
+    setPersonalizationViews([{ ...DEFAULT_PERSONALIZATION_VIEW, printAreas: [{ ...DEFAULT_PRINT_AREA }] }])
+    setActivePersonalizationViewId(DEFAULT_PERSONALIZATION_VIEW.id)
+    setActivePrintAreaId(DEFAULT_PRINT_AREA.id)
+    setTextMaxCharacters(35)
+    setTextMinSize(12)
+    setTextMaxSize(72)
+    setAllowedFonts('Roboto, Montserrat, Playfair Display, Dancing Script, Pacifico')
+    setAllowedColors('#111111, #ffffff, #9c5263, #1f4f78, #b3232f')
   }
 
   function submitVariant(event: FormEvent<HTMLFormElement>) {
@@ -1918,12 +2383,9 @@ function CatalogManagement({
           {products.data?.map((product) => (
             <article className="product-row" key={product.id}>
               <div className="product-thumbnail" aria-hidden="true">
-                {imagePreviews[product.id] ?? product.media[0]?.thumbnail_url ? (
+                {product.media[0]?.thumbnail_url ? (
                   <img
-                    src={
-                      imagePreviews[product.id] ??
-                      product.media[0]?.thumbnail_url
-                    }
+                    src={product.media[0]?.thumbnail_url}
                     alt=""
                   />
                 ) : (
@@ -1944,23 +2406,23 @@ function CatalogManagement({
                     product.variants[0]?.currency,
                   )}
                   {' · '}
-                  {product.variants.length} variant
-                  {product.variants.length === 1 ? '' : 's'}
+                  {product.variants[0]?.sku ?? 'No SKU'} · {product.variants[0]?.available_quantity ?? 0} in stock
                 </small>
               </div>
               <div className="product-actions">
-                <button type="button" onClick={() => setPreview(product)}>
-                  <Eye size={15} /> Preview
+                <button type="button" onClick={() => loadProduct(product)}>
+                  <Eye size={15} /> Edit
                 </button>
                 {canUpload && (
-                  <label className="product-upload">
-                    <ImageUp size={15} /> Image
+                  <label className="product-upload" aria-label="Add product photos">
+                    <ImageUp size={15} /> Photos
                     <input
                       type="file"
+                      multiple
                       accept="image/jpeg,image/png,image/webp"
                       disabled={uploadImage.isPending}
                       onChange={(event) => {
-                        selectImage(product, event.currentTarget.files?.[0])
+                        selectImages(product, event.currentTarget.files)
                         event.currentTarget.value = ''
                       }}
                     />
@@ -1991,6 +2453,20 @@ function CatalogManagement({
                     <Archive size={15} /> Archive
                   </button>
                 )}
+                {canWrite && product.status === 'archived' && (
+                  <button
+                    type="button"
+                    disabled={changeStatus.isPending}
+                    onClick={() =>
+                      changeStatus.mutate({
+                        id: product.id,
+                        status: 'active',
+                      })
+                    }
+                  >
+                    <ArchiveRestore size={15} /> Restore
+                  </button>
+                )}
               </div>
             </article>
           ))}
@@ -2005,38 +2481,56 @@ function CatalogManagement({
             <div className="panel-title">
               <Plus size={17} />
               <div>
-                <strong>New product draft</strong>
-                <span>Start with the product and its first variant.</span>
+                <strong>{preview ? 'Edit product' : 'New product draft'}</strong>
+                <span>Product details, price and available stock.</span>
               </div>
             </div>
             <label htmlFor="product-title">Product title</label>
-            <input id="product-title" name="product-title" required />
+            <input
+              id="product-title"
+              name="product-title"
+              value={productTitle}
+              onChange={(event) => {
+                const title = event.target.value
+                setProductTitle(title)
+                if (!productSlugEdited) setProductSlug(slugify(title))
+              }}
+              required
+            />
             <label htmlFor="product-slug">URL slug</label>
             <input
               id="product-slug"
               name="product-slug"
               pattern="[a-z0-9]+(?:-[a-z0-9]+)*"
               placeholder="woven-planter"
+              value={productSlug}
+              onChange={(event) => {
+                setProductSlug(event.target.value)
+                setProductSlugEdited(true)
+              }}
+              aria-describedby="product-slug-help"
               required
             />
+            <small className="field-help" id="product-slug-help">
+              Generated from the title. You can edit it before saving.
+            </small>
+            {productSlug && <small className="url-preview">/products/{productSlug}</small>}
             <label htmlFor="product-description">Description</label>
             <textarea
               id="product-description"
               name="product-description"
               rows={3}
+              maxLength={50000}
+              value={productDescription}
+              onChange={(event) => setProductDescription(event.target.value)}
             />
+            <small className="field-count">{productDescription.length.toLocaleString()} / 50,000</small>
             <label htmlFor="product-keywords">Search keywords</label>
-            <input id="product-keywords" name="product-keywords" />
-            <div className="variant-heading">First variant</div>
-            <label htmlFor="variant-title">Variant title</label>
-            <input
-              id="variant-title"
-              name="variant-title"
-              defaultValue="Default"
-              required
-            />
-            <label htmlFor="variant-sku">SKU</label>
-            <input id="variant-sku" name="variant-sku" required />
+            <input id="product-keywords" name="product-keywords" maxLength={2000} value={productKeywords} onChange={(event) => setProductKeywords(event.target.value)} />
+            <small className="field-help">Only administrators can see these keywords. They also support storefront search.</small>
+            <small className="field-count">{productKeywords.length.toLocaleString()} / 2,000</small>
+            <label htmlFor="product-sku">SKU</label>
+            <input id="product-sku" name="product-sku" maxLength={120} value={productSku} onChange={(event) => setProductSku(event.target.value)} required />
             <div className="price-fields">
               <div>
                 <label htmlFor="product-price">Price</label>
@@ -2046,32 +2540,149 @@ function CatalogManagement({
                   type="number"
                   min="0"
                   step="0.01"
+                  value={productPrice}
+                  onChange={(event) => setProductPrice(event.target.value)}
                   required
                 />
               </div>
               <div>
-                <label htmlFor="variant-currency">Currency</label>
-                <select
-                  id="variant-currency"
-                  name="variant-currency"
-                  defaultValue="EUR"
-                >
-                  <option value="EUR">EUR</option>
-                  <option value="GBP">GBP</option>
-                  <option value="USD">USD</option>
-                </select>
+                <label htmlFor="product-quantity">Stock</label>
+                <input id="product-quantity" name="product-quantity" type="number" min="0" step="1" value={productQuantity} onChange={(event) => setProductQuantity(event.target.value)} required />
               </div>
             </div>
-            {createProduct.isError && (
+            <fieldset className="product-categories">
+              <legend>Categories</legend>
+              {categories.isPending && <span>Loading categories…</span>}
+              {categories.data?.length === 0 && <span>No categories have been created yet.</span>}
+              {categories.data?.map((category) => (
+                <label key={category.id}>
+                  <input
+                    type="checkbox"
+                    checked={productCategoryIds.includes(category.id)}
+                    onChange={(event) => setProductCategoryIds((current) =>
+                      event.target.checked
+                        ? [...current, category.id]
+                        : current.filter((id) => id !== category.id)
+                    )}
+                  />
+                  <span><strong>{category.name}</strong><small>/{category.slug}</small></span>
+                </label>
+              ))}
+            </fieldset>
+            <fieldset className="personalization-settings">
+              <legend>Personalização</legend>
+              <label htmlFor="personalization-mode">O cliente pode adicionar</label>
+              <select id="personalization-mode" value={personalizationMode} onChange={(event) => setPersonalizationMode(event.target.value as typeof personalizationMode)}>
+                <option value="none">Sem personalização</option>
+                <option value="photo">Só fotografia</option>
+                <option value="text">Só texto</option>
+                <option value="photo_text">Fotografia e texto</option>
+              </select>
+              {personalizationMode !== 'none' && (
+                <>
+                  <p className="field-help">Cria uma vista para cada lado personalizável do produto. Cada vista escolhe a sua fotografia e pode ter até oito áreas de impressão.</p>
+                  <div className="personalization-view-manager">
+                    <div className="personalization-view-tabs" role="tablist" aria-label="Lados do produto">
+                      {personalizationViews.map((view, index) => <button key={view.id} type="button" role="tab" aria-selected={view.id === activePersonalizationView.id} className={view.id === activePersonalizationView.id ? 'active' : ''} onClick={() => selectPersonalizationView(view.id)}><span>{index + 1}</span>{view.label || `Vista ${index + 1}`}</button>)}
+                      <button type="button" className="personalization-view-add" disabled={personalizationViews.length >= 6} onClick={addPersonalizationView}>＋ Adicionar lado</button>
+                    </div>
+                    <div className="personalization-view-name-row">
+                      <label htmlFor="personalization-view-name">Nome do lado<input id="personalization-view-name" required maxLength={80} value={activePersonalizationView.label} onChange={(event) => updatePersonalizationView(activePersonalizationView.id, { label: event.target.value })} placeholder="Ex.: Frente, Costas ou Manga" /></label>
+                      <button type="button" disabled={personalizationViews.length <= 1} onClick={removeActivePersonalizationView}>Remover lado</button>
+                    </div>
+                  </div>
+                  {preview?.media.length ? <fieldset className="personalization-media-picker">
+                    <legend>Fotografia de {activePersonalizationView.label || 'esta vista'}</legend>
+                    <p>Escolhe a fotografia que representa este lado do produto. Não precisa de ser a fotografia principal.</p>
+                    <div>
+                      {preview.media.map((media, index) => {
+                        const selected = media.id === personalizationPreviewMedia?.id
+                        return <label key={media.id} className={selected ? 'selected' : ''}>
+                          <input type="radio" name={`personalization-preview-media-${activePersonalizationView.id}`} value={media.id} checked={selected} onChange={() => updatePersonalizationView(activePersonalizationView.id, { mediaId: media.id })} />
+                          <span className="personalization-media-thumbnail"><img src={media.thumbnail_url || media.card_url} alt={media.alt_text} /><i>{index === 0 ? 'Principal' : index + 1}</i></span>
+                          <span><strong>{index === 0 ? 'Fotografia principal' : `Fotografia ${index + 1}`}</strong><small>{media.alt_text}</small></span>
+                          <CircleCheck aria-hidden="true" />
+                        </label>
+                      })}
+                    </div>
+                    <small>A fotografia selecionada aparece abaixo apenas com as áreas deste lado.</small>
+                  </fieldset> : <p className="field-help">Guarda o produto e adiciona fotografias para poderes escolher a vista do editor.</p>}
+                  <div className="print-area-manager">
+                    <div className="print-area-tabs" role="tablist" aria-label={`Áreas de impressão de ${activePersonalizationView.label}`}>
+                      {printAreas.map((area, index) => <button key={area.id} type="button" role="tab" aria-selected={area.id === activePrintArea.id} className={area.id === activePrintArea.id ? 'active' : ''} onClick={() => setActivePrintAreaId(area.id)}><span>{index + 1}</span>{area.label || `Área ${index + 1}`}</button>)}
+                      <button type="button" className="print-area-add" disabled={printAreas.length >= 8} onClick={addPrintArea}>＋ Adicionar área</button>
+                    </div>
+                    <div className="print-area-name-row">
+                      <label htmlFor="print-area-name">Nome da área<input id="print-area-name" required maxLength={80} value={activePrintArea.label} onChange={(event) => updatePrintArea(activePrintArea.id, { label: event.target.value })} placeholder="Ex.: Bolso frontal" /></label>
+                      <button type="button" className="print-area-remove" disabled={printAreas.length <= 1} onClick={removeActivePrintArea}>Remover área</button>
+                    </div>
+                    <div className="print-area-coordinate-grid" aria-label="Ajuste fino da área selecionada">
+                      <label>Horizontal (%)<input type="number" min="0" max={100 - activePrintArea.width} step="1" value={Math.round(activePrintArea.x)} onChange={(event) => updatePrintArea(activePrintArea.id, { x: Math.max(0, Math.min(100 - activePrintArea.width, Number(event.target.value))) })} /></label>
+                      <label>Vertical (%)<input type="number" min="0" max={100 - activePrintArea.height} step="1" value={Math.round(activePrintArea.y)} onChange={(event) => updatePrintArea(activePrintArea.id, { y: Math.max(0, Math.min(100 - activePrintArea.height, Number(event.target.value))) })} /></label>
+                      <label>Largura (%)<input type="number" min="5" max={100 - activePrintArea.x} step="1" value={Math.round(activePrintArea.width)} onChange={(event) => updatePrintArea(activePrintArea.id, { width: Math.max(5, Math.min(100 - activePrintArea.x, Number(event.target.value))) })} /></label>
+                      <label>Altura (%)<input type="number" min="5" max={100 - activePrintArea.y} step="1" value={Math.round(activePrintArea.height)} onChange={(event) => updatePrintArea(activePrintArea.id, { height: Math.max(5, Math.min(100 - activePrintArea.y, Number(event.target.value))) })} /></label>
+                    </div>
+                    <div className="print-area-physical-settings" aria-label="Medidas reais da área de impressão">
+                      <span><strong>Medida real de impressão</strong><small>Define o tamanho máximo que esta área terá no produto final.</small></span>
+                      <div>
+                        <label>Largura (cm)<input type="number" min="0.5" max="200" step="0.5" value={activePrintArea.physicalWidthCm} onChange={(event) => updatePrintArea(activePrintArea.id, { physicalWidthCm: Math.max(.5, Math.min(200, Number(event.target.value))) })} /></label>
+                        <label>Altura (cm)<input type="number" min="0.5" max="200" step="0.5" value={activePrintArea.physicalHeightCm} onChange={(event) => updatePrintArea(activePrintArea.id, { physicalHeightCm: Math.max(.5, Math.min(200, Number(event.target.value))) })} /></label>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="print-area-preview">
+                    {personalizationPreviewMedia ? <div className="print-area-canvas"><img src={personalizationPreviewMedia.detail_url} alt={`Pré-visualização das áreas sobre ${personalizationPreviewMedia.alt_text}`} />
+                      {printAreas.map((area) => <EditablePrintArea key={area.id} area={area} label={`${area.label || 'Área sem nome'} · ${area.physicalWidthCm} × ${area.physicalHeightCm} cm`} active={area.id === activePrintArea.id} onActivate={() => setActivePrintAreaId(area.id)} onChange={(change) => updatePrintArea(area.id, change)} />)}
+                    </div> : <span>Escolhe uma fotografia para {activePersonalizationView.label || 'esta vista'} antes de posicionares as áreas.</span>}
+                  </div>
+                </>
+              )}
+              {(personalizationMode === 'text' || personalizationMode === 'photo_text') && (
+                <div className="text-personalization-settings">
+                  <label>Limite de caracteres<input type="number" min="1" max="500" value={textMaxCharacters} onChange={(event) => setTextMaxCharacters(Number(event.target.value))} /></label>
+                  <div className="print-area-fields">
+                    <label>Tamanho mínimo<input type="number" min="8" max="200" value={textMinSize} onChange={(event) => setTextMinSize(Number(event.target.value))} /></label>
+                    <label>Tamanho máximo<input type="number" min={textMinSize} max="300" value={textMaxSize} onChange={(event) => setTextMaxSize(Number(event.target.value))} /></label>
+                  </div>
+                  <fieldset className="personalization-option-grid"><legend>Tipos de letra disponíveis</legend>{GOOGLE_FONT_OPTIONS.map((font) => { const values = allowedFonts.split(',').map((value) => value.trim()).filter(Boolean); const selected = values.includes(font); return <label key={font} style={{ fontFamily: font }}><input type="checkbox" checked={selected} disabled={selected && values.length === 1} onChange={(event) => setAllowedFonts((current) => { const currentValues = current.split(',').map((value) => value.trim()).filter(Boolean); return (event.target.checked ? [...new Set([...currentValues, font])] : currentValues.filter((value) => value !== font)).join(', ') })} /><b>Ag</b><span>{font}</span></label> })}</fieldset>
+                  <fieldset className="personalization-color-grid"><legend>Cores disponíveis</legend>{PERSONALIZATION_COLOR_OPTIONS.map(({ value, label }) => { const values = allowedColors.split(',').map((color) => color.trim().toLowerCase()).filter(Boolean); const selected = values.includes(value); return <label key={value}><input type="checkbox" checked={selected} disabled={selected && values.length === 1} onChange={(event) => setAllowedColors((current) => { const currentValues = current.split(',').map((color) => color.trim()).filter(Boolean); return (event.target.checked ? [...new Set([...currentValues, value])] : currentValues.filter((color) => color.toLowerCase() !== value)).join(', ') })} /><i style={{ background: value }} /><span>{label}</span></label> })}</fieldset>
+                </div>
+              )}
+            </fieldset>
+            {(createProduct.isError || updateProduct.isError || deleteProduct.isError) && (
               <p className="panel-error" role="alert">
-                {createProduct.error instanceof ApiError
-                  ? createProduct.error.message
-                  : 'The draft could not be created.'}
+                {(createProduct.error ?? updateProduct.error ?? deleteProduct.error)?.message ?? 'The product could not be saved.'}
               </p>
             )}
-            <button className="primary-button" disabled={createProduct.isPending}>
-              {createProduct.isPending ? 'Creating…' : 'Create draft'}
+            <button className="primary-button" disabled={createProduct.isPending || updateProduct.isPending}>
+              {createProduct.isPending || updateProduct.isPending ? 'Saving…' : preview ? 'Save product' : 'Create draft'}
             </button>
+            {preview && <button className="secondary-button" type="button" onClick={clearEditor}>Create another product</button>}
+            {preview && <button className="danger-button" type="button" disabled={deleteProduct.isPending} onClick={() => {
+              if (window.confirm(`Permanently delete ${preview.title}? Products with sales cannot be deleted.`)) deleteProduct.mutate(preview.id)
+            }}>Delete product</button>}
+            {preview && (
+              <div className="admin-product-photos">
+                <div><strong>Product photos</strong><span>{preview.media.length} uploaded</span></div>
+                {preview.media.length > 0 && (
+                  <div className="admin-product-photo-grid">
+                    {preview.media.map((media, index) => (
+                      <figure key={media.id}>
+                        <img src={media.thumbnail_url} alt={media.alt_text} />
+                        <figcaption>{index === 0 ? 'Main photo' : `Photo ${index + 1}`}</figcaption>
+                      </figure>
+                    ))}
+                  </div>
+                )}
+                <label className="product-upload admin-photo-upload" aria-label="Add product photos">
+                  <ImageUp size={15} /> {uploadImage.isPending ? 'Uploading…' : 'Add photos'}
+                  <input type="file" multiple accept="image/jpeg,image/png,image/webp" disabled={uploadImage.isPending} onChange={(event) => {
+                    selectImages(preview, event.currentTarget.files)
+                    event.currentTarget.value = ''
+                  }} />
+                </label>
+              </div>
+            )}
           </form>
         )}
       </div>
@@ -2080,14 +2691,14 @@ function CatalogManagement({
           <button
             type="button"
             aria-label="Close product preview"
-            onClick={() => setPreview(null)}
+            onClick={clearEditor}
           >
             ×
           </button>
-          {imagePreviews[preview.id] ?? preview.media[0]?.detail_url ? (
+          {preview.media[0]?.detail_url ? (
             <img
               className="preview-art preview-image"
-              src={imagePreviews[preview.id] ?? preview.media[0]?.detail_url}
+              src={preview.media[0]?.detail_url}
               alt={preview.media[0]?.alt_text ?? ''}
             />
           ) : (
@@ -2186,6 +2797,15 @@ function formatMoney(amount?: number, currency?: string) {
     style: 'currency',
     currency,
   }).format(amount / 100)
+}
+
+function slugify(value: string) {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
 }
 
 const staffKey = ['staff'] as const

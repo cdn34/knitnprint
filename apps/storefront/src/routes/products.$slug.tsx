@@ -1,14 +1,15 @@
 import { createFileRoute, notFound } from '@tanstack/react-router'
 import {
   ArrowLeft,
+  ChevronLeft,
+  ChevronRight,
   CircleCheck,
   PackageCheck,
   PackageX,
   ShieldCheck,
-  TriangleAlert,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { cartApi, cartMutationKey } from '../cart-api'
+import { announceCartUpdate, cartApi, cartMutationKey } from '../cart-api'
 import { ContextualFaqs } from '../components/contextual-faqs'
 import { StorefrontAnnouncement, StorefrontFooter, StorefrontHeader } from '../components/storefront-shell'
 import {
@@ -52,6 +53,20 @@ function ProductPage() {
     'idle' | 'adding' | 'added' | 'error'
   >('idle')
   const [hydrated, setHydrated] = useState(false)
+  const [selectedMediaIndex, setSelectedMediaIndex] = useState(0)
+  const selectedMedia = product.media[selectedMediaIndex] ?? product.media[0]
+
+  function showPreviousPhoto() {
+    setSelectedMediaIndex((current) =>
+      current === 0 ? product.media.length - 1 : current - 1,
+    )
+  }
+
+  function showNextPhoto() {
+    setSelectedMediaIndex((current) =>
+      current === product.media.length - 1 ? 0 : current + 1,
+    )
+  }
 
   useEffect(() => setHydrated(true), [])
 
@@ -59,10 +74,11 @@ function ProductPage() {
     if (!variant || !stock || stock.state === 'sold-out') return
     setCartState('adding')
     try {
-      await cartApi.addCartItem(
+      const cart = await cartApi.addCartItem(
         { variant_id: variant.id, quantity: 1 },
         cartMutationKey(),
       )
+      announceCartUpdate(cart)
       setCartState('added')
     } catch {
       setCartState('error')
@@ -75,19 +91,44 @@ function ProductPage() {
       <StorefrontHeader />
       <main className="product-page" id="main-content" tabIndex={-1}>
         <a className="text-link page-back-link" href="/#shop"><ArrowLeft size={17} /> {t('product.backToShop')}</a>
-        <div className="product-detail-art">
-          {product.media[0] ? (
-            <img
-              className="product-detail-photo"
-              src={mediaUrl(product.media[0].detail_url)}
-              alt={product.media[0].alt_text}
-            />
-          ) : (
-            <span
-              className="product-form product-form--planter"
-              role="img"
-              aria-label={t('product.illustration', { name: product.title })}
-            />
+        <div className="product-gallery">
+          <div className={`product-detail-art${selectedMedia ? ' product-detail-art--photo' : ''}`}>
+            {selectedMedia ? (
+              <img
+                className="product-detail-photo"
+                src={mediaUrl(selectedMedia.detail_url)}
+                alt={selectedMedia.alt_text}
+              />
+            ) : (
+              <span
+                className="product-form product-form--planter"
+                role="img"
+                aria-label={t('product.illustration', { name: product.title })}
+              />
+            )}
+            {product.media.length > 1 && (
+              <div className="product-gallery-controls">
+                <button type="button" onClick={showPreviousPhoto} aria-label="Previous product photo"><ChevronLeft aria-hidden="true" /></button>
+                <span aria-live="polite">{selectedMediaIndex + 1} / {product.media.length}</span>
+                <button type="button" onClick={showNextPhoto} aria-label="Next product photo"><ChevronRight aria-hidden="true" /></button>
+              </div>
+            )}
+          </div>
+          {product.media.length > 1 && (
+            <div className="product-gallery-thumbnails" aria-label="Product photos">
+              {product.media.map((media, index) => (
+                <button
+                  type="button"
+                  key={media.id}
+                  className={index === selectedMediaIndex ? 'selected' : ''}
+                  aria-label={`Show product photo ${index + 1}`}
+                  aria-pressed={index === selectedMediaIndex}
+                  onClick={() => setSelectedMediaIndex(index)}
+                >
+                  <img src={mediaUrl(media.thumbnail_url)} alt="" />
+                </button>
+              ))}
+            </div>
           )}
         </div>
         <section className="product-detail-copy">
@@ -136,19 +177,18 @@ function ProductPage() {
               aria-live="polite"
             >
               {stock.state === 'available' && <CircleCheck aria-hidden="true" />}
-              {stock.state === 'low' && <TriangleAlert aria-hidden="true" />}
               {stock.state === 'sold-out' && <PackageX aria-hidden="true" />}
-              <span><strong>{localizedStock?.label}</strong><small>{localizedStock?.detail}</small></span>
+              <span><strong>{localizedStock?.label}</strong></span>
             </div>
           )}
-          <button
+          {product.personalization.mode !== 'none' && stock?.state !== 'sold-out' ? <a className="button button--primary personalization-start-button" href={`/products/${product.slug}/personalize`}>Começa a personalizar</a> : <button
             className="button button--primary"
             type="button"
             disabled={!hydrated || !variant || stock?.state === 'sold-out' || cartState === 'adding'}
             onClick={addToCart}
           >
             {stock?.state === 'sold-out'
-              ? t('product.unavailable')
+              ? localizedStock?.label ?? t('product.unavailable')
               : !hydrated
                 ? t('product.preparingCart')
                 : cartState === 'adding'
@@ -156,7 +196,7 @@ function ProductPage() {
                   : cartState === 'added'
                     ? t('product.added')
                     : t('product.addToCart')}
-          </button>
+          </button>}
           <div className="cart-action-status" aria-live="polite">
             {cartState === 'added' && <a href="/cart">{t('product.viewCart')}</a>}
             {cartState === 'error' && (

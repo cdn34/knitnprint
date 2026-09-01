@@ -15,7 +15,7 @@ import {
   TriangleAlert,
 } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
-import { cartApi, cartMutationKey } from '../cart-api'
+import { announceCartUpdate, cartApi, cartMutationKey } from '../cart-api'
 import { ContextualFaqs } from '../components/contextual-faqs'
 import { StorefrontAnnouncement, StorefrontFooter, StorefrontHeader } from '../components/storefront-shell'
 import { useI18n } from '../i18n'
@@ -32,6 +32,21 @@ export const Route = createFileRoute('/cart')({
   }),
   component: CartPage,
 })
+
+function personalizationSummary(value: unknown, mediaIds: string[]) {
+  if (!value || typeof value !== 'object') return 'Personalizado'
+  const customization = value as { areas?: Array<{ view_id?: unknown; photo?: unknown; text?: { content?: unknown } }>; photo?: unknown; text?: { content?: unknown } }
+  if (Array.isArray(customization.areas)) {
+    const textCount = customization.areas.filter((area) => typeof area.text?.content === 'string').length
+    const viewCount = new Set(customization.areas.flatMap((area) => typeof area.view_id === 'string' ? [area.view_id] : [])).size
+    const parts = [viewCount > 1 ? `${viewCount} lados` : '', `${customization.areas.length} área${customization.areas.length === 1 ? '' : 's'}`].filter(Boolean)
+    if (mediaIds.length) parts.push(`${mediaIds.length} fotografia${mediaIds.length === 1 ? '' : 's'}`)
+    if (textCount) parts.push(`${textCount} texto${textCount === 1 ? '' : 's'}`)
+    return `Personalizado · ${parts.join(' · ')}`
+  }
+  const text = customization.text?.content
+  return `Personalizado${mediaIds.length || customization.photo ? ' com fotografia' : ''}${typeof text === 'string' ? ` · “${text}”` : ''}`
+}
 
 function CartPage() {
   const { t, formatCurrency } = useI18n()
@@ -56,7 +71,10 @@ function CartPage() {
         if (!active) return
         setPaymentOptions(options)
         if (orderId) setOrder(resource as Order)
-        else setCart(resource as Cart)
+        else {
+          setCart(resource as Cart)
+          announceCartUpdate(resource as Cart)
+        }
       })
       .catch(() => {
         if (active) setMessage(t('cart.unavailable'))
@@ -105,13 +123,9 @@ function CartPage() {
     setBusyLine(lineId)
     setMessage('')
     try {
-      setCart(
-        await cartApi.updateCartItem(
-          lineId,
-          { quantity },
-          cartMutationKey(),
-        ),
-      )
+      const nextCart = await cartApi.updateCartItem(lineId, { quantity }, cartMutationKey())
+      setCart(nextCart)
+      announceCartUpdate(nextCart)
     } catch {
       setMessage(t('cart.quantityUnavailable'))
     } finally {
@@ -123,7 +137,9 @@ function CartPage() {
     setBusyLine(lineId)
     setMessage('')
     try {
-      setCart(await cartApi.removeCartItem(lineId, cartMutationKey()))
+      const nextCart = await cartApi.removeCartItem(lineId, cartMutationKey())
+      setCart(nextCart)
+      announceCartUpdate(nextCart)
     } catch {
       setMessage(t('cart.removeError'))
     } finally {
@@ -219,6 +235,7 @@ function CartPage() {
         cartMutationKey(),
       )
       setOrder(nextOrder)
+      announceCartUpdate({ item_count: 0 })
       if (method === 'stripe') {
         window.history.replaceState(
           null,
@@ -230,7 +247,9 @@ function CartPage() {
     } catch {
       setMessage(t('cart.orderError'))
       try {
-        setCart(await cartApi.cart())
+        const nextCart = await cartApi.cart()
+        setCart(nextCart)
+        announceCartUpdate(nextCart)
       } catch {
         // Preserve the actionable checkout error when reconciliation is unavailable.
       }
@@ -315,6 +334,7 @@ function CartPage() {
                     <div className="cart-item-copy">
                       <h3><a href={`/products/${item.product_slug}`}>{item.product_title}</a></h3>
                       <p>{item.variant_title} · {t('cart.sku')} {item.sku}</p>
+                      {Boolean(item.customization) && <p className="cart-item-personalization">{personalizationSummary(item.customization, item.customization_media_asset_ids?.length ? item.customization_media_asset_ids : item.customization_media_asset_id ? [item.customization_media_asset_id] : [])}</p>}
                       <label>
                         <span>{t('cart.quantity')}</span>
                         <select

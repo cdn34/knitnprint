@@ -6,6 +6,7 @@ use axum::{
 };
 use axum_extra::extract::cookie::{Cookie, CookieJar, SameSite};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use sha2::{Digest, Sha256};
 use sqlx::{FromRow, PgPool, Postgres, Transaction};
 use time::Duration;
@@ -31,6 +32,12 @@ const CART_DAYS: i64 = 30;
 pub struct AddCartItemRequest {
     pub variant_id: Uuid,
     pub quantity: i32,
+    #[serde(default)]
+    pub customization: Option<Value>,
+    #[serde(default)]
+    pub customization_media_asset_id: Option<Uuid>,
+    #[serde(default)]
+    pub customization_media_asset_ids: Vec<Uuid>,
 }
 
 #[derive(Deserialize, Serialize, ToSchema)]
@@ -84,6 +91,9 @@ pub struct CartItem {
     pub available_quantity: i64,
     pub available: bool,
     pub image_url: Option<String>,
+    pub customization: Option<Value>,
+    pub customization_media_asset_id: Option<Uuid>,
+    pub customization_media_asset_ids: Vec<Uuid>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -139,6 +149,9 @@ struct CartLineRow {
     currency: String,
     available_quantity: i64,
     image_url: Option<String>,
+    customization: Option<Value>,
+    customization_media_asset_id: Option<Uuid>,
+    customization_media_asset_ids: Vec<Uuid>,
 }
 
 #[derive(FromRow)]
@@ -164,6 +177,14 @@ struct VariantForCart {
     price_minor: i64,
     currency: String,
     available_quantity: i64,
+    personalization_mode: String,
+    print_areas: Value,
+    personalization_views: Value,
+    text_max_characters: i32,
+    text_min_size: i32,
+    text_max_size: i32,
+    allowed_fonts: Value,
+    allowed_colors: Value,
 }
 
 #[derive(FromRow)]
@@ -186,7 +207,7 @@ enum MutationClaim {
 
 pub async fn cleanup_expired(pool: &PgPool, batch_size: i64) -> Result<u64, sqlx::Error> {
     let result = sqlx::query(
-        r#"
+        r##"
         WITH claimed AS (
             SELECT id FROM carts
             WHERE status = 'expired' OR (status = 'active' AND expires_at <= now())
@@ -195,7 +216,7 @@ pub async fn cleanup_expired(pool: &PgPool, batch_size: i64) -> Result<u64, sqlx
             LIMIT $1
         )
         DELETE FROM carts cart USING claimed WHERE cart.id = claimed.id
-        "#,
+        "##,
     )
     .bind(batch_size)
     .execute(pool)
@@ -243,8 +264,19 @@ pub async fn add_item(
     headers: HeaderMap,
     Json(input): Json<AddCartItemRequest>,
 ) -> Response {
-    if !(1..=99).contains(&input.quantity) {
+    if !(1..=99).contains(&input.quantity) || !valid_customization(input.customization.as_ref()) {
         return invalid_quantity();
+    }
+    let mut media_ids = input.customization_media_asset_ids.clone();
+    if let Some(media_id) = input.customization_media_asset_id
+        && !media_ids.contains(&media_id)
+    {
+        media_ids.push(media_id);
+    }
+    media_ids.sort_unstable();
+    media_ids.dedup();
+    if media_ids.len() > 48 {
+        return invalid_customization();
     }
     let Some(idempotency_hash) = idempotency_hash(&headers) else {
         return invalid_idempotency_key();
@@ -256,7 +288,10 @@ pub async fn add_item(
         Ok(session) => session,
         Err(_) => return unavailable(),
     };
-    let signature = format!("add:{}:{}", input.variant_id, input.quantity);
+    let signature = format!(
+        "add:{}:{}:{:?}:{:?}",
+        input.variant_id, input.quantity, input.customization, media_ids
+    );
     let mut transaction = match pool.begin().await {
         Ok(transaction) => transaction,
         Err(_) => return unavailable(),
@@ -277,15 +312,25 @@ pub async fn add_item(
         Ok(None) => return unavailable_item(),
         Err(_) => return unavailable(),
     };
+    if !customization_allowed(&variant, input.customization.as_ref(), &media_ids) {
+        return invalid_customization();
+    }
+    for media_id in &media_ids {
+        let ready: bool = match sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM media_assets WHERE id=$1 AND status='ready' AND NOT EXISTS (SELECT 1 FROM product_media WHERE media_asset_id=$1))")
+            .bind(media_id).fetch_one(&mut *transaction).await { Ok(value) => value, Err(_) => return unavailable() };
+        if !ready {
+            return invalid_customization();
+        }
+    }
     let existing_quantity: i32 = match sqlx::query_scalar(
-        "SELECT quantity FROM cart_lines WHERE cart_id = $1 AND variant_id = $2 FOR UPDATE",
+        "SELECT quantity FROM cart_lines WHERE cart_id = $1 AND variant_id = $2 AND customization IS NULL FOR UPDATE",
     )
     .bind(session.id)
     .bind(input.variant_id)
     .fetch_optional(&mut *transaction)
     .await
     {
-        Ok(quantity) => quantity.unwrap_or(0),
+        Ok(quantity) => if input.customization.is_none() { quantity.unwrap_or(0) } else { 0 },
         Err(_) => return unavailable(),
     };
     let Some(resulting_quantity) = existing_quantity.checked_add(input.quantity) else {
@@ -294,19 +339,22 @@ pub async fn add_item(
     if resulting_quantity > 99 || i64::from(resulting_quantity) > variant.available_quantity {
         return insufficient_stock();
     }
-    if let Err(response) = ensure_currency(&mut transaction, session.id, &variant.currency).await {
-        return response;
+    if let Err(error) = ensure_currency(&mut transaction, session.id, &variant.currency).await {
+        return match error {
+            EnsureCurrencyError::Unavailable => unavailable(),
+            EnsureCurrencyError::Mismatch => currency_mismatch(),
+        };
     }
     if sqlx::query(
-        r#"
-        INSERT INTO cart_lines (id, cart_id, variant_id, quantity, unit_price_minor, currency)
-        VALUES ($1, $2, $3, $4, $5, $6)
-        ON CONFLICT (cart_id, variant_id) DO UPDATE
+        r##"
+        INSERT INTO cart_lines (id, cart_id, variant_id, quantity, unit_price_minor, currency, customization, customization_media_asset_id, customization_media_asset_ids)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        ON CONFLICT (cart_id, variant_id) WHERE customization IS NULL DO UPDATE
         SET quantity = EXCLUDED.quantity,
             unit_price_minor = EXCLUDED.unit_price_minor,
             currency = EXCLUDED.currency,
             updated_at = now()
-        "#,
+        "##,
     )
     .bind(Uuid::now_v7())
     .bind(session.id)
@@ -314,6 +362,9 @@ pub async fn add_item(
     .bind(resulting_quantity)
     .bind(variant.price_minor)
     .bind(&variant.currency)
+    .bind(&input.customization)
+    .bind(media_ids.first().copied())
+    .bind(&media_ids)
     .execute(&mut *transaction)
     .await
     .is_err()
@@ -924,7 +975,8 @@ async fn load_cart(pool: &PgPool, cart_id: Uuid) -> Result<Cart, sqlx::Error> {
                    JOIN media_assets media ON media.id = relation.media_asset_id
                    WHERE relation.product_id = product.id AND media.status = 'ready'
                    ORDER BY relation.position, media.id LIMIT 1
-               ) AS image_url
+               ) AS image_url, line.customization, line.customization_media_asset_id,
+               line.customization_media_asset_ids
         FROM cart_lines line
         JOIN product_variants variant ON variant.id = line.variant_id
         JOIN products product ON product.id = variant.product_id
@@ -994,6 +1046,9 @@ async fn load_cart(pool: &PgPool, cart_id: Uuid) -> Result<Cart, sqlx::Error> {
             available_quantity: row.available_quantity,
             available: published && enough_stock,
             image_url: row.image_url,
+            customization: row.customization,
+            customization_media_asset_id: row.customization_media_asset_id,
+            customization_media_asset_ids: row.customization_media_asset_ids,
         });
     }
     let mut discount = None;
@@ -1083,20 +1138,389 @@ async fn load_cart(pool: &PgPool, cart_id: Uuid) -> Result<Cart, sqlx::Error> {
     })
 }
 
+fn valid_customization(value: Option<&Value>) -> bool {
+    value.is_none_or(|value| value.is_object() && value.to_string().len() <= 20_000)
+}
+
+fn valid_element_frame(value: &Value) -> bool {
+    const FRAME_ROUNDING_TOLERANCE: f64 = 0.0001;
+    let Some(x) = value.get("x").and_then(Value::as_f64) else {
+        return false;
+    };
+    let Some(y) = value.get("y").and_then(Value::as_f64) else {
+        return false;
+    };
+    let Some(width) = value.get("width").and_then(Value::as_f64) else {
+        return false;
+    };
+    let Some(height) = value.get("height").and_then(Value::as_f64) else {
+        return false;
+    };
+    x >= 0.0
+        && y >= 0.0
+        && width > 0.0
+        && height > 0.0
+        && x + width <= 100.0 + FRAME_ROUNDING_TOLERANCE
+        && y + height <= 100.0 + FRAME_ROUNDING_TOLERANCE
+}
+
+fn valid_print_area_assignment(element: &Value, print_areas: &Value) -> bool {
+    let Some(area_id) = element.get("area_id").and_then(Value::as_str) else {
+        return false;
+    };
+    print_areas.as_array().is_some_and(|areas| {
+        areas
+            .iter()
+            .any(|area| area.get("id").and_then(Value::as_str) == Some(area_id))
+    })
+}
+
+fn customization_allowed(
+    variant: &VariantForCart,
+    customization: Option<&Value>,
+    media_ids: &[Uuid],
+) -> bool {
+    let version = customization
+        .and_then(|value| value.get("version"))
+        .and_then(Value::as_i64)
+        .unwrap_or(1);
+    if version >= 5 {
+        return view_customization_allowed(variant, customization, media_ids);
+    }
+    if version >= 4 {
+        return area_customization_allowed(variant, customization, media_ids);
+    }
+    if media_ids.len() > 1 {
+        return false;
+    }
+    let media_id = media_ids.first().copied();
+    let photo = customization.and_then(|value| value.get("photo"));
+    let text = customization.and_then(|value| value.get("text"));
+    let has_personalization = photo.is_some() || text.is_some();
+    let photo_upload_matches = photo.is_some() == media_id.is_some();
+    let shape_valid = match variant.personalization_mode.as_str() {
+        "none" => customization.is_none() && media_id.is_none(),
+        "photo" => {
+            text.is_none()
+                && photo_upload_matches
+                && (customization.is_none() || has_personalization)
+        }
+        "text" => {
+            photo.is_none()
+                && media_id.is_none()
+                && (customization.is_none() || has_personalization)
+        }
+        "photo_text" => photo_upload_matches && (customization.is_none() || has_personalization),
+        _ => false,
+    };
+    if !shape_valid {
+        return false;
+    }
+    if let Some(photo) = photo {
+        if !photo.is_object() {
+            return false;
+        }
+        if version >= 2 {
+            let crop_valid = photo
+                .get("crop_x")
+                .and_then(Value::as_f64)
+                .is_some_and(|value| (0.0..=100.0).contains(&value))
+                && photo
+                    .get("crop_y")
+                    .and_then(Value::as_f64)
+                    .is_some_and(|value| (0.0..=100.0).contains(&value))
+                && photo
+                    .get("scale")
+                    .and_then(Value::as_f64)
+                    .is_some_and(|value| (1.0..=3.0).contains(&value));
+            if !valid_element_frame(photo) || !crop_valid {
+                return false;
+            }
+        }
+        if version >= 3 && !valid_print_area_assignment(photo, &variant.print_areas) {
+            return false;
+        }
+    }
+    let Some(text) = text else {
+        return true;
+    };
+    let Some(content) = text.get("content").and_then(Value::as_str) else {
+        return false;
+    };
+    let Some(font) = text.get("font").and_then(Value::as_str) else {
+        return false;
+    };
+    let Some(color) = text.get("color").and_then(Value::as_str) else {
+        return false;
+    };
+    let Some(size) = text.get("size").and_then(Value::as_i64) else {
+        return false;
+    };
+    let Some(x) = text.get("x").and_then(Value::as_f64) else {
+        return false;
+    };
+    let Some(y) = text.get("y").and_then(Value::as_f64) else {
+        return false;
+    };
+    !content.trim().is_empty()
+        && content.chars().count() <= variant.text_max_characters as usize
+        && (variant.text_min_size as i64..=variant.text_max_size as i64).contains(&size)
+        && (0.0..=100.0).contains(&x)
+        && (0.0..=100.0).contains(&y)
+        && (version < 2 || valid_element_frame(text))
+        && (version < 3 || valid_print_area_assignment(text, &variant.print_areas))
+        && variant
+            .allowed_fonts
+            .as_array()
+            .is_some_and(|values| values.iter().any(|value| value.as_str() == Some(font)))
+        && variant
+            .allowed_colors
+            .as_array()
+            .is_some_and(|values| values.iter().any(|value| value.as_str() == Some(color)))
+}
+
+fn view_customization_allowed(
+    variant: &VariantForCart,
+    customization: Option<&Value>,
+    media_ids: &[Uuid],
+) -> bool {
+    if variant.personalization_mode == "none" {
+        return customization.is_none() && media_ids.is_empty();
+    }
+    let Some(areas) = customization
+        .and_then(|value| value.get("areas"))
+        .and_then(Value::as_array)
+    else {
+        return customization.is_none() && media_ids.is_empty();
+    };
+    if areas.is_empty() || areas.len() > 48 {
+        return false;
+    }
+    let Some(configured_views) = variant.personalization_views.as_array() else {
+        return false;
+    };
+    let version = customization
+        .and_then(|value| value.get("version"))
+        .and_then(Value::as_i64)
+        .unwrap_or(5);
+    let mut seen_assignments = Vec::with_capacity(areas.len());
+    let mut referenced_media_ids = Vec::new();
+    for area in areas {
+        let Some(view_id) = area.get("view_id").and_then(Value::as_str) else {
+            return false;
+        };
+        let Some(area_id) = area.get("area_id").and_then(Value::as_str) else {
+            return false;
+        };
+        if seen_assignments.contains(&(view_id, area_id)) {
+            return false;
+        }
+        let Some(configured_view) = configured_views
+            .iter()
+            .find(|configured| configured.get("id").and_then(Value::as_str) == Some(view_id))
+        else {
+            return false;
+        };
+        let Some(configured_area) = configured_view
+            .get("print_areas")
+            .and_then(Value::as_array)
+            .and_then(|configured_areas| {
+                configured_areas.iter().find(|configured| {
+                    configured.get("id").and_then(Value::as_str) == Some(area_id)
+                })
+            })
+        else {
+            return false;
+        };
+        if version >= 6 && !valid_measurement_snapshot(area, configured_view, configured_area) {
+            return false;
+        }
+        seen_assignments.push((view_id, area_id));
+        let photo = area.get("photo");
+        let text = area.get("text");
+        let shape_valid = match variant.personalization_mode.as_str() {
+            "photo" => photo.is_some() && text.is_none(),
+            "text" => text.is_some() && photo.is_none(),
+            "photo_text" => photo.is_some() || text.is_some(),
+            _ => false,
+        };
+        if !shape_valid {
+            return false;
+        }
+        if let Some(photo) = photo {
+            let Some(media_id) = valid_area_photo(photo) else {
+                return false;
+            };
+            referenced_media_ids.push(media_id);
+        }
+        if text.is_some_and(|text| !valid_area_text(text, variant)) {
+            return false;
+        }
+    }
+    referenced_media_ids.sort_unstable();
+    referenced_media_ids.dedup();
+    let mut supplied_media_ids = media_ids.to_vec();
+    supplied_media_ids.sort_unstable();
+    supplied_media_ids.dedup();
+    referenced_media_ids == supplied_media_ids
+}
+
+fn valid_measurement_snapshot(
+    customization_area: &Value,
+    configured_view: &Value,
+    configured_area: &Value,
+) -> bool {
+    let configured_dimension =
+        |key: &str| configured_area.get(key).map_or(Some(20.0), Value::as_f64);
+    let matches_dimension = |snapshot_key: &str, configured_key: &str| {
+        customization_area
+            .get(snapshot_key)
+            .and_then(Value::as_f64)
+            .zip(configured_dimension(configured_key))
+            .is_some_and(|(snapshot, configured)| (snapshot - configured).abs() <= 0.01)
+    };
+    customization_area.get("view_label").and_then(Value::as_str)
+        == configured_view.get("label").and_then(Value::as_str)
+        && customization_area.get("area_label").and_then(Value::as_str)
+            == configured_area.get("label").and_then(Value::as_str)
+        && matches_dimension("print_width_cm", "physical_width_cm")
+        && matches_dimension("print_height_cm", "physical_height_cm")
+}
+
+fn valid_area_text(text: &Value, variant: &VariantForCart) -> bool {
+    let Some(content) = text.get("content").and_then(Value::as_str) else {
+        return false;
+    };
+    let Some(font) = text.get("font").and_then(Value::as_str) else {
+        return false;
+    };
+    let Some(color) = text.get("color").and_then(Value::as_str) else {
+        return false;
+    };
+    let Some(size) = text.get("size").and_then(Value::as_i64) else {
+        return false;
+    };
+    !content.trim().is_empty()
+        && content.chars().count() <= variant.text_max_characters as usize
+        && (variant.text_min_size as i64..=variant.text_max_size as i64).contains(&size)
+        && valid_element_frame(text)
+        && variant
+            .allowed_fonts
+            .as_array()
+            .is_some_and(|values| values.iter().any(|value| value.as_str() == Some(font)))
+        && variant
+            .allowed_colors
+            .as_array()
+            .is_some_and(|values| values.iter().any(|value| value.as_str() == Some(color)))
+}
+
+fn valid_area_photo(photo: &Value) -> Option<Uuid> {
+    let crop_valid = photo
+        .get("crop_x")
+        .and_then(Value::as_f64)
+        .is_some_and(|value| (0.0..=100.0).contains(&value))
+        && photo
+            .get("crop_y")
+            .and_then(Value::as_f64)
+            .is_some_and(|value| (0.0..=100.0).contains(&value))
+        && photo
+            .get("scale")
+            .and_then(Value::as_f64)
+            .is_some_and(|value| (1.0..=3.0).contains(&value));
+    if !photo.is_object() || !valid_element_frame(photo) || !crop_valid {
+        return None;
+    }
+    photo
+        .get("media_id")
+        .and_then(Value::as_str)
+        .and_then(|value| Uuid::parse_str(value).ok())
+}
+
+fn area_customization_allowed(
+    variant: &VariantForCart,
+    customization: Option<&Value>,
+    media_ids: &[Uuid],
+) -> bool {
+    if variant.personalization_mode == "none" {
+        return customization.is_none() && media_ids.is_empty();
+    }
+    let Some(areas) = customization
+        .and_then(|value| value.get("areas"))
+        .and_then(Value::as_array)
+    else {
+        return customization.is_none() && media_ids.is_empty();
+    };
+    if areas.is_empty() || areas.len() > 8 {
+        return false;
+    }
+    let Some(configured_areas) = variant.print_areas.as_array() else {
+        return false;
+    };
+    let mut seen_area_ids: Vec<&str> = Vec::with_capacity(areas.len());
+    let mut referenced_media_ids = Vec::new();
+    for area in areas {
+        let Some(area_id) = area.get("area_id").and_then(Value::as_str) else {
+            return false;
+        };
+        if seen_area_ids.contains(&area_id)
+            || !configured_areas
+                .iter()
+                .any(|configured| configured.get("id").and_then(Value::as_str) == Some(area_id))
+        {
+            return false;
+        }
+        seen_area_ids.push(area_id);
+        let photo = area.get("photo");
+        let text = area.get("text");
+        let shape_valid = match variant.personalization_mode.as_str() {
+            "photo" => photo.is_some() && text.is_none(),
+            "text" => text.is_some() && photo.is_none(),
+            "photo_text" => photo.is_some() || text.is_some(),
+            _ => false,
+        };
+        if !shape_valid {
+            return false;
+        }
+        if let Some(photo) = photo {
+            let Some(media_id) = valid_area_photo(photo) else {
+                return false;
+            };
+            referenced_media_ids.push(media_id);
+        }
+        if text.is_some_and(|text| !valid_area_text(text, variant)) {
+            return false;
+        }
+    }
+    referenced_media_ids.sort_unstable();
+    referenced_media_ids.dedup();
+    let mut supplied_media_ids = media_ids.to_vec();
+    supplied_media_ids.sort_unstable();
+    supplied_media_ids.dedup();
+    referenced_media_ids == supplied_media_ids
+}
+
 async fn active_variant(
     transaction: &mut Transaction<'_, Postgres>,
     variant_id: Uuid,
 ) -> Result<Option<VariantForCart>, sqlx::Error> {
     sqlx::query_as(
-        r#"
+        r##"
         SELECT variant.price_minor, variant.currency::text AS currency,
-               inventory.available_quantity
+               inventory.available_quantity, COALESCE(personalization.mode, 'none') AS personalization_mode,
+               COALESCE(personalization.print_areas, '[{"id":"area-1"}]'::jsonb) AS print_areas,
+               COALESCE(personalization.views, '[{"id":"view-front","print_areas":[{"id":"area-1"}]}]'::jsonb) AS personalization_views,
+               COALESCE(personalization.text_max_characters, 35) AS text_max_characters,
+               COALESCE(personalization.text_min_size, 12) AS text_min_size,
+               COALESCE(personalization.text_max_size, 72) AS text_max_size,
+               COALESCE(personalization.allowed_fonts, '["Arial"]'::jsonb) AS allowed_fonts,
+               COALESCE(personalization.allowed_colors, '["#111111"]'::jsonb) AS allowed_colors
         FROM product_variants variant
         JOIN products product ON product.id = variant.product_id
         JOIN inventory_items inventory ON inventory.variant_id = variant.id
+        LEFT JOIN product_personalization personalization ON personalization.product_id = product.id
         WHERE variant.id = $1 AND product.status = 'active'
         FOR UPDATE OF variant, inventory
-        "#,
+        "##,
     )
     .bind(variant_id)
     .fetch_optional(&mut **transaction)
@@ -1107,18 +1531,18 @@ async fn ensure_currency(
     transaction: &mut Transaction<'_, Postgres>,
     cart_id: Uuid,
     currency: &str,
-) -> Result<(), Response> {
+) -> Result<(), EnsureCurrencyError> {
     let current: Option<String> =
         sqlx::query_scalar("SELECT currency::text FROM carts WHERE id = $1 FOR UPDATE")
             .bind(cart_id)
             .fetch_one(&mut **transaction)
             .await
-            .map_err(|_| unavailable())?;
+            .map_err(|_| EnsureCurrencyError::Unavailable)?;
     if current
         .as_deref()
         .is_some_and(|current| current != currency)
     {
-        return Err(currency_mismatch());
+        return Err(EnsureCurrencyError::Mismatch);
     }
     if current.is_none() {
         sqlx::query("UPDATE carts SET currency = $2 WHERE id = $1")
@@ -1126,9 +1550,14 @@ async fn ensure_currency(
             .bind(currency)
             .execute(&mut **transaction)
             .await
-            .map_err(|_| unavailable())?;
+            .map_err(|_| EnsureCurrencyError::Unavailable)?;
     }
     Ok(())
+}
+
+enum EnsureCurrencyError {
+    Unavailable,
+    Mismatch,
 }
 
 async fn reset_empty_currency(
@@ -1445,6 +1874,14 @@ fn invalid_quantity() -> Response {
     )
 }
 
+fn invalid_customization() -> Response {
+    error(
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "invalid_customization",
+        "The personalization does not match the options allowed for this product.",
+    )
+}
+
 fn invalid_idempotency_key() -> Response {
     error(
         StatusCode::UNPROCESSABLE_ENTITY,
@@ -1518,4 +1955,253 @@ fn invalid_discount() -> Response {
         )),
     )
         .into_response()
+}
+
+#[cfg(test)]
+mod personalization_tests {
+    use super::*;
+
+    fn variant(mode: &str) -> VariantForCart {
+        VariantForCart {
+            price_minor: 1000,
+            currency: "EUR".into(),
+            available_quantity: 10,
+            personalization_mode: mode.into(),
+            print_areas: serde_json::json!([
+                { "id": "area-1" },
+                { "id": "pocket-side" }
+            ]),
+            personalization_views: serde_json::json!([
+                { "id": "view-front", "label": "Frente", "print_areas": [{ "id": "area-1", "label": "Peito", "physical_width_cm": 30, "physical_height_cm": 35 }] },
+                { "id": "view-back", "label": "Costas", "print_areas": [{ "id": "pocket-side", "label": "Costas", "physical_width_cm": 28, "physical_height_cm": 32 }] }
+            ]),
+            text_max_characters: 35,
+            text_min_size: 12,
+            text_max_size: 72,
+            allowed_fonts: serde_json::json!(["Roboto"]),
+            allowed_colors: serde_json::json!(["#111111"]),
+        }
+    }
+
+    fn text_at(x: f64, y: f64) -> Value {
+        serde_json::json!({ "text": { "content": "Olá", "font": "Roboto", "color": "#111111", "size": 24, "x": x, "y": y } })
+    }
+
+    fn framed_text(x: f64, y: f64, width: f64, height: f64) -> Value {
+        serde_json::json!({
+            "version": 2,
+            "text": { "content": "Olá", "font": "Roboto", "color": "#111111", "size": 24, "x": x, "y": y, "width": width, "height": height }
+        })
+    }
+
+    #[test]
+    fn personalization_is_optional_for_personalizable_products() {
+        for mode in ["photo", "text", "photo_text"] {
+            assert!(customization_allowed(&variant(mode), None, &[]));
+        }
+    }
+
+    #[test]
+    fn combined_mode_accepts_partial_or_complete_personalization() {
+        let media_id = Uuid::new_v4();
+        let photo = serde_json::json!({ "version": 2, "photo": { "x": 10, "y": 10, "width": 80, "height": 60, "crop_x": 50, "crop_y": 50, "scale": 1 } });
+        let both = serde_json::json!({
+            "version": 2,
+            "photo": { "x": 10, "y": 10, "width": 80, "height": 60, "crop_x": 50, "crop_y": 50, "scale": 1 },
+            "text": { "content": "Olá", "font": "Roboto", "color": "#111111", "size": 24, "x": 15, "y": 72, "width": 70, "height": 20 }
+        });
+        assert!(customization_allowed(
+            &variant("photo_text"),
+            Some(&text_at(50.0, 50.0)),
+            &[]
+        ));
+        assert!(customization_allowed(
+            &variant("photo_text"),
+            Some(&photo),
+            &[media_id]
+        ));
+        assert!(customization_allowed(
+            &variant("photo_text"),
+            Some(&both),
+            &[media_id]
+        ));
+    }
+
+    #[test]
+    fn text_position_must_remain_inside_the_print_area() {
+        assert!(customization_allowed(
+            &variant("text"),
+            Some(&text_at(0.0, 100.0)),
+            &[]
+        ));
+        assert!(!customization_allowed(
+            &variant("text"),
+            Some(&text_at(101.0, 50.0)),
+            &[]
+        ));
+        assert!(customization_allowed(
+            &variant("text"),
+            Some(&framed_text(10.0, 20.0, 60.0, 30.0)),
+            &[]
+        ));
+        assert!(!customization_allowed(
+            &variant("text"),
+            Some(&framed_text(50.0, 20.0, 60.0, 30.0)),
+            &[]
+        ));
+    }
+
+    #[test]
+    fn photo_frame_and_crop_must_be_valid() {
+        let media_id = Uuid::new_v4();
+        let outside = serde_json::json!({
+            "version": 2,
+            "photo": { "x": 30, "y": 10, "width": 80, "height": 60, "crop_x": 50, "crop_y": 50, "scale": 1 }
+        });
+        let excessive_zoom = serde_json::json!({
+            "version": 2,
+            "photo": { "x": 10, "y": 10, "width": 80, "height": 60, "crop_x": 50, "crop_y": 50, "scale": 4 }
+        });
+        assert!(!customization_allowed(
+            &variant("photo"),
+            Some(&outside),
+            &[media_id]
+        ));
+        assert!(!customization_allowed(
+            &variant("photo"),
+            Some(&excessive_zoom),
+            &[media_id]
+        ));
+    }
+
+    #[test]
+    fn frame_validation_tolerates_browser_rounding_at_the_boundary() {
+        assert!(valid_element_frame(&serde_json::json!({
+            "x": 5.0000001,
+            "y": 10.0000001,
+            "width": 95.0,
+            "height": 90.0
+        })));
+        assert!(!valid_element_frame(&serde_json::json!({
+            "x": 5.0,
+            "y": 10.0,
+            "width": 95.01,
+            "height": 90.0
+        })));
+    }
+
+    #[test]
+    fn version_three_elements_must_use_an_available_print_area() {
+        let valid = serde_json::json!({
+            "version": 3,
+            "text": { "content": "Olá", "font": "Roboto", "color": "#111111", "size": 24, "area_id": "pocket-side", "x": 10, "y": 10, "width": 60, "height": 30 }
+        });
+        let unknown = serde_json::json!({
+            "version": 3,
+            "text": { "content": "Olá", "font": "Roboto", "color": "#111111", "size": 24, "area_id": "back", "x": 10, "y": 10, "width": 60, "height": 30 }
+        });
+        assert!(customization_allowed(&variant("text"), Some(&valid), &[]));
+        assert!(!customization_allowed(
+            &variant("text"),
+            Some(&unknown),
+            &[]
+        ));
+    }
+
+    #[test]
+    fn every_print_area_can_have_its_own_photo_and_text() {
+        let first_media_id = Uuid::new_v4();
+        let second_media_id = Uuid::new_v4();
+        let customization = serde_json::json!({
+            "version": 4,
+            "areas": [
+                {
+                    "area_id": "area-1",
+                    "photo": { "media_id": first_media_id, "x": 5, "y": 5, "width": 90, "height": 50, "crop_x": 50, "crop_y": 50, "scale": 1 },
+                    "text": { "content": "Frente", "font": "Roboto", "color": "#111111", "size": 24, "x": 10, "y": 58, "width": 80, "height": 40 }
+                },
+                {
+                    "area_id": "pocket-side",
+                    "photo": { "media_id": second_media_id, "x": 5, "y": 5, "width": 90, "height": 50, "crop_x": 50, "crop_y": 50, "scale": 1 },
+                    "text": { "content": "Bolso", "font": "Roboto", "color": "#111111", "size": 18, "x": 10, "y": 58, "width": 80, "height": 40 }
+                }
+            ]
+        });
+        assert!(customization_allowed(
+            &variant("photo_text"),
+            Some(&customization),
+            &[first_media_id, second_media_id]
+        ));
+        assert!(!customization_allowed(
+            &variant("photo_text"),
+            Some(&customization),
+            &[first_media_id]
+        ));
+    }
+
+    #[test]
+    fn every_product_view_has_independent_print_areas() {
+        let media_id = Uuid::new_v4();
+        let customization = serde_json::json!({
+            "version": 5,
+            "areas": [
+                {
+                    "view_id": "view-front",
+                    "area_id": "area-1",
+                    "photo": { "media_id": media_id, "x": 5, "y": 5, "width": 90, "height": 50, "crop_x": 50, "crop_y": 50, "scale": 1 }
+                },
+                {
+                    "view_id": "view-back",
+                    "area_id": "pocket-side",
+                    "text": { "content": "Costas", "font": "Roboto", "color": "#111111", "size": 24, "x": 10, "y": 20, "width": 80, "height": 40 }
+                }
+            ]
+        });
+        assert!(customization_allowed(
+            &variant("photo_text"),
+            Some(&customization),
+            &[media_id]
+        ));
+        let wrong_view = serde_json::json!({
+            "version": 5,
+            "areas": [{
+                "view_id": "view-front",
+                "area_id": "pocket-side",
+                "text": { "content": "Costas", "font": "Roboto", "color": "#111111", "size": 24, "x": 10, "y": 20, "width": 80, "height": 40 }
+            }]
+        });
+        assert!(!customization_allowed(
+            &variant("photo_text"),
+            Some(&wrong_view),
+            &[]
+        ));
+    }
+
+    #[test]
+    fn physical_print_measurements_are_trusted_only_when_they_match_the_product() {
+        let valid = serde_json::json!({
+            "version": 6,
+            "areas": [{
+                "view_id": "view-front",
+                "view_label": "Frente",
+                "area_id": "area-1",
+                "area_label": "Peito",
+                "print_width_cm": 30,
+                "print_height_cm": 35,
+                "text": { "content": "Olá", "font": "Roboto", "color": "#111111", "size": 24, "x": 10, "y": 20, "width": 80, "height": 40 }
+            }]
+        });
+        assert!(customization_allowed(
+            &variant("photo_text"),
+            Some(&valid),
+            &[]
+        ));
+        let mut tampered = valid;
+        tampered["areas"][0]["print_width_cm"] = serde_json::json!(60);
+        assert!(!customization_allowed(
+            &variant("photo_text"),
+            Some(&tampered),
+            &[]
+        ));
+    }
 }
