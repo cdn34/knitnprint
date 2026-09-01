@@ -320,7 +320,7 @@ h1 { margin: .25rem 0 0; font: 500 2rem Georgia, serif; }
 .customer-contact dd { margin: .35rem 0 0; overflow: hidden; font-size: .7rem; text-overflow: ellipsis; white-space: nowrap; }
 .customer-contact dd a { color: #5f4652; text-decoration: underline; text-underline-offset: 2px; }
 .customer-addresses h4 { display: flex; align-items: center; gap: .4rem; }
-.customer-addresses h4 span, .customer-orders > div > span { min-width: 20px; padding: .12rem .3rem; border-radius: 2rem; color: #5f4652; background: #eee5e9; font-size: .55rem; text-align: center; }
+.customer-addresses h4 span, .customer-orders-heading > span { min-width: 20px; padding: .12rem .3rem; border-radius: 2rem; color: #5f4652; background: #eee5e9; font-size: .55rem; text-align: center; }
 .customer-addresses article { padding: .8rem; display: grid; grid-template-columns: 22px 1fr auto; gap: .5rem; border: 1px solid #e5dcd5; border-radius: .55rem; }
 .customer-addresses article + article { margin-top: .55rem; }
 .customer-addresses article > svg { width: 16px; color: #8a6877; }
@@ -329,11 +329,23 @@ h1 { margin: .25rem 0 0; font: 500 2rem Georgia, serif; }
 .customer-addresses address span { color: #6e6864; font-size: .63rem; }
 .customer-addresses article > small { color: #765c47; font-size: .55rem; text-transform: capitalize; }
 .customer-orders { margin-top: 1rem; padding: .85rem; border-radius: .55rem; background: #f7f3ef; }
-.customer-orders > div { display: flex; align-items: center; gap: .45rem; }
-.customer-orders svg { width: 16px; color: #8a6877; }
+.customer-orders-heading { display: flex; align-items: center; gap: .45rem; }
+.customer-orders-heading > svg { width: 16px; color: #8a6877; }
 .customer-orders h4 { margin: 0; }
-.customer-orders > div > span { margin-left: auto; }
+.customer-orders-heading > span { margin-left: auto; }
 .customer-orders p { margin: .65rem 0 0 1.4rem; color: #6e6864; font-size: .65rem; }
+.customer-orders .customer-orders-error { color: #99465a; }
+.customer-order-list { margin-top: .75rem; display: grid; gap: .55rem; }
+.customer-order-record { padding: .75rem; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .5rem .8rem; border: 1px solid #e1d7d0; border-radius: .55rem; color: #2e2e2d; background: #fffdfc; text-decoration: none; transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease; }
+.customer-order-record:hover { border-color: #b98b9b; box-shadow: 0 7px 18px rgba(95, 70, 82, .09); transform: translateY(-1px); }
+.customer-order-record:focus-visible { outline: 2px solid #a8526b; outline-offset: 2px; }
+.customer-order-identity { min-width: 0; display: grid; gap: .18rem; }
+.customer-order-identity strong { font: 600 .76rem Georgia, serif; }
+.customer-order-identity small { overflow: hidden; color: #6e6864; font-size: .58rem; text-overflow: ellipsis; white-space: nowrap; }
+.customer-order-statuses { display: flex; flex-wrap: wrap; gap: .3rem; }
+.customer-order-statuses .order-state { font-size: .52rem; }
+.customer-order-total { align-self: start; color: #5f4652; font-size: .7rem; white-space: nowrap; }
+.customer-order-open { display: inline-flex; align-items: center; justify-content: end; gap: .28rem; color: #765c47; font-size: .57rem; font-weight: 700; white-space: nowrap; }
 .customer-retention { margin: 1rem 0 0; color: #6e6864; font-size: .57rem; text-align: right; }
 .staff-layout { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(300px, .6fr); gap: 1.2rem; align-items: start; }
 .staff-list, .staff-form { border: 1px solid #ded4cc; border-radius: .8rem; background: #fffdfc; }
@@ -535,6 +547,8 @@ h1 { margin: .25rem 0 0; font: 500 2rem Georgia, serif; }
   .order-list > button > b { grid-column: 2; grid-row: 2; }
   .customer-contact dl { grid-template-columns: 1fr; }
   .customer-placeholder { min-height: 220px; }
+  .customer-order-statuses { grid-column: 1 / -1; }
+  .customer-order-open { grid-column: 1 / -1; justify-content: start; }
   .inventory-toolbar { align-items: stretch; flex-direction: column; }
   .inventory-filters { padding-bottom: .15rem; overflow-x: auto; }
   .inventory-filters button { flex: 0 0 auto; }

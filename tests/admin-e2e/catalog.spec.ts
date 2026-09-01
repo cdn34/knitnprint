@@ -14,6 +14,7 @@ test('lets an owner manage commercial settings and complete an order journey', a
   const plumSku = `PLANTER-PLUM-${unique}`
   const oatSku = `PLANTER-OAT-${unique}`
   const discountCode = `BROWSER-${unique}`.toUpperCase()
+  const orderEmail = `order-${unique}@example.com`
 
   await page.goto('/')
   await page.getByLabel('Email address').fill(ownerEmail)
@@ -324,7 +325,7 @@ test('lets an owner manage commercial settings and complete an order journey', a
   await page.locator('.variant-option').filter({ hasText: 'Oat' }).click()
   await page.getByRole('button', { name: 'Add to cart' }).click()
   await page.getByRole('link', { name: 'View your cart' }).click()
-  await page.getByLabel('Email').fill(`order-${unique}@example.com`)
+  await page.getByLabel('Email').fill(orderEmail)
   await page.getByLabel('First name').fill('Order')
   await page.getByLabel('Last name').fill('Browser')
   await page.getByLabel('Recipient').fill('Order Browser')
@@ -345,7 +346,17 @@ test('lets an owner manage commercial settings and complete an order journey', a
   const orderNumber = (await page.locator('.order-confirmation .eyebrow').textContent())?.trim()
   expect(orderNumber).toMatch(/KP-\d{4}-\d{6}/)
 
-  await page.goto('http://127.0.0.1:3001/#orders')
+  await page.goto('http://127.0.0.1:3001/#customers')
+  const customers = page.getByRole('region', { name: 'Customers' })
+  await customers.getByLabel('Search customers').fill(orderEmail)
+  const customerRow = customers.getByRole('button').filter({ hasText: orderEmail })
+  await customerRow.click()
+  const customerDetail = customers.getByRole('region', { name: 'Order Browser' })
+  const customerOrderHistory = customerDetail.getByRole('region', { name: 'Order history' })
+  const customerOrderLink = customerOrderHistory.getByRole('link', { name: new RegExp(orderNumber ?? '') })
+  await expect(customerOrderLink).toContainText('1 item')
+  await customerOrderLink.click()
+
   const orders = page.getByRole('region', { name: 'Orders' })
   await expect(orders).toBeVisible()
   const orderRow = orders.getByRole('button').filter({ hasText: orderNumber ?? '' })
