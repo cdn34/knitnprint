@@ -60,15 +60,24 @@ function PersonalizeProductPage() {
   }
 
   const addToCartLabel = soldOut ? 'Produto esgotado' : status === 'adding' ? 'A adicionar…' : status === 'added' ? 'Adicionado ao carrinho' : 'Adicionar ao carrinho'
+  const feminineProduct = /^(t-?shirt|camisola|mochila|caneca|garrafa|almofada)\b/i.test(product.title.trim())
+  const creationTitle = `Cria ${feminineProduct ? 'a tua' : 'o teu'} ${product.title}`
 
   return <>
     <StorefrontAnnouncement />
     <StorefrontHeader />
     <main className="personalization-page" id="main-content">
       <header className="personalization-page-header">
-        <a className="text-link" href={`/products/${product.slug}`}><ArrowLeft /> Voltar ao produto</a>
-        <div><p>Estúdio de personalização</p><h1>{product.title}</h1><span>Cria e confirma a tua composição antes de adicionares ao carrinho.</span></div>
-        {product.variants.length > 1 && <label>Opção<select value={variant?.id} onChange={(event) => { setVariantId(event.target.value); setStatus('idle'); setErrorMessage('') }}>{product.variants.map((option) => <option key={option.id} value={option.id} disabled={variantStock(option).state === 'sold-out'}>{option.title}</option>)}</select></label>}
+        <div className="personalization-page-toolbar">
+          <a className="text-link" href={`/products/${product.slug}`}><ArrowLeft /> Voltar ao produto</a>
+          <ol className="personalization-progress" aria-label="Passo 2 de 3">
+            <li className="completed"><span>1</span><b>Produto</b></li>
+            <li className="current" aria-current="step"><span>2</span><b>Personalizar</b></li>
+            <li><span>3</span><b>Rever</b></li>
+          </ol>
+          {product.variants.length > 1 ? <label>Opção<select value={variant?.id} onChange={(event) => { setVariantId(event.target.value); setStatus('idle'); setErrorMessage('') }}>{product.variants.map((option) => <option key={option.id} value={option.id} disabled={variantStock(option).state === 'sold-out'}>{option.title}</option>)}</select></label> : <span aria-hidden="true" />}
+        </div>
+        <div className="personalization-page-intro"><p>Estúdio de personalização</p><h1>{creationTitle}</h1><span>Escolhe o lado, adiciona os elementos e posiciona-os diretamente no produto.</span></div>
       </header>
       <ProductPersonalizer config={product.personalization} productMedia={product.media.map((media) => ({ id: media.id, url: mediaUrl(media.detail_url) }))} onChange={setDesign} previewOpen={previewOpen} onPreviewClose={() => setPreviewOpen(false)} onAddToCart={requestAddToCart} addToCartDisabled={!variant || soldOut || status === 'adding'} addToCartLabel={addToCartLabel} />
       <div className="personalization-checkout-bar">
