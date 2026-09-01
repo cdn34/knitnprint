@@ -851,6 +851,19 @@ export interface UpdateCommercialSettingsRequest {
   "tax_rules": Array<TaxRuleInput>
 }
 
+export interface UpdateDiscountRequest {
+  "code": string
+  "currency": string
+  "ends_at"?: string | null
+  "kind": string
+  "minimum_order_minor"?: number
+  "per_customer_limit"?: number | null
+  "reason": string
+  "starts_at"?: string | null
+  "usage_limit"?: number | null
+  "value": number
+}
+
 export interface UpdateProductRequest {
   "available_quantity": number
   "currency": string

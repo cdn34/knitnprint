@@ -32,6 +32,7 @@ import {
   Mail,
   MapPin,
   Package,
+  Pencil,
   ReceiptText,
   Phone,
   Plus,
@@ -851,11 +852,31 @@ const discountsKey = ['discounts'] as const
 function DiscountManagement() {
   const client = useQueryClient()
   const [kind, setKind] = useState<'percentage' | 'fixed'>('percentage')
-  const discounts = useQuery({ queryKey: discountsKey, queryFn: api.listDiscounts })
+  const [editing, setEditing] = useState<Discount | null>(null)
+  const formRef = useRef<HTMLFormElement>(null)
+  const discounts = useQuery({
+    queryKey: discountsKey,
+    queryFn: api.listDiscounts,
+    refetchInterval: 15_000,
+    refetchIntervalInBackground: true,
+  })
   const createDiscount = useMutation({
     mutationFn: api.createDiscount,
     onSuccess: (discount) => {
       client.setQueryData<Discount[]>(discountsKey, (current = []) => [discount, ...current])
+      formRef.current?.reset()
+      setKind('percentage')
+    },
+  })
+  const updateDiscount = useMutation({
+    mutationFn: ({ id, input }: { id: string; input: Parameters<typeof api.updateDiscount>[1] }) =>
+      api.updateDiscount(id, input),
+    onSuccess: (discount) => {
+      client.setQueryData<Discount[]>(discountsKey, (current = []) =>
+        current.map((item) => item.id === discount.id ? discount : item),
+      )
+      setEditing(null)
+      setKind('percentage')
     },
   })
   const status = useMutation({
@@ -882,7 +903,7 @@ function DiscountManagement() {
     event.preventDefault()
     const form = new FormData(event.currentTarget)
     const enteredValue = Number(form.get('discount-value') ?? 0)
-    createDiscount.mutate({
+    const input = {
       code: String(form.get('discount-code') ?? ''),
       kind,
       value: Math.round(enteredValue * 100),
@@ -893,7 +914,26 @@ function DiscountManagement() {
       usage_limit: optionalPositive(form.get('discount-usage-limit')),
       per_customer_limit: optionalPositive(form.get('discount-customer-limit')),
       reason: String(form.get('discount-reason') ?? ''),
+    }
+    if (editing) updateDiscount.mutate({ id: editing.id, input })
+    else createDiscount.mutate(input)
+  }
+
+  function edit(discount: Discount) {
+    createDiscount.reset()
+    updateDiscount.reset()
+    setEditing(discount)
+    setKind(discount.kind as 'percentage' | 'fixed')
+    window.requestAnimationFrame(() => {
+      formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      formRef.current?.querySelector<HTMLInputElement>('[name="discount-code"]')?.focus()
     })
+  }
+
+  function cancelEdit() {
+    updateDiscount.reset()
+    setEditing(null)
+    setKind('percentage')
   }
 
   function toggle(discount: Discount) {
@@ -910,42 +950,68 @@ function DiscountManagement() {
         <div><p>Phase 10 · Pricing</p><h2 id="discounts-heading">Discounts</h2></div>
       </div>
       <div className="discounts-layout">
-        <form className="discount-form" onSubmit={submit}>
-          <h3>Create discount code</h3>
-          <label>Code<input name="discount-code" minLength={3} maxLength={32} required placeholder="WELCOME10" /></label>
+        <form ref={formRef} key={editing?.id ?? 'new'} className={`discount-form${editing ? ' discount-form--editing' : ''}`} onSubmit={submit}>
+          <div className="discount-form-heading">
+            <div>
+              <span>{editing ? 'Editing existing code' : 'New promotion'}</span>
+              <h3>{editing ? `Edit ${editing.code}` : 'Create discount code'}</h3>
+            </div>
+            {editing && <button type="button" className="discount-cancel-button" onClick={cancelEdit}>Cancel</button>}
+          </div>
+          <label>Code<input name="discount-code" minLength={3} maxLength={32} required placeholder="WELCOME10" defaultValue={editing?.code ?? ''} /></label>
           <label>Type<select name="discount-kind" value={kind} onChange={(event) => setKind(event.target.value as 'percentage' | 'fixed')}><option value="percentage">Percentage</option><option value="fixed">Fixed amount</option></select></label>
-          <label>{kind === 'percentage' ? 'Percentage' : 'Amount'}<input name="discount-value" type="number" min="0.01" max={kind === 'percentage' ? '100' : undefined} step="0.01" required /></label>
-          <label>Currency<input name="discount-currency" pattern="[A-Za-z]{3}" defaultValue="EUR" required /></label>
-          <label>Minimum order amount<input name="discount-minimum" type="number" min="0" step="0.01" defaultValue="0" /></label>
+          <label>{kind === 'percentage' ? 'Percentage' : 'Amount'}<input name="discount-value" type="number" min="0.01" max={kind === 'percentage' ? '100' : undefined} step="0.01" required defaultValue={editing ? editing.value / 100 : undefined} /></label>
+          <label>Currency<input name="discount-currency" pattern="[A-Za-z]{3}" defaultValue={editing?.currency ?? 'EUR'} required /></label>
+          <label>Minimum order amount<input name="discount-minimum" type="number" min="0" step="0.01" defaultValue={editing ? editing.minimum_order_minor / 100 : 0} /></label>
           <div className="discount-field-row">
-            <label>Starts<input name="discount-starts" type="datetime-local" /></label>
-            <label>Ends<input name="discount-ends" type="datetime-local" /></label>
+            <label>Starts<input name="discount-starts" type="datetime-local" defaultValue={dateTimeLocalValue(editing?.starts_at)} /></label>
+            <label>Ends<input name="discount-ends" type="datetime-local" defaultValue={dateTimeLocalValue(editing?.ends_at)} /></label>
           </div>
           <div className="discount-field-row">
-            <label>Global usage limit<input name="discount-usage-limit" type="number" min="1" /></label>
-            <label>Per-customer limit<input name="discount-customer-limit" type="number" min="1" /></label>
+            <label>Global usage limit<input name="discount-usage-limit" type="number" min="1" defaultValue={editing?.usage_limit ?? undefined} /></label>
+            <label>Per-customer limit<input name="discount-customer-limit" type="number" min="1" defaultValue={editing?.per_customer_limit ?? undefined} /></label>
           </div>
-          <label>Audit reason<textarea name="discount-reason" minLength={3} maxLength={500} required defaultValue="New storefront promotion" /></label>
-          <button className="primary-button" disabled={createDiscount.isPending}>{createDiscount.isPending ? 'Creating…' : 'Create discount'}</button>
+          <label>Audit reason<textarea name="discount-reason" minLength={3} maxLength={500} required defaultValue={editing ? 'Correct discount details' : 'New storefront promotion'} /></label>
+          {editing && discountHasExpired(editing) && <p className="discount-form-note">This code has expired. Set a future end date, save it, and then enable it again if you want to reuse it.</p>}
+          <button className="primary-button" disabled={createDiscount.isPending || updateDiscount.isPending}>{updateDiscount.isPending ? 'Saving…' : createDiscount.isPending ? 'Creating…' : editing ? 'Save changes' : 'Create discount'}</button>
           {createDiscount.isError && <p className="panel-error" role="alert">The discount could not be created. Check the code, dates, value, and limits.</p>}
+          {updateDiscount.isError && <p className="panel-error" role="alert">The changes could not be saved. Check whether the code already exists and whether the dates and values are valid.</p>}
         </form>
         <div className="discount-list">
           {discounts.isPending && <p className="panel-message">Loading discounts…</p>}
           {discounts.isError && <p className="panel-error" role="alert">Discounts could not be loaded.</p>}
           {discounts.data?.length === 0 && <div className="order-empty"><BadgePercent aria-hidden="true" /><strong>No discount codes yet</strong><span>Create a bounded promotion when the store needs one.</span></div>}
-          {discounts.data?.map((discount) => (
-            <article key={discount.id} className="discount-record">
-              <div><strong>{discount.code}</strong><span className={`order-state ${discount.status}`}>{discount.status}</span></div>
-              <p>{discount.kind === 'percentage' ? `${discount.value / 100}% off` : `${formatMoney(discount.value, discount.currency)} off`} · minimum {formatMoney(discount.minimum_order_minor, discount.currency)}</p>
-              <small>{discount.usage_count}{discount.usage_limit ? ` / ${discount.usage_limit}` : ''} uses{discount.per_customer_limit ? ` · ${discount.per_customer_limit} per customer` : ''}</small>
-              {(discount.starts_at || discount.ends_at) && <small>{discount.starts_at ? `Starts ${orderDate(discount.starts_at)}` : 'Active immediately'} · {discount.ends_at ? `Ends ${orderDate(discount.ends_at)}` : 'No end date'}</small>}
-              <button type="button" disabled={status.isPending} onClick={() => toggle(discount)}>{discount.status === 'active' ? 'Disable' : 'Enable'}</button>
-            </article>
-          ))}
+          {discounts.data?.map((discount) => {
+            const expired = discountHasExpired(discount)
+            return (
+              <article key={discount.id} className={`discount-record${editing?.id === discount.id ? ' discount-record--editing' : ''}`}>
+                <div className="discount-record-header"><strong>{discount.code}</strong><span className={`order-state ${discount.status}`}>{expired ? 'expired' : discount.status}</span></div>
+                <p>{discount.kind === 'percentage' ? `${discount.value / 100}% off` : `${formatMoney(discount.value, discount.currency)} off`} · minimum {formatMoney(discount.minimum_order_minor, discount.currency)}</p>
+                <small>{discount.usage_count}{discount.usage_limit ? ` / ${discount.usage_limit}` : ''} uses{discount.per_customer_limit ? ` · ${discount.per_customer_limit} per customer` : ''}</small>
+                {(discount.starts_at || discount.ends_at) && <small>{discount.starts_at ? `Starts ${orderDate(discount.starts_at)}` : 'Active immediately'} · {discount.ends_at ? `Ends ${orderDate(discount.ends_at)}` : 'No end date'}</small>}
+                {expired && <small className="discount-expired-note">Disabled automatically because its end time has passed.</small>}
+                <div className="discount-record-actions">
+                  <button type="button" onClick={() => edit(discount)}><Pencil size={13} aria-hidden="true" /> Edit</button>
+                  {!expired && <button type="button" disabled={status.isPending} onClick={() => toggle(discount)}>{discount.status === 'active' ? 'Disable' : 'Enable'}</button>}
+                </div>
+              </article>
+            )
+          })}
         </div>
       </div>
     </section>
   )
+}
+
+function dateTimeLocalValue(value?: string | null) {
+  if (!value) return ''
+  const date = new Date(value)
+  const offset = date.getTimezoneOffset() * 60_000
+  return new Date(date.getTime() - offset).toISOString().slice(0, 16)
+}
+
+function discountHasExpired(discount: Discount) {
+  return Boolean(discount.ends_at && new Date(discount.ends_at).getTime() <= Date.now())
 }
 
 const settingsKey = ['commercial-settings'] as const

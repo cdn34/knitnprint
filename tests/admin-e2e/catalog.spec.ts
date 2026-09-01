@@ -83,6 +83,13 @@ test('lets an owner manage commercial settings and complete an order journey', a
   const discountRecord = discounts.getByRole('article').filter({ hasText: discountCode })
   await expect(discountRecord).toContainText('10% off')
   await expect(discountRecord).toContainText('active')
+  await discountRecord.getByRole('button', { name: 'Edit' }).click()
+  await expect(discounts.getByLabel('Code')).toHaveValue(discountCode)
+  await expect(discounts.getByRole('spinbutton', { name: 'Percentage' })).toHaveValue('10')
+  await discounts.getByLabel('Global usage limit').fill('12')
+  await discounts.getByLabel('Audit reason').fill('Correct browser promotion details')
+  await discounts.getByRole('button', { name: 'Save changes' }).click()
+  await expect(discountRecord).toContainText('0 / 12 uses')
 
   const categoryName = `Homewares ${unique}`
   const categorySlug = `homewares-${unique}`

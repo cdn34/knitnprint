@@ -141,6 +141,10 @@ pub fn app(state: AppState) -> Router {
             get(discounts::list).post(discounts::create),
         )
         .route(
+            "/api/admin/discounts/{discount_id}",
+            axum::routing::put(discounts::update),
+        )
+        .route(
             "/api/admin/discounts/{discount_id}/status",
             axum::routing::post(discounts::change_status),
         )

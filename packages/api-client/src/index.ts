@@ -84,6 +84,7 @@ export type {
   TaxRuleInput,
   TaxSelection,
   UpdateCommercialSettingsRequest,
+  UpdateDiscountRequest,
   UpdateProductRequest,
   Variant,
   UpdateCartItemRequest,
@@ -142,6 +143,7 @@ import type {
   StaffProfile,
   StaffRecord,
   UpdateCommercialSettingsRequest,
+  UpdateDiscountRequest,
   UpdateProductRequest,
   UpdateCartItemRequest,
 } from './schema'
@@ -362,6 +364,12 @@ export function createApiClient(options: ApiClientOptions = {}) {
     createDiscount: (input: CreateDiscountRequest) =>
       send<Discount>('/api/admin/discounts', {
         method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(input),
+      }),
+    updateDiscount: (discountId: string, input: UpdateDiscountRequest) =>
+      send<Discount>(`/api/admin/discounts/${discountId}`, {
+        method: 'PUT',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(input),
       }),
