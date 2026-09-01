@@ -286,20 +286,23 @@ export function ProductPersonalizer({ config, productMedia, onChange, previewOpe
   }
 
   return <section className="personalizer" aria-labelledby="personalizer-title">
-    <div className="personalizer-heading"><p>Cria a tua peça</p><h2 id="personalizer-title">Personaliza antes de adicionar</h2><span>Alterna entre os lados do produto e cria uma composição diferente em cada área.</span></div>
-    {views.length > 1 && <div className="personalizer-view-switcher" role="tablist" aria-label="Escolher lado do produto">{views.map((view, index) => <button key={view.id} type="button" role="tab" aria-selected={view.id === activeView.id} className={view.id === activeView.id ? 'selected' : ''} onClick={() => selectView(view)}><b>{index + 1}</b><span>{view.label}</span></button>)}</div>}
+    <h2 className="sr-only" id="personalizer-title">Opções de personalização</h2>
     <div className="personalizer-layout">
       <div className="personalizer-tools">
-        <div className="personalizer-active-view"><span>Lado a personalizar</span><strong>{activeView.label}</strong></div>
-        {printAreas.length > 1 && <div className="personalizer-area-switcher" role="group" aria-label="Escolher área de impressão"><span>Área a editar</span><div>{printAreas.map((area, index) => <button key={area.id} type="button" className={activeAreaId === area.id ? 'selected' : ''} aria-pressed={activeAreaId === area.id} onClick={() => setActiveAreaId(area.id)}><b>{index + 1}</b>{area.label}</button>)}</div></div>}
+        <section className="personalizer-location-card">
+          <header className="personalizer-sidebar-heading"><span className="personalizer-step">1</span><div><strong>Escolhe onde</strong><small>{activeView.label} · {activePrintArea.label}</small></div></header>
+          <div className="personalizer-sidebar-label"><span>Lado do produto</span><small>{views.length} {views.length === 1 ? 'disponível' : 'disponíveis'}</small></div>
+          {views.length > 1 ? <div className="personalizer-view-switcher" role="tablist" aria-label="Escolher lado do produto">{views.map((view, index) => <button key={view.id} type="button" role="tab" aria-selected={view.id === activeView.id} className={view.id === activeView.id ? 'selected' : ''} onClick={() => selectView(view)}><b>{index + 1}</b><span>{view.label}</span></button>)}</div> : <div className="personalizer-single-choice"><b>1</b><span>{activeView.label}</span></div>}
+          <div className="personalizer-area-switcher" role="group" aria-label="Escolher área de impressão"><div className="personalizer-sidebar-label"><span>Área de impressão</span><small>Máx. {formatCm(activePrintArea.physicalWidthCm)} × {formatCm(activePrintArea.physicalHeightCm)} cm</small></div><div>{printAreas.map((area, index) => <button key={area.id} type="button" className={activeAreaId === area.id ? 'selected' : ''} aria-pressed={activeAreaId === area.id} onClick={() => setActiveAreaId(area.id)}><b>{index + 1}</b>{area.label}</button>)}</div></div>
+        </section>
         {wantsPhoto && <div className={`personalizer-tool${selected === 'photo' ? ' personalizer-tool--selected' : ''}`} onClick={() => setSelected('photo')}>
-          <strong><ImagePlus /> Fotografia · {activePrintArea.label}</strong>
+          <header className="personalizer-sidebar-heading"><span className="personalizer-step">2</span><div><strong><ImagePlus /> Fotografia · {activePrintArea.label}</strong><small>Opcional</small></div></header>
           <span className="personalizer-measure"><small>Tamanho final</small><b>{activePhotoMeasurement}</b></span>
           <label className="personalizer-upload">{uploadingAreas[activeDesignKey] ? 'A preparar fotografia…' : activeDesign.photoUrl ? 'Trocar fotografia' : 'Carregar fotografia'}<input type="file" accept="image/jpeg,image/png,image/webp" disabled={uploadingAreas[activeDesignKey]} onChange={(event) => void upload(activeDesignKey, event.currentTarget.files?.[0])} /></label>
-          <span className="personalizer-drag-hint"><Move /> Arrasta e dimensiona a fotografia dentro desta área.</span>
+          <span className="personalizer-drag-hint"><Move /> Arrasta e dimensiona a fotografia dentro desta área. A imagem não tem zoom.</span>
         </div>}
         {wantsText && <div className={`personalizer-tool${selected === 'text' ? ' personalizer-tool--selected' : ''}`} onClick={() => setSelected('text')}>
-          <strong><Type /> Texto · {activePrintArea.label}</strong>
+          <header className="personalizer-sidebar-heading"><span className="personalizer-step">{wantsPhoto ? 3 : 2}</span><div><strong><Type /> Texto · {activePrintArea.label}</strong><small>Opcional</small></div></header>
           <span className="personalizer-measure"><small>Caixa de texto</small><b>{activeTextMeasurement}</b></span>
           <label>O teu texto<textarea rows={2} maxLength={config.text_max_characters} value={activeDesign.text} onChange={(event) => { updateDesign(activeDesignKey, { text: event.target.value }); setSelected('text') }} placeholder="Escreve aqui" /></label>
           <small>{activeDesign.text.length} / {config.text_max_characters}</small>
