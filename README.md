@@ -64,12 +64,31 @@ Run `migrate` separately before any other one-off command. Cleanup and owner
 commands never apply migrations and are intended to work with restricted
 runtime/job database credentials. In staging and production, `cleanup_media`
 requires explicit `S3_REGION` and `S3_BUCKET` values and uses the standard AWS
-credential chain unless an explicit access-key pair is supplied.
+credential chain supplied by its task role. Deployed environments reject
+`S3_ENDPOINT`, `S3_ACCESS_KEY_ID`, and `S3_SECRET_ACCESS_KEY` so they cannot
+silently use MinIO or long-lived keys.
 
-Local product images use the private `knitnprint-media` bucket in MinIO.
-`docker compose up -d` creates the bucket automatically. The API defaults to
-the local MinIO credentials in development; production requires all five
-`S3_*` values shown in `backend/.env.example`.
+There are two separate object-storage concerns:
+
+- The admin SPA is served by Vite during development. Its staging and
+  production builds are uploaded to a dedicated private AWS S3 bucket and
+  served through CloudFront. MinIO does not replace Vite's development server,
+  because doing so would remove the normal module reload and proxy workflow.
+- Business media uploaded through the admin API—including product images and
+  future category or customer-customization assets—uses a shared object-storage
+  interface. Development and test select the private `knitnprint-media` MinIO
+  bucket; staging and production select private AWS S3 using workload-role
+  credentials. Those environments use separate buckets:
+  `knitnprint-staging-media-<account-id>` and
+  `knitnprint-production-media-<account-id>`. Startup rejects a bucket whose
+  environment prefix does not match `APP_ENV`.
+
+`docker compose up -d` creates the local media bucket automatically. Browser
+uploads use five-minute presigned PUT URLs in both MinIO and AWS S3. The shared
+storage API also supports short-lived presigned GET URLs for future private,
+authorization-checked assets. Published catalog images keep stable same-origin
+`/api/media/...` URLs so pages and CDNs can cache them; expiring S3 query strings
+are not embedded in public product or category pages.
 
 The admin starts on a session-aware login screen and proxies `/api` requests to
 the local Rust API. Both processes must be running. After signing in, refreshing
@@ -269,9 +288,10 @@ account/IP/global abuse limits in addition to the login limiter.
 Uploaded media remains quarantined until its object metadata, declared type,
 file signature, decode limits, and malware scan pass. Production requires a
 ClamAV-compatible TCP INSTREAM service in `MEDIA_SCANNER_ADDRESS`; scanner
-failure or timeout fails closed and cannot publish the object. When custom
-local `S3_ACCESS_KEY_ID`/`S3_SECRET_ACCESS_KEY` values are absent, production S3
-uses the standard AWS SDK credential chain so a workload role can be used.
+failure or timeout fails closed and cannot publish the object. Development may
+provide the local MinIO `S3_ACCESS_KEY_ID`/`S3_SECRET_ACCESS_KEY` pair. Staging
+and production reject both variables and use the standard AWS SDK credential
+chain, ensuring that AWS S3 access comes from the ECS workload role.
 
 Staff and customer sign-ins share a PostgreSQL-backed limiter with independent
 scopes. Each account allows five failed attempts in 15 minutes, each client IP

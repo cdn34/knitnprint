@@ -1,6 +1,6 @@
 use std::{env, process::ExitCode};
 
-use knitnprint_api::{config::Environment, media::MediaStorage};
+use knitnprint_api::{config::Environment, object_storage::ObjectStorage};
 use sqlx::postgres::PgPoolOptions;
 use uuid::Uuid;
 
@@ -31,9 +31,7 @@ async fn cleanup() -> Result<(u64, u64), String> {
         .connect(&database_url)
         .await
         .map_err(|error| format!("database connection failed: {error}"))?;
-    let storage = MediaStorage::from_env(environment.is_deployed())
-        .await?
-        .ok_or("media storage is required")?;
+    let storage = ObjectStorage::from_env(environment).await?;
 
     let claimed = sqlx::query_as::<_, (Uuid, String)>(
         r#"
@@ -69,15 +67,7 @@ async fn cleanup() -> Result<(u64, u64), String> {
         ];
         let mut storage_failed = false;
         for key in keys {
-            if storage
-                .client
-                .delete_object()
-                .bucket(&storage.bucket)
-                .key(key)
-                .send()
-                .await
-                .is_err()
-            {
+            if storage.delete(&key).await.is_err() {
                 storage_failed = true;
             }
         }

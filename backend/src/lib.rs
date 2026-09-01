@@ -17,6 +17,7 @@ pub mod login_rate_limit;
 pub mod media;
 pub mod media_scanner;
 pub mod notifications;
+pub mod object_storage;
 pub mod openapi;
 pub mod orders;
 pub mod payments;
@@ -43,7 +44,7 @@ use tower_http::{
 #[derive(Clone, Default)]
 pub struct AppState {
     pub database: Option<PgPool>,
-    pub media_storage: Option<media::MediaStorage>,
+    pub media_storage: Option<object_storage::ObjectStorage>,
     pub media_scanner: media_scanner::MediaScanner,
     pub email: email::EmailService,
     pub payments: payments::PaymentService,

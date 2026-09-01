@@ -1,0 +1,13 @@
+# Staging backend. Add this as backend.tf only after the first successful local-state apply.
+# Replace BUCKET_NAME with the state_bucket_name Terraform output, then run
+# terraform init -migrate-state to move this bootstrap state into S3.
+terraform {
+  backend "s3" {
+    bucket       = "BUCKET_NAME"
+    key          = "staging/bootstrap/terraform.tfstate"
+    region       = "eu-west-1"
+    encrypt      = true
+    use_lockfile = true
+    profile      = "knitnprint-administrator"
+  }
+}

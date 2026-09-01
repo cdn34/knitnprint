@@ -12,3 +12,13 @@ target/
 .env.test
 playwright-report/
 test-results/
+
+# Terraform working data, local state, saved plans, and private variable values.
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.tfvars
+!*.tfvars.example
+crash.log
+crash.*.log

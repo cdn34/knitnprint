@@ -17,7 +17,7 @@ async fn main() {
     let deployed = config.environment.is_deployed();
     init_tracing(config.environment);
     let database = connect_database(config.database_url.as_deref(), deployed).await;
-    let media_storage = knitnprint_api::media::MediaStorage::from_env(deployed)
+    let media_storage = knitnprint_api::object_storage::ObjectStorage::from_env(config.environment)
         .await
         .unwrap_or_else(|error| {
             eprintln!("invalid media storage configuration: {error}");
@@ -55,7 +55,7 @@ async fn main() {
         listener,
         app(AppState {
             database,
-            media_storage,
+            media_storage: Some(media_storage),
             media_scanner,
             email,
             payments,
