@@ -20,6 +20,7 @@ pub mod notifications;
 pub mod object_storage;
 pub mod openapi;
 pub mod orders;
+pub mod packlink;
 pub mod payments;
 pub mod security;
 pub mod settings;
@@ -48,6 +49,7 @@ pub struct AppState {
     pub media_scanner: media_scanner::MediaScanner,
     pub email: email::EmailService,
     pub payments: payments::PaymentService,
+    pub packlink: packlink::PacklinkService,
     pub trusted_proxy_hops: usize,
     pub secure_cookies: bool,
     pub manual_payments_enabled: bool,
@@ -132,6 +134,19 @@ pub fn app(state: AppState) -> Router {
             "/api/admin/categories",
             get(catalog::category_list).post(catalog::category_create),
         )
+        .route(
+            "/api/admin/categories/order",
+            axum::routing::put(catalog::category_reorder),
+        )
+        .route(
+            "/api/admin/shipping-packages",
+            get(catalog::shipping_package_list).post(catalog::shipping_package_create),
+        )
+        .route(
+            "/api/admin/shipping-packages/{profile_id}",
+            axum::routing::put(catalog::shipping_package_update)
+                .delete(catalog::shipping_package_delete),
+        )
         .route("/api/admin/inventory", get(inventory::list))
         .route("/api/admin/customers", get(customers::list))
         .route("/api/admin/customers/{customer_id}", get(customers::detail))
@@ -202,6 +217,10 @@ pub fn app(state: AppState) -> Router {
             "/api/admin/personalization/media/{media_id}/{variant}",
             get(media::admin_personalization_asset),
         )
+        .route(
+            "/api/admin/order-product/media/{media_id}/{variant}",
+            get(media::admin_order_product_asset),
+        )
         .route("/api/admin/staff", get(staff::list).post(staff::create))
         .route(
             "/api/admin/staff/{staff_id}/disable",
@@ -224,6 +243,10 @@ pub fn app(state: AppState) -> Router {
             axum::routing::post(payments::start_checkout),
         )
         .route("/api/cart", get(carts::get))
+        .route(
+            "/api/cart/shipping-quotes",
+            axum::routing::post(carts::refresh_shipping_quotes),
+        )
         .route("/api/cart/items", axum::routing::post(carts::add_item))
         .route(
             "/api/cart/discount",
@@ -268,7 +291,13 @@ pub fn app(state: AppState) -> Router {
             CorsLayer::new()
                 .allow_origin(AllowOrigin::list(allowed_origins))
                 .allow_credentials(true)
-                .allow_methods([Method::GET, Method::POST, Method::PATCH, Method::DELETE])
+                .allow_methods([
+                    Method::GET,
+                    Method::POST,
+                    Method::PUT,
+                    Method::PATCH,
+                    Method::DELETE,
+                ])
                 .allow_headers([
                     header::CONTENT_TYPE,
                     HeaderName::from_static("idempotency-key"),

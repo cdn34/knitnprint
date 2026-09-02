@@ -71,10 +71,17 @@ async fn reservation_release_and_commit_preserve_inventory_invariants() {
         release(&pool, variant_id, 1, "Invalid extra release").await,
         Err(InventoryOperationError::InsufficientReserved)
     ));
-    assert!(matches!(
-        reserve(&pool, variant_id, 8, "Unavailable reservation").await,
-        Err(InventoryOperationError::InsufficientAvailable)
-    ));
+    let backordered = reserve(&pool, variant_id, 8, "Backorder reservation")
+        .await
+        .expect("demand beyond current stock should be recorded");
+    assert_eq!(
+        (
+            backordered.available_quantity,
+            backordered.reserved_quantity,
+            backordered.committed_quantity,
+        ),
+        (-1, 8, 3)
+    );
     assert!(matches!(
         reserve(&pool, variant_id, 0, "Invalid quantity").await,
         Err(InventoryOperationError::InvalidQuantity)
@@ -119,6 +126,13 @@ async fn reservation_release_and_commit_preserve_inventory_invariants() {
                 "Order payment captured".into(),
                 None,
             ),
+            (
+                "reservation".into(),
+                -8,
+                -1,
+                "Backorder reservation".into(),
+                None,
+            ),
         ]
     );
 
@@ -126,7 +140,7 @@ async fn reservation_release_and_commit_preserve_inventory_invariants() {
 }
 
 #[tokio::test]
-async fn concurrent_reservations_cannot_oversell_a_variant() {
+async fn concurrent_reservations_record_demand_beyond_available_stock() {
     let Some(database_url) = env::var("DATABASE_URL").ok() else {
         eprintln!("skipping PostgreSQL integration test because DATABASE_URL is not set");
         return;
@@ -143,23 +157,20 @@ async fn concurrent_reservations_cannot_oversell_a_variant() {
     }
 
     let mut succeeded = 0;
-    let mut insufficient = 0;
     for reservation in reservations {
         match reservation.await.expect("reservation task should complete") {
             Ok(_) => succeeded += 1,
-            Err(InventoryOperationError::InsufficientAvailable) => insufficient += 1,
             Err(error) => panic!("unexpected reservation error: {error}"),
         }
     }
-    assert_eq!(succeeded, 5);
-    assert_eq!(insufficient, 7);
+    assert_eq!(succeeded, 12);
 
     let final_state = get_availability(&pool, variant_id)
         .await
         .expect("availability lookup should succeed")
         .expect("inventory should exist");
-    assert_eq!(final_state.available_quantity, 0);
-    assert_eq!(final_state.reserved_quantity, 5);
+    assert_eq!(final_state.available_quantity, -7);
+    assert_eq!(final_state.reserved_quantity, 12);
     assert_eq!(final_state.committed_quantity, 0);
     assert!(final_state.low_stock);
 
@@ -169,7 +180,7 @@ async fn concurrent_reservations_cannot_oversell_a_variant() {
             .fetch_one(&pool)
             .await
             .expect("movement count should be readable");
-    assert_eq!(movement_count, 5);
+    assert_eq!(movement_count, 12);
 
     cleanup(admin, pool, &schema).await;
 }
