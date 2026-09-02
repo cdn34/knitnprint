@@ -23,7 +23,10 @@ import {
   ArchiveRestore,
   BadgePercent,
   CircleCheck,
+  ChevronDown,
+  ChevronUp,
   Boxes,
+  GripVertical,
   History,
   LayoutDashboard,
   LoaderCircle,
@@ -34,6 +37,7 @@ import {
   Package,
   Pencil,
   ReceiptText,
+  Ruler,
   Phone,
   Plus,
   Search,
@@ -41,6 +45,7 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   TriangleAlert,
+  Trash2,
   UsersRound,
   UserRoundX,
 } from 'lucide-react'
@@ -50,8 +55,10 @@ import {
   type CustomerDetail,
   type CustomerSummary,
   type CommercialSettings,
+  type Category,
   type Discount,
   type Product,
+  type ShippingPackageProfile,
   type InventoryRecord,
   type Order,
   type OrderSummary,
@@ -206,7 +213,10 @@ function AdminShell({ profile }: Readonly<{ profile: StaffProfile }>) {
       ? [{ id: 'orders', label: 'Orders', icon: ReceiptText }]
       : []),
     ...(profile.capabilities.includes('catalog.read')
-      ? [{ id: 'products', label: 'Products', icon: Package }]
+      ? [
+          { id: 'products', label: 'Products', icon: Package },
+          { id: 'shipping-packages', label: 'Shipping packages', icon: Boxes },
+        ]
       : []),
     ...(profile.capabilities.includes('inventory.adjust')
       ? [{ id: 'inventory', label: 'Inventory', icon: Boxes }]
@@ -305,6 +315,8 @@ function AdminShell({ profile }: Readonly<{ profile: StaffProfile }>) {
                   ? 'Order operations.'
                 : page === 'products'
                   ? 'Product catalog.'
+                  : page === 'shipping-packages'
+                    ? 'Shipping packages.'
                   : page === 'inventory'
                     ? 'Inventory control.'
                     : page === 'customers'
@@ -335,6 +347,12 @@ function AdminShell({ profile }: Readonly<{ profile: StaffProfile }>) {
             canWrite={profile.capabilities.includes('catalog.write')}
           />
         )}
+        {page === 'shipping-packages' &&
+          profile.capabilities.includes('catalog.read') && (
+            <ShippingPackageManagement
+              canWrite={profile.capabilities.includes('catalog.write')}
+            />
+          )}
         {page === 'inventory' &&
           profile.capabilities.includes('inventory.adjust') && (
             <InventoryManagement initialVariantId={target.entityId} />
@@ -623,6 +641,19 @@ function OrderDetail({
         <span>{order.shipping.method_name} <b>{formatMoney(order.shipping_minor, order.currency)}</b></span>
         <span>Tax ({order.tax.rate_basis_points / 100}%) <b>{formatMoney(order.tax_minor, order.currency)}</b></span>
       </div>
+      {order.shipping.provider === 'packlink' && (
+        <section className="order-shipping-service" aria-label="Packlink shipping service">
+          <div>
+            <span>Packlink PRO</span>
+            <strong>{order.shipping.carrier_name} · {order.shipping.method_name}</strong>
+          </div>
+          <dl>
+            <div><dt>Origin handoff</dt><dd>{order.shipping.departure_dropoff ? 'Take to a drop-off point' : 'Carrier collection in Anadia'}</dd></div>
+            <div><dt>Estimated transit</dt><dd>{order.shipping.transit_hours > 0 ? `${Math.max(1, Math.ceil(order.shipping.transit_hours / 24))} day(s)` : 'Provided by carrier'}</dd></div>
+            <div><dt>Service reference</dt><dd>{order.shipping.external_service_id}</dd></div>
+          </dl>
+        </section>
+      )}
       {canRecordPayment && order.payment.provider === 'manual' && order.payment_status === 'pending' && (
         <button className="primary-button" type="button" disabled={paymentPending} onClick={() => onRecordPayment(order)}>
           {paymentPending ? 'Recording…' : 'Record manual payment'}
@@ -673,11 +704,15 @@ function OrderDetail({
         {order.lines.map((line) => {
           const mediaIds = line.customization_media_asset_ids?.length ? line.customization_media_asset_ids : line.customization_media_asset_id ? [line.customization_media_asset_id] : []
           const productionSpecs = customizationProductionSpecs(line.customization)
-          return <div className="order-line order-line--customizable" key={line.id}>
-            {mediaIds.length > 0 && <div className="order-customization-images">{mediaIds.map((mediaId, index) => <a key={mediaId} href={`/api/admin/personalization/media/${mediaId}/detail`} target="_blank" rel="noreferrer"><img className="order-customization-image" src={`/api/admin/personalization/media/${mediaId}/thumbnail`} alt={`Fotografia ${index + 1} enviada pelo cliente`} /></a>)}</div>}
-            <span><strong>{line.product_title}</strong><small>{line.variant_title} · {line.sku} · Qty {line.quantity} · Shipped {line.fulfilled_quantity}</small>{Boolean(line.customization) && <small className="order-customization-summary">Personalização: {customizationLabel(line.customization)}</small>}{productionSpecs.length > 0 && <span className="order-customization-specs">{productionSpecs.map((spec) => <span className="order-customization-spec" key={spec.key}><strong>{spec.title}</strong>{spec.photo && <small>{spec.photo}</small>}{spec.text && <small>{spec.text}</small>}</span>)}</span>}</span>
-            <b>{formatMoney(line.line_total_minor, line.currency)}</b>
-          </div>
+          return <article className="order-item-card" key={line.id}>
+            <header className="order-item-card-heading">
+              <span><strong>{line.product_title}</strong><small>{line.variant_title} · {line.sku} · Qty {line.quantity} · Shipped {line.fulfilled_quantity}</small>{Boolean(line.customization) && <small className="order-customization-summary">Personalização: {customizationLabel(line.customization)}</small>}</span>
+              <b>{formatMoney(line.line_total_minor, line.currency)}</b>
+            </header>
+            {Boolean(line.customization) && <OrderPersonalizationProof line={line} />}
+            {productionSpecs.length > 0 && <div className="order-customization-specs">{productionSpecs.map((spec) => <span className="order-customization-spec" key={spec.key}><strong>{spec.title}</strong>{spec.photo && <small>{spec.photo}</small>}{spec.text && <small>{spec.text}</small>}</span>)}</div>}
+            {mediaIds.length > 0 && <div className="order-originals"><span>Ficheiros originais no MinIO</span><div>{mediaIds.map((mediaId, index) => <a key={mediaId} href={`/api/admin/personalization/media/${mediaId}/original`}><img src={`/api/admin/personalization/media/${mediaId}/thumbnail`} alt="" />Descarregar original {index + 1}</a>)}</div></div>}
+          </article>
         })}
       </section>
       {canRecordPayment && order.payment_status === 'paid' && order.fulfillment_status !== 'fulfilled' && (
@@ -809,12 +844,15 @@ function customizationLabel(value: unknown) {
   return parts.join(' + ') || 'configuração guardada'
 }
 
-type CustomizationElementSnapshot = { width?: unknown; height?: unknown }
+type CustomizationElementSnapshot = { x?: unknown; y?: unknown; width?: unknown; height?: unknown }
+type CustomizationPhotoSnapshot = CustomizationElementSnapshot & { media_id?: unknown }
 type CustomizationTextSnapshot = CustomizationElementSnapshot & { content?: unknown; font?: unknown; color?: unknown; size?: unknown }
+type CustomizationReferenceSnapshot = { article_width_cm?: unknown; article_height_cm?: unknown; print_left_cm?: unknown; print_top_cm?: unknown }
 type CustomizationAreaSnapshot = {
   view_id?: unknown; view_label?: unknown; area_id?: unknown; area_label?: unknown
   print_width_cm?: unknown; print_height_cm?: unknown
-  photo?: CustomizationElementSnapshot; text?: CustomizationTextSnapshot
+  article_reference?: CustomizationReferenceSnapshot
+  photo?: CustomizationPhotoSnapshot; text?: CustomizationTextSnapshot
 }
 
 function customizationProductionSpecs(value: unknown) {
@@ -827,6 +865,16 @@ function customizationProductionSpecs(value: unknown) {
     const height = typeof element?.height === 'number' ? element.height : undefined
     return width !== undefined && height !== undefined ? `${formatCm(printWidth * width / 100)} × ${formatCm(printHeight * height / 100)} cm` : undefined
   }
+  const elementPosition = (element: CustomizationElementSnapshot | undefined, reference: CustomizationReferenceSnapshot | undefined, printWidth: number, printHeight: number) => {
+    const values = [element?.x, element?.y, element?.width, element?.height, reference?.article_width_cm, reference?.article_height_cm, reference?.print_left_cm, reference?.print_top_cm]
+    if (values.some((measurement) => typeof measurement !== 'number')) return undefined
+    const [x, y, width, height, articleWidth, articleHeight, printLeft, printTop] = values as number[]
+    const left = printLeft + printWidth * x / 100
+    const top = printTop + printHeight * y / 100
+    const right = articleWidth - left - printWidth * width / 100
+    const bottom = articleHeight - top - printHeight * height / 100
+    return `topo ${formatCm(top)} cm · esquerda ${formatCm(left)} cm · direita ${formatCm(right)} cm · fundo ${formatCm(bottom)} cm`
+  }
   return areas.flatMap((rawArea, index) => {
     if (!rawArea || typeof rawArea !== 'object') return []
     const area = rawArea as CustomizationAreaSnapshot
@@ -835,18 +883,90 @@ function customizationProductionSpecs(value: unknown) {
     const areaLabel = typeof area.area_label === 'string' ? area.area_label : `Área ${index + 1}`
     const photoMeasure = elementMeasure(area.photo, area.print_width_cm, area.print_height_cm)
     const textMeasure = elementMeasure(area.text, area.print_width_cm, area.print_height_cm)
+    const photoPosition = elementPosition(area.photo, area.article_reference, area.print_width_cm, area.print_height_cm)
+    const textPosition = elementPosition(area.text, area.article_reference, area.print_width_cm, area.print_height_cm)
     const textContent = typeof area.text?.content === 'string' ? area.text.content : undefined
     const font = typeof area.text?.font === 'string' ? area.text.font : undefined
     const color = typeof area.text?.color === 'string' ? area.text.color : undefined
     const size = typeof area.text?.size === 'number' ? area.text.size : undefined
-    const textDetails = textContent ? [`Texto “${textContent}”`, font, color, size !== undefined ? `tamanho de letra ${size}` : '', textMeasure ? `caixa ${textMeasure}` : ''].filter(Boolean).join(' · ') : undefined
+    const textDetails = textContent ? [`Texto “${textContent}”`, font, color, size !== undefined ? `tamanho de letra ${size}` : '', textMeasure ? `caixa ${textMeasure}` : '', textPosition ? `posição: ${textPosition}` : ''].filter(Boolean).join(' · ') : undefined
     return [{
       key: `${String(area.view_id ?? index)}:${String(area.area_id ?? index)}`,
       title: `${viewLabel} · ${areaLabel} — área máxima ${formatCm(area.print_width_cm)} × ${formatCm(area.print_height_cm)} cm`,
-      photo: photoMeasure ? `Fotografia a imprimir: ${photoMeasure}` : undefined,
+      photo: photoMeasure ? `Fotografia a imprimir: ${photoMeasure}${photoPosition ? ` · posição: ${photoPosition}` : ''}` : undefined,
       text: textDetails,
     }]
   })
+}
+
+type ProofFrame = { x: number; y: number; width: number; height: number }
+type OrderProofArea = {
+  id: string
+  label: string
+  frame: ProofFrame
+  photo?: CustomizationPhotoSnapshot
+  text?: CustomizationTextSnapshot
+}
+type OrderProofView = { id: string; label: string; mediaId?: string; areas: OrderProofArea[] }
+
+function proofFrame(value: unknown, basisPoints = false): ProofFrame | undefined {
+  if (!value || typeof value !== 'object') return undefined
+  const candidate = value as CustomizationElementSnapshot
+  const values = [candidate.x, candidate.y, candidate.width, candidate.height]
+  if (values.some((item) => typeof item !== 'number' || !Number.isFinite(item))) return undefined
+  const [x, y, width, height] = values as number[]
+  const divisor = basisPoints ? 100 : 1
+  if (width <= 0 || height <= 0) return undefined
+  return { x: x / divisor, y: y / divisor, width: width / divisor, height: height / divisor }
+}
+
+function orderPersonalizationProofs(customization: unknown, context: unknown): OrderProofView[] {
+  if (!customization || typeof customization !== 'object' || !context || typeof context !== 'object') return []
+  const customizedAreas = (customization as { areas?: unknown }).areas
+  const configuredViews = (context as { views?: unknown }).views
+  if (!Array.isArray(customizedAreas) || !Array.isArray(configuredViews)) return []
+  return configuredViews.flatMap((rawView, viewIndex) => {
+    if (!rawView || typeof rawView !== 'object') return []
+    const view = rawView as { id?: unknown; label?: unknown; media_id?: unknown; print_areas?: unknown }
+    const viewId = typeof view.id === 'string' ? view.id : `view-${viewIndex + 1}`
+    const matching = customizedAreas.filter((rawArea): rawArea is CustomizationAreaSnapshot => Boolean(rawArea && typeof rawArea === 'object' && (rawArea as CustomizationAreaSnapshot).view_id === viewId))
+    if (!matching.length || !Array.isArray(view.print_areas)) return []
+    const configuredAreas = view.print_areas
+    const areas = matching.flatMap((customizedArea, areaIndex) => {
+      const configuredArea = configuredAreas.find((candidate: unknown) => Boolean(candidate && typeof candidate === 'object' && (candidate as { id?: unknown }).id === customizedArea.area_id))
+      const frame = proofFrame(configuredArea, true)
+      if (!frame) return []
+      return [{
+        id: typeof customizedArea.area_id === 'string' ? customizedArea.area_id : `area-${areaIndex + 1}`,
+        label: typeof customizedArea.area_label === 'string' ? customizedArea.area_label : `Área ${areaIndex + 1}`,
+        frame,
+        photo: customizedArea.photo,
+        text: customizedArea.text,
+      }]
+    })
+    if (!areas.length) return []
+    return [{ id: viewId, label: typeof view.label === 'string' ? view.label : `Vista ${viewIndex + 1}`, mediaId: typeof view.media_id === 'string' ? view.media_id : undefined, areas }]
+  })
+}
+
+function OrderPersonalizationProof({ line }: Readonly<{ line: Order['lines'][number] }>) {
+  const proofs = orderPersonalizationProofs(line.customization, line.personalization_context)
+  if (!proofs.length) return <p className="order-proof-unavailable"><Ruler aria-hidden="true" />A composição e as medidas estão guardadas. A prova visual completa ficará disponível nas novas encomendas criadas com esta versão.</p>
+  return <section className="order-production-proof" aria-label="Prova visual da personalização">
+    <header><span>Prova de produção</span><small>Composição guardada no momento da compra</small></header>
+    <div className="order-proof-grid">{proofs.map((view) => <figure className="order-proof-view" key={view.id}>
+      <figcaption><strong>{view.label}</strong><span>{view.areas.length} área{view.areas.length === 1 ? '' : 's'} personalizada{view.areas.length === 1 ? '' : 's'}</span></figcaption>
+      {view.mediaId ? <div className="order-proof-canvas">
+        <img className="order-proof-product" src={`/api/admin/order-product/media/${view.mediaId}/detail`} alt={`${line.product_title} · ${view.label}`} />
+        {view.areas.map((area) => <div className="order-proof-print-area" key={area.id} style={{ left: `${area.frame.x}%`, top: `${area.frame.y}%`, width: `${area.frame.width}%`, height: `${area.frame.height}%` }}>
+          <span className="order-proof-area-label">{area.label}</span>
+          {area.photo && typeof area.photo.media_id === 'string' && proofFrame(area.photo) && <div className="order-proof-element" style={{ left: `${proofFrame(area.photo)!.x}%`, top: `${proofFrame(area.photo)!.y}%`, width: `${proofFrame(area.photo)!.width}%`, height: `${proofFrame(area.photo)!.height}%` }}><img src={`/api/admin/personalization/media/${area.photo.media_id}/detail`} alt={`Fotografia personalizada · ${area.label}`} /></div>}
+          {area.text && typeof area.text.content === 'string' && proofFrame(area.text) && <div className="order-proof-element order-proof-element--text" style={{ left: `${proofFrame(area.text)!.x}%`, top: `${proofFrame(area.text)!.y}%`, width: `${proofFrame(area.text)!.width}%`, height: `${proofFrame(area.text)!.height}%` }}><span style={{ color: typeof area.text.color === 'string' ? area.text.color : '#111111', fontFamily: typeof area.text.font === 'string' ? area.text.font : 'Roboto', fontSize: typeof area.text.size === 'number' ? `${area.text.size / 6.2}cqw` : '4cqw' }}>{area.text.content}</span></div>}
+        </div>)}
+        </div>
+      : <div className="order-proof-image-missing">Fotografia do produto indisponível</div>}
+    </figure>)}</div>
+  </section>
 }
 
 const discountsKey = ['discounts'] as const
@@ -1262,7 +1382,15 @@ function SettingsManagement() {
               <h3>Integration health</h3>
               <div className="integration-grid">
                 {Object.entries(settings.data.integrations).map(([name, status]) => (
-                  <div key={name}><span>{name.replaceAll('_', ' ')}</span><strong>{status.replaceAll('_', ' ')}</strong></div>
+                  typeof status === 'string' ? (
+                    <div key={name}><span>{name.replaceAll('_', ' ')}</span><strong>{status.replaceAll('_', ' ')}</strong></div>
+                  ) : (
+                    <div key={name} className="integration-packlink">
+                      <span>Packlink PRO</span>
+                      <strong>{status.status === 'configured' ? 'configured' : 'awaiting API key'}</strong>
+                      <small>{status.origin} · {status.package}</small>
+                    </div>
+                  )
                 ))}
               </div>
               <p className="settings-note">This page reports configuration state only. Credentials and secrets remain in the runtime environment.</p>
@@ -1693,7 +1821,7 @@ function InventoryManagement({ initialVariantId }: Readonly<{ initialVariantId?:
   const counts = {
     all: records.length,
     attention: records.filter(({ low_stock }) => low_stock).length,
-    out: records.filter(({ available_quantity }) => available_quantity === 0).length,
+    out: records.filter(({ available_quantity }) => available_quantity <= 0).length,
     healthy: records.filter(({ low_stock }) => !low_stock).length,
   }
   const visibleInventory = useMemo(() => {
@@ -1707,7 +1835,7 @@ function InventoryManagement({ initialVariantId }: Readonly<{ initialVariantId?:
       const matchesFilter =
         filter === 'all' ||
         (filter === 'attention' && record.low_stock) ||
-        (filter === 'out' && record.available_quantity === 0) ||
+        (filter === 'out' && record.available_quantity <= 0) ||
         (filter === 'healthy' && !record.low_stock)
       return matchesQuery && matchesFilter
     })
@@ -1866,7 +1994,8 @@ const PERSONALIZATION_COLOR_OPTIONS = [
 
 type PrintArea = { x: number; y: number; width: number; height: number }
 type NamedPrintArea = PrintArea & { id: string; label: string; physicalWidthCm: number; physicalHeightCm: number }
-type PersonalizationView = { id: string; label: string; mediaId?: string; printAreas: NamedPrintArea[] }
+type ArticleReference = PrintArea & { physicalWidthCm: number; physicalHeightCm: number; configured: boolean }
+type PersonalizationView = { id: string; label: string; mediaId?: string; articleReference?: ArticleReference; printAreas: NamedPrintArea[] }
 const DEFAULT_PRINT_AREA: NamedPrintArea = { id: 'area-1', label: 'Área 1', x: 25, y: 25, width: 50, height: 50, physicalWidthCm: 20, physicalHeightCm: 20 }
 const DEFAULT_PERSONALIZATION_VIEW: PersonalizationView = { id: 'view-front', label: 'Frente', printAreas: [{ ...DEFAULT_PRINT_AREA }] }
 
@@ -1892,6 +2021,75 @@ function namedPrintAreas(value: unknown, fallback: NamedPrintArea): NamedPrintAr
   return areas.length ? areas.slice(0, 8) : [{ ...fallback }]
 }
 
+function namedArticleReference(value: unknown): ArticleReference | undefined {
+  if (!value || typeof value !== 'object') return undefined
+  const candidate = value as Record<string, unknown>
+  const frame = printAreaFromBasisPoints([candidate.x, candidate.y, candidate.width, candidate.height], { x: 0, y: 0, width: 100, height: 100 })
+  const physicalWidthCm = typeof candidate.physical_width_cm === 'number' && Number.isFinite(candidate.physical_width_cm) ? candidate.physical_width_cm : 50
+  const physicalHeightCm = typeof candidate.physical_height_cm === 'number' && Number.isFinite(candidate.physical_height_cm) ? candidate.physical_height_cm : 70
+  return { ...frame, physicalWidthCm, physicalHeightCm, configured: candidate.configured === true }
+}
+
+function effectivePrintAreaDimensions(view: PersonalizationView, area: NamedPrintArea) {
+  const reference = view.articleReference
+  if (!reference?.configured) return { width: area.physicalWidthCm, height: area.physicalHeightCm }
+  return {
+    width: Math.round(reference.physicalWidthCm * area.width / reference.width * 100) / 100,
+    height: Math.round(reference.physicalHeightCm * area.height / reference.height * 100) / 100,
+  }
+}
+
+function serializedPrintArea(view: PersonalizationView, area: NamedPrintArea) {
+  const physical = effectivePrintAreaDimensions(view, area)
+  return { id: area.id, label: area.label.trim(), x: Math.round(area.x * 100), y: Math.round(area.y * 100), width: Math.round(area.width * 100), height: Math.round(area.height * 100), physical_width_cm: physical.width, physical_height_cm: physical.height }
+}
+
+function serializedArticleReference(reference: ArticleReference | undefined) {
+  if (!reference) return null
+  return { configured: reference.configured, x: Math.round(reference.x * 100), y: Math.round(reference.y * 100), width: Math.round(reference.width * 100), height: Math.round(reference.height * 100), physical_width_cm: reference.physicalWidthCm, physical_height_cm: reference.physicalHeightCm }
+}
+
+function articleReferenceFromAreas(areas: NamedPrintArea[]): ArticleReference {
+  const first = areas[0] ?? DEFAULT_PRINT_AREA
+  const minX = Math.min(...areas.map(({ x }) => x))
+  const minY = Math.min(...areas.map(({ y }) => y))
+  const maxX = Math.max(...areas.map(({ x, width }) => x + width))
+  const maxY = Math.max(...areas.map(({ y, height }) => y + height))
+  const x = Math.max(0, minX - 8)
+  const y = Math.max(0, minY - 8)
+  const width = Math.min(100, maxX + 8) - x
+  const height = Math.min(100, maxY + 8) - y
+  return {
+    x, y, width, height,
+    physicalWidthCm: Math.round(Math.min(300, Math.max(.5, first.physicalWidthCm * width / first.width)) * 10) / 10,
+    physicalHeightCm: Math.round(Math.min(300, Math.max(.5, first.physicalHeightCm * height / first.height)) * 10) / 10,
+    configured: false,
+  }
+}
+
+function referenceContainingAreas(reference: ArticleReference, areas: NamedPrintArea[]): ArticleReference {
+  const minX = Math.min(...areas.map(({ x }) => x))
+  const minY = Math.min(...areas.map(({ y }) => y))
+  const maxX = Math.max(...areas.map(({ x, width }) => x + width))
+  const maxY = Math.max(...areas.map(({ y, height }) => y + height))
+  const x = Math.min(reference.x, minX)
+  const y = Math.min(reference.y, minY)
+  return { ...reference, x, y, width: Math.min(100 - x, Math.max(reference.x + reference.width, maxX) - x), height: Math.min(100 - y, Math.max(reference.y + reference.height, maxY) - y), configured: false }
+}
+
+function areaInsideReference(area: NamedPrintArea, reference?: ArticleReference): NamedPrintArea {
+  if (!reference) return area
+  const width = Math.min(area.width, reference.width)
+  const height = Math.min(area.height, reference.height)
+  return {
+    ...area,
+    width,
+    height,
+    x: Math.max(reference.x, Math.min(reference.x + reference.width - width, area.x)),
+    y: Math.max(reference.y, Math.min(reference.y + reference.height - height, area.y)),
+  }
+}
+
 function namedPersonalizationViews(value: unknown, fallbackArea: NamedPrintArea, fallbackMediaId?: string): PersonalizationView[] {
   if (!Array.isArray(value)) return [{ ...DEFAULT_PERSONALIZATION_VIEW, mediaId: fallbackMediaId, printAreas: namedPrintAreas(undefined, fallbackArea) }]
   const views = value.flatMap((item, index) => {
@@ -1900,14 +2098,15 @@ function namedPersonalizationViews(value: unknown, fallbackArea: NamedPrintArea,
     const id = typeof candidate.id === 'string' && candidate.id.trim() ? candidate.id.trim() : `view-${index + 1}`
     const label = typeof candidate.label === 'string' && candidate.label.trim() ? candidate.label.trim() : index === 0 ? 'Frente' : `Vista ${index + 1}`
     const mediaId = typeof candidate.media_id === 'string' && candidate.media_id ? candidate.media_id : undefined
-    return [{ id, label, mediaId, printAreas: namedPrintAreas(candidate.print_areas, fallbackArea) }]
+    return [{ id, label, mediaId, articleReference: namedArticleReference(candidate.article_reference), printAreas: namedPrintAreas(candidate.print_areas, fallbackArea) }]
   })
   return views.length ? views.slice(0, 6) : [{ ...DEFAULT_PERSONALIZATION_VIEW, mediaId: fallbackMediaId, printAreas: namedPrintAreas(undefined, fallbackArea) }]
 }
 
-function EditablePrintArea({ area, label, active, onActivate, onChange }: Readonly<{
+function EditablePrintArea({ area, label, kind = 'print', active, onActivate, onChange }: Readonly<{
   area: PrintArea
   label: string
+  kind?: 'print' | 'reference'
   active: boolean
   onActivate: () => void
   onChange: (area: PrintArea) => void
@@ -1937,10 +2136,167 @@ function EditablePrintArea({ area, label, active, onActivate, onChange }: Readon
     }
     onChange({ x, y, width, height })
   }
-  return <div ref={areaElement} className={`editable-print-area editable-print-area--print${active ? ' editable-print-area--active' : ''}`} aria-label={label} aria-current={active ? 'true' : undefined} style={{ left: `${area.x}%`, top: `${area.y}%`, width: `${area.width}%`, height: `${area.height}%` }} onPointerDown={(event) => start(event, 'move')} onPointerMove={move} onPointerUp={() => { interaction.current = undefined }}>
+  return <div ref={areaElement} className={`editable-print-area editable-print-area--${kind}${active ? ' editable-print-area--active' : ''}`} aria-label={label} aria-current={active ? 'true' : undefined} style={{ left: `${area.x}%`, top: `${area.y}%`, width: `${area.width}%`, height: `${area.height}%` }} onPointerDown={(event) => start(event, 'move')} onPointerMove={move} onPointerUp={() => { interaction.current = undefined }}>
     <span>{label}</span>
     {active && (['nw', 'ne', 'sw', 'se'] as const).map((handle) => <button key={handle} type="button" className={`resize-handle resize-handle--${handle}`} aria-label={`Redimensionar zona de ${label}`} onPointerDown={(event) => { event.stopPropagation(); start(event, handle) }} onPointerMove={move} onPointerUp={() => { interaction.current = undefined }}>{handle === 'nw' ? '↖' : handle === 'ne' ? '↗' : handle === 'sw' ? '↙' : '↘'}</button>)}
   </div>
+}
+
+const shippingPackagesKey = ['shipping-packages'] as const
+
+function ShippingPackageManagement({ canWrite }: Readonly<{ canWrite: boolean }>) {
+  const client = useQueryClient()
+  const profiles = useQuery({
+    queryKey: shippingPackagesKey,
+    queryFn: api.listShippingPackages,
+  })
+  const [editing, setEditing] = useState<ShippingPackageProfile | null>(null)
+  const [message, setMessage] = useState('')
+
+  const save = useMutation({
+    mutationFn: ({ id, input }: {
+      id?: string
+      input: Parameters<typeof api.createShippingPackage>[0]
+    }) => id
+      ? api.updateShippingPackage(id, input)
+      : api.createShippingPackage(input),
+    onSuccess: (profile) => {
+      client.invalidateQueries({ queryKey: shippingPackagesKey })
+      client.invalidateQueries({ queryKey: productsKey })
+      setEditing(null)
+      setMessage(`“${profile.name}” was saved.`)
+    },
+    onError: (error) => {
+      setMessage(error instanceof ApiError
+        ? error.body.error.message
+        : 'The shipping package could not be saved.')
+    },
+  })
+  const remove = useMutation({
+    mutationFn: api.deleteShippingPackage,
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: shippingPackagesKey })
+      setEditing(null)
+      setMessage('The shipping package was deleted.')
+    },
+    onError: (error) => {
+      setMessage(error instanceof ApiError && error.body.error.code === 'shipping_package_in_use'
+        ? 'This package is assigned to products. Change those products first or deactivate the package.'
+        : 'The shipping package could not be deleted.')
+    },
+  })
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setMessage('')
+    const form = new FormData(event.currentTarget)
+    save.mutate({
+      id: editing?.id,
+      input: {
+        name: String(form.get('package-name') ?? ''),
+        width_cm: Number(form.get('package-width')),
+        length_cm: Number(form.get('package-length')),
+        height_cm: Number(form.get('package-height')),
+        empty_weight_grams: Number(form.get('package-weight')),
+        active: form.get('package-active') === 'on',
+      },
+    })
+  }
+
+  return (
+    <section className="shipping-packages-section" aria-labelledby="shipping-packages-heading">
+      <div className="section-heading">
+        <div>
+          <p>Catalog · Logistics</p>
+          <h2 id="shipping-packages-heading">Reusable shipping packages</h2>
+        </div>
+        <span>{profiles.data?.filter(({ active }) => active).length ?? '—'} active</span>
+      </div>
+      <p className="shipping-packages-intro">
+        Define each box or envelope once. On each product, choose the package,
+        the weight of one unit, and how many units fit in the same parcel.
+      </p>
+      <div className="shipping-packages-layout">
+        <div className="shipping-package-list">
+          {profiles.isPending && <p className="panel-message">Loading shipping packages…</p>}
+          {profiles.isError && <p className="panel-message error">Shipping packages could not be loaded.</p>}
+          {profiles.data?.length === 0 && (
+            <div className="shipping-package-empty">
+              <Boxes aria-hidden="true" />
+              <strong>Start with the package you use most.</strong>
+              <span>For example: small envelope, medium box, or large box.</span>
+            </div>
+          )}
+          {profiles.data?.map((profile) => (
+            <article className={`shipping-package-card${profile.active ? '' : ' inactive'}`} key={profile.id}>
+              <div className="shipping-package-icon"><Package aria-hidden="true" /></div>
+              <div>
+                <div className="shipping-package-name">
+                  <strong>{profile.name}</strong>
+                  <span>{profile.active ? 'Active' : 'Inactive'}</span>
+                </div>
+                <p>{profile.width_cm} × {profile.length_cm} × {profile.height_cm} cm</p>
+                <small>{profile.empty_weight_grams} g empty package weight</small>
+              </div>
+              {canWrite && (
+                <button type="button" onClick={() => { setEditing(profile); setMessage('') }}>
+                  <Pencil size={15} /> Edit
+                </button>
+              )}
+            </article>
+          ))}
+        </div>
+        {canWrite && (
+          <form className="shipping-package-form" onSubmit={submit} key={editing?.id ?? 'new'}>
+            <div className="panel-title">
+              <Ruler size={17} />
+              <div>
+                <strong>{editing ? 'Edit shipping package' : 'New shipping package'}</strong>
+                <span>Measure the outside of the package when closed.</span>
+              </div>
+            </div>
+            <label htmlFor="package-name">Name</label>
+            <input id="package-name" name="package-name" maxLength={120} placeholder="Medium box" defaultValue={editing?.name} required />
+            <div className="shipping-package-dimensions">
+              <label>Width <span>cm</span><input name="package-width" type="number" min="1" max="300" defaultValue={editing?.width_cm} required /></label>
+              <label>Length <span>cm</span><input name="package-length" type="number" min="1" max="300" defaultValue={editing?.length_cm} required /></label>
+              <label>Height <span>cm</span><input name="package-height" type="number" min="1" max="300" defaultValue={editing?.height_cm} required /></label>
+            </div>
+            <label htmlFor="package-weight">Empty package weight <span className="label-unit">grams</span></label>
+            <input id="package-weight" name="package-weight" type="number" min="0" max="100000" defaultValue={editing?.empty_weight_grams ?? 0} required />
+            <label className="shipping-package-active">
+              <input name="package-active" type="checkbox" defaultChecked={editing?.active ?? true} />
+              <span><strong>Available for products</strong><small>Deactivate it without losing existing product assignments.</small></span>
+            </label>
+            {message && <p className="shipping-package-message" role="status">{message}</p>}
+            <div className="shipping-package-form-actions">
+              <button className="primary-action" type="submit" disabled={save.isPending}>
+                {save.isPending ? 'Saving…' : editing ? 'Save changes' : 'Create package'}
+              </button>
+              {editing && <button type="button" onClick={() => { setEditing(null); setMessage('') }}>Cancel</button>}
+              {editing && <button className="danger-action" type="button" disabled={remove.isPending} onClick={() => {
+                if (window.confirm(`Delete “${editing.name}”?`)) remove.mutate(editing.id)
+              }}><Trash2 size={15} /> Delete</button>}
+            </div>
+          </form>
+        )}
+      </div>
+    </section>
+  )
+}
+
+type PendingProductImage = {
+  id: string
+  file: File
+  altText: string
+  previewUrl: string
+}
+
+type ProductImageUpload = Pick<PendingProductImage, 'file' | 'altText'>
+
+type ProductSaveResult = {
+  product: Product
+  photosUploaded: boolean
 }
 
 function CatalogManagement({
@@ -1958,11 +2314,20 @@ function CatalogManagement({
   const [productSku, setProductSku] = useState('')
   const [productPrice, setProductPrice] = useState('')
   const [productQuantity, setProductQuantity] = useState('0')
+  const [shippingWeightGrams, setShippingWeightGrams] = useState('500')
+  const [shippingPackageProfileId, setShippingPackageProfileId] = useState('')
+  const [shippingUnitsPerPackage, setShippingUnitsPerPackage] = useState('1')
+  const [pendingProductImages, setPendingProductImages] = useState<PendingProductImage[]>([])
+  const [photoUploadMessage, setPhotoUploadMessage] = useState('')
+  const pendingProductImagesRef = useRef<PendingProductImage[]>([])
   const [productCategoryIds, setProductCategoryIds] = useState<string[]>([])
+  const [draggedCategoryId, setDraggedCategoryId] = useState<string | null>(null)
+  const [categoryOrderMessage, setCategoryOrderMessage] = useState('')
   const [personalizationMode, setPersonalizationMode] = useState<'none' | 'photo' | 'text' | 'photo_text'>('none')
   const [personalizationViews, setPersonalizationViews] = useState<PersonalizationView[]>([{ ...DEFAULT_PERSONALIZATION_VIEW, printAreas: [{ ...DEFAULT_PRINT_AREA }] }])
   const [activePersonalizationViewId, setActivePersonalizationViewId] = useState(DEFAULT_PERSONALIZATION_VIEW.id)
   const [activePrintAreaId, setActivePrintAreaId] = useState(DEFAULT_PRINT_AREA.id)
+  const [editingArticleReference, setEditingArticleReference] = useState(false)
   const [textMaxCharacters, setTextMaxCharacters] = useState(35)
   const [textMinSize, setTextMinSize] = useState(12)
   const [textMaxSize, setTextMaxSize] = useState(72)
@@ -1978,8 +2343,8 @@ function CatalogManagement({
     // Keep the legacy fields synchronized while older clients still understand them.
     text_area_x: Math.round(primaryPrintArea.x * 100), text_area_y: Math.round(primaryPrintArea.y * 100),
     text_area_width: Math.round(primaryPrintArea.width * 100), text_area_height: Math.round(primaryPrintArea.height * 100),
-    print_areas: primaryPersonalizationView.printAreas.map((area) => ({ id: area.id, label: area.label.trim(), x: Math.round(area.x * 100), y: Math.round(area.y * 100), width: Math.round(area.width * 100), height: Math.round(area.height * 100), physical_width_cm: area.physicalWidthCm, physical_height_cm: area.physicalHeightCm })),
-    views: personalizationViews.map((view) => ({ id: view.id, label: view.label.trim(), media_id: view.mediaId ?? null, print_areas: view.printAreas.map((area) => ({ id: area.id, label: area.label.trim(), x: Math.round(area.x * 100), y: Math.round(area.y * 100), width: Math.round(area.width * 100), height: Math.round(area.height * 100), physical_width_cm: area.physicalWidthCm, physical_height_cm: area.physicalHeightCm })) })),
+    print_areas: primaryPersonalizationView.printAreas.map((area) => serializedPrintArea(primaryPersonalizationView, area)),
+    views: personalizationViews.map((view) => ({ id: view.id, label: view.label.trim(), media_id: view.mediaId ?? null, article_reference: serializedArticleReference(view.articleReference), print_areas: view.printAreas.map((area) => serializedPrintArea(view, area)) })),
     text_max_characters: textMaxCharacters, text_min_size: textMinSize, text_max_size: textMaxSize,
     allowed_fonts: allowedFonts.split(',').map((value) => value.trim()).filter(Boolean),
     allowed_colors: allowedColors.split(',').map((value) => value.trim()).filter(Boolean),
@@ -1988,9 +2353,10 @@ function CatalogManagement({
   const printAreas = activePersonalizationView.printAreas
   const personalizationPreviewMedia = preview?.media.find(({ id }) => id === activePersonalizationView.mediaId)
   const activePrintArea = printAreas.find(({ id }) => id === activePrintAreaId) ?? printAreas[0] ?? DEFAULT_PRINT_AREA
+  const activePrintAreaPhysical = effectivePrintAreaDimensions(activePersonalizationView, activePrintArea)
   const editorDirty = useMemo(() => {
     if (!preview) {
-      return Boolean(productTitle || productSlug || productDescription || productKeywords || productSku || productPrice || productQuantity !== '0')
+      return Boolean(productTitle || productSlug || productDescription || productKeywords || productSku || productPrice || productQuantity !== '0' || shippingWeightGrams !== '500' || shippingPackageProfileId || shippingUnitsPerPackage !== '1' || pendingProductImages.length)
     }
     const base = preview.variants[0]
     return productTitle !== preview.title
@@ -2000,7 +2366,17 @@ function CatalogManagement({
       || productSku !== (base?.sku ?? '')
       || Number(productPrice) !== (base?.price_minor ?? 0) / 100
       || Number(productQuantity) !== (base?.available_quantity ?? 0)
-  }, [preview, productTitle, productSlug, productDescription, productKeywords, productSku, productPrice, productQuantity])
+      || Number(shippingWeightGrams) !== preview.shipping.weight_grams
+      || shippingPackageProfileId !== (preview.shipping.package_profile_id ?? '')
+      || Number(shippingUnitsPerPackage) !== preview.shipping.units_per_package
+      || pendingProductImages.length > 0
+  }, [preview, productTitle, productSlug, productDescription, productKeywords, productSku, productPrice, productQuantity, shippingWeightGrams, shippingPackageProfileId, shippingUnitsPerPackage, pendingProductImages.length])
+  useEffect(() => {
+    pendingProductImagesRef.current = pendingProductImages
+  }, [pendingProductImages])
+  useEffect(() => () => {
+    pendingProductImagesRef.current.forEach(({ previewUrl }) => URL.revokeObjectURL(previewUrl))
+  }, [])
   useEffect(() => {
     function warnBeforeLeaving(event: BeforeUnloadEvent) {
       if (!editorDirty) return
@@ -2017,17 +2393,54 @@ function CatalogManagement({
     queryKey: categoriesKey,
     queryFn: api.listCategories,
   })
+  const shippingPackages = useQuery({
+    queryKey: shippingPackagesKey,
+    queryFn: api.listShippingPackages,
+  })
+  const selectedShippingPackage = shippingPackages.data?.find(
+    ({ id }) => id === shippingPackageProfileId,
+  )
+
+  async function uploadProductImages(product: Product, images: ProductImageUpload[]) {
+    for (const { altText, file } of images) {
+      const upload = await api.initiateMediaUpload({
+        filename: file.name,
+        content_type: file.type,
+        byte_size: file.size,
+      })
+      await api.uploadMediaObject(upload.upload_url, file, file.type)
+      await api.completeMediaUpload(upload.id, {
+        product_id: product.id,
+        alt_text: altText,
+      })
+    }
+    return api.adminProduct(product.id)
+  }
+
+  async function saveQueuedProductImages(product: Product, images: ProductImageUpload[]): Promise<ProductSaveResult> {
+    if (images.length === 0) return { product, photosUploaded: true }
+    try {
+      return {
+        product: await uploadProductImages(product, images),
+        photosUploaded: true,
+      }
+    } catch {
+      return { product, photosUploaded: false }
+    }
+  }
+
   const createProduct = useMutation({
-    mutationFn: async ({ categoryIds, ...input }: Parameters<typeof api.createProduct>[0] & { categoryIds: string[] }) => {
-      const product = await api.createProduct(input)
-      return categoryIds.length > 0
-        ? api.assignProductCategories(product.id, { category_ids: categoryIds })
-        : product
+    mutationFn: async ({ categoryIds, images, ...input }: Parameters<typeof api.createProduct>[0] & { categoryIds: string[]; images: ProductImageUpload[] }) => {
+      const createdProduct = await api.createProduct(input)
+      const product = categoryIds.length > 0
+        ? api.assignProductCategories(createdProduct.id, { category_ids: categoryIds })
+        : createdProduct
+      return saveQueuedProductImages(await product, images)
     },
     onMutate: async () => {
       await client.cancelQueries({ queryKey: productsKey })
     },
-    onSuccess: (product) => {
+    onSuccess: ({ product, photosUploaded }) => {
       client.setQueriesData<Array<Product>>(
         { queryKey: productsKey },
         (current = []) =>
@@ -2037,18 +2450,31 @@ function CatalogManagement({
       )
       client.invalidateQueries({ queryKey: productsKey })
       client.invalidateQueries({ queryKey: inventoryKey })
+      if (photosUploaded) {
+        discardPendingProductImages()
+        setPhotoUploadMessage('')
+      } else {
+        setPhotoUploadMessage('The product was created, but its photos could not be uploaded. They are still ready here—save the product again to retry.')
+      }
       loadProduct(product, activePersonalizationViewId, activePrintAreaId)
     },
   })
   const updateProduct = useMutation({
-    mutationFn: async ({ id, categoryIds, ...input }: Parameters<typeof api.updateProduct>[1] & { id: string; categoryIds: string[] }) => {
-      const product = await api.updateProduct(id, input)
-      return api.assignProductCategories(product.id, { category_ids: categoryIds })
+    mutationFn: async ({ id, categoryIds, images, ...input }: Parameters<typeof api.updateProduct>[1] & { id: string; categoryIds: string[]; images: ProductImageUpload[] }) => {
+      const updatedProduct = await api.updateProduct(id, input)
+      const product = await api.assignProductCategories(updatedProduct.id, { category_ids: categoryIds })
+      return saveQueuedProductImages(product, images)
     },
-    onSuccess: (product) => {
+    onSuccess: ({ product, photosUploaded }) => {
       client.invalidateQueries({ queryKey: productsKey })
       client.invalidateQueries({ queryKey: inventoryKey })
       setPreview(product)
+      if (photosUploaded) {
+        discardPendingProductImages()
+        setPhotoUploadMessage('')
+      } else {
+        setPhotoUploadMessage('The product was saved, but its new photos could not be uploaded. They are still ready here—save the product again to retry.')
+      }
       loadProduct(product, activePersonalizationViewId, activePrintAreaId)
     },
   })
@@ -2104,6 +2530,34 @@ function CatalogManagement({
     mutationFn: api.createCategory,
     onSuccess: () => client.invalidateQueries({ queryKey: categoriesKey }),
   })
+  const reorderCategories = useMutation({
+    mutationFn: (categoryIds: string[]) => api.reorderCategories({ category_ids: categoryIds }),
+    onMutate: async (categoryIds) => {
+      setCategoryOrderMessage('Saving storefront category order…')
+      await client.cancelQueries({ queryKey: categoriesKey })
+      const previous = client.getQueryData<Array<Category>>(categoriesKey)
+      if (previous) {
+        const byId = new Map(previous.map((category) => [category.id, category]))
+        client.setQueryData<Array<Category>>(
+          categoriesKey,
+          categoryIds.flatMap((id, position) => {
+            const category = byId.get(id)
+            return category ? [{ ...category, position }] : []
+          }),
+        )
+      }
+      return { previous }
+    },
+    onError: (_error, _categoryIds, context) => {
+      if (context?.previous) client.setQueryData(categoriesKey, context.previous)
+      setCategoryOrderMessage('The category order could not be saved. Try again.')
+    },
+    onSuccess: (orderedCategories) => {
+      client.setQueryData(categoriesKey, orderedCategories)
+      setCategoryOrderMessage('Storefront category order saved.')
+    },
+    onSettled: () => client.invalidateQueries({ queryKey: categoriesKey }),
+  })
   const assignCategories = useMutation({
     mutationFn: ({ productId, categoryIds }: { productId: string; categoryIds: string[] }) =>
       api.assignProductCategories(productId, { category_ids: categoryIds }),
@@ -2119,26 +2573,67 @@ function CatalogManagement({
     }: {
       images: Array<{ altText: string; file: File }>
       product: Product
-    }) => {
-      for (const { altText, file } of images) {
-        const upload = await api.initiateMediaUpload({
-          filename: file.name,
-          content_type: file.type,
-          byte_size: file.size,
-        })
-        await api.uploadMediaObject(upload.upload_url, file, file.type)
-        await api.completeMediaUpload(upload.id, {
-          product_id: product.id,
-          alt_text: altText,
-        })
-      }
-      return api.adminProduct(product.id)
-    },
+    }) => uploadProductImages(product, images),
     onSuccess: (product) => {
       client.invalidateQueries({ queryKey: productsKey })
       loadProduct(product)
     },
   })
+
+  function defaultProductImageAlt(file: File) {
+    const filename = file.name
+      .replace(/\.[^.]+$/, '')
+      .replace(/[-_]+/g, ' ')
+      .trim()
+    if (productTitle.trim() && filename) return `${productTitle.trim()} — ${filename}`
+    return productTitle.trim() || filename || 'Product photo'
+  }
+
+  function queueProductImages(files?: FileList | null) {
+    if (!files?.length) return
+    const acceptedTypes = new Set(['image/jpeg', 'image/png', 'image/webp'])
+    const selectedFiles = Array.from(files)
+    const acceptedFiles = selectedFiles.filter((file) => acceptedTypes.has(file.type))
+    const images = acceptedFiles.map((file) => ({
+      id: crypto.randomUUID(),
+      file,
+      altText: defaultProductImageAlt(file),
+      previewUrl: URL.createObjectURL(file),
+    }))
+    setPendingProductImages((current) => [...current, ...images])
+    setPhotoUploadMessage(
+      acceptedFiles.length === selectedFiles.length
+        ? ''
+        : 'Some files were not added. Product photos must be JPG, PNG, or WebP.',
+    )
+  }
+
+  function updatePendingProductImage(id: string, altText: string) {
+    setPendingProductImages((current) => current.map((image) =>
+      image.id === id ? { ...image, altText } : image,
+    ))
+  }
+
+  function removePendingProductImage(id: string) {
+    setPendingProductImages((current) => {
+      const removed = current.find((image) => image.id === id)
+      if (removed) URL.revokeObjectURL(removed.previewUrl)
+      return current.filter((image) => image.id !== id)
+    })
+  }
+
+  function discardPendingProductImages() {
+    setPendingProductImages((current) => {
+      current.forEach(({ previewUrl }) => URL.revokeObjectURL(previewUrl))
+      return []
+    })
+  }
+
+  function startEditingProduct(product: Product) {
+    discardPendingProductImages()
+    setPhotoUploadMessage('')
+    loadProduct(product)
+  }
 
   function selectImages(product: Product, files?: FileList | null) {
     if (!files?.length) return
@@ -2161,6 +2656,7 @@ function CatalogManagement({
     if (!view) return
     setActivePersonalizationViewId(id)
     setActivePrintAreaId(view.printAreas[0]?.id ?? DEFAULT_PRINT_AREA.id)
+    setEditingArticleReference(false)
   }
 
   function addPersonalizationView() {
@@ -2172,6 +2668,7 @@ function CatalogManagement({
     setPersonalizationViews((current) => [...current, view])
     setActivePersonalizationViewId(id)
     setActivePrintAreaId(areaId)
+    setEditingArticleReference(false)
   }
 
   function removeActivePersonalizationView() {
@@ -2180,23 +2677,50 @@ function CatalogManagement({
     setPersonalizationViews(remaining)
     setActivePersonalizationViewId(remaining[0].id)
     setActivePrintAreaId(remaining[0].printAreas[0]?.id ?? DEFAULT_PRINT_AREA.id)
+    setEditingArticleReference(false)
   }
 
   function updatePrintArea(id: string, change: Partial<NamedPrintArea>) {
     setPersonalizationViews((current) => current.map((view) => view.id === activePersonalizationView.id
-      ? { ...view, printAreas: view.printAreas.map((area) => area.id === id ? { ...area, ...change } : area) }
+      ? { ...view, printAreas: view.printAreas.map((area) => area.id === id ? areaInsideReference({ ...area, ...change }, view.articleReference) : area) }
       : view))
+  }
+
+  function enableArticleReference() {
+    setPersonalizationViews((current) => current.map((view) => view.id === activePersonalizationView.id
+      ? { ...view, articleReference: view.articleReference ?? articleReferenceFromAreas(view.printAreas) }
+      : view))
+    setEditingArticleReference(true)
+  }
+
+  function updateArticleReference(change: Partial<ArticleReference>) {
+    setPersonalizationViews((current) => current.map((view) => {
+      if (view.id !== activePersonalizationView.id) return view
+      const reference = view.articleReference ?? articleReferenceFromAreas(view.printAreas)
+      const fitted = referenceContainingAreas({ ...reference, ...change }, view.printAreas)
+      return { ...view, articleReference: { ...fitted, configured: change.configured === true } }
+    }))
+  }
+
+  function removeArticleReference() {
+    setPersonalizationViews((current) => current.map((view) => view.id === activePersonalizationView.id ? { ...view, articleReference: undefined } : view))
+    setEditingArticleReference(false)
   }
 
   function addPrintArea() {
     if (printAreas.length >= 8) return
     const nextNumber = printAreas.length + 1
     const id = `area-${Date.now()}-${nextNumber}`
+    const reference = activePersonalizationView.articleReference
+    const width = Math.min(40, reference?.width ?? 40)
+    const height = Math.min(40, reference?.height ?? 40)
     const offset = Math.min(35, 15 + nextNumber * 5)
+    const candidate = areaInsideReference({ id, label: `Área ${nextNumber}`, x: reference ? reference.x + Math.min(8, Math.max(0, reference.width - width)) : offset, y: reference ? reference.y + Math.min(8, Math.max(0, reference.height - height)) : offset, width, height, physicalWidthCm: 20, physicalHeightCm: 20 }, reference)
     setPersonalizationViews((current) => current.map((view) => view.id === activePersonalizationView.id
-      ? { ...view, printAreas: [...view.printAreas, { id, label: `Área ${nextNumber}`, x: offset, y: offset, width: 40, height: 40, physicalWidthCm: 20, physicalHeightCm: 20 }] }
+      ? { ...view, printAreas: [...view.printAreas, candidate] }
       : view))
     setActivePrintAreaId(id)
+    setEditingArticleReference(false)
   }
 
   function removeActivePrintArea() {
@@ -2206,13 +2730,30 @@ function CatalogManagement({
     setActivePrintAreaId(remaining[0].id)
   }
 
+  function moveCategory(categoryId: string, targetIndex: number) {
+    const current = categories.data ?? []
+    const sourceIndex = current.findIndex(({ id }) => id === categoryId)
+    if (sourceIndex < 0) return
+    const next = [...current]
+    const [moved] = next.splice(sourceIndex, 1)
+    const boundedTarget = Math.max(0, Math.min(targetIndex, next.length))
+    next.splice(boundedTarget, 0, moved)
+    if (next.every((category, index) => category.id === current[index]?.id)) return
+    reorderCategories.mutate(next.map(({ id }) => id))
+  }
+
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const price = Number(productPrice)
+    const images = pendingProductImages.map(({ file, altText }) => ({
+      file,
+      altText: altText.trim() || defaultProductImageAlt(file),
+    }))
     if (preview) {
       updateProduct.mutate({
         id: preview.id,
         categoryIds: productCategoryIds,
+        images,
         title: productTitle,
         slug: productSlug,
         description: productDescription,
@@ -2221,6 +2762,17 @@ function CatalogManagement({
         price_minor: Math.round(price * 100),
         currency: 'EUR',
         available_quantity: Number(productQuantity),
+        shipping: {
+          package_profile_id: selectedShippingPackage?.id ?? null,
+          package_profile_name: selectedShippingPackage?.name ?? null,
+          weight_grams: Number(shippingWeightGrams),
+          width_cm: selectedShippingPackage?.width_cm ?? 1,
+          length_cm: selectedShippingPackage?.length_cm ?? 1,
+          height_cm: selectedShippingPackage?.height_cm ?? 1,
+          empty_weight_grams: selectedShippingPackage?.empty_weight_grams ?? 0,
+          units_per_package: Number(shippingUnitsPerPackage),
+          configured: Boolean(selectedShippingPackage),
+        },
         personalization,
       })
       return
@@ -2231,6 +2783,17 @@ function CatalogManagement({
         slug: productSlug,
         description: productDescription,
         search_keywords: productKeywords,
+        shipping: {
+          package_profile_id: selectedShippingPackage?.id ?? null,
+          package_profile_name: selectedShippingPackage?.name ?? null,
+          weight_grams: Number(shippingWeightGrams),
+          width_cm: selectedShippingPackage?.width_cm ?? 1,
+          length_cm: selectedShippingPackage?.length_cm ?? 1,
+          height_cm: selectedShippingPackage?.height_cm ?? 1,
+          empty_weight_grams: selectedShippingPackage?.empty_weight_grams ?? 0,
+          units_per_package: Number(shippingUnitsPerPackage),
+          configured: Boolean(selectedShippingPackage),
+        },
         variants: [
           {
             title: 'Default',
@@ -2243,6 +2806,7 @@ function CatalogManagement({
         ],
         personalization,
         categoryIds: productCategoryIds,
+        images,
       },
     )
   }
@@ -2258,6 +2822,9 @@ function CatalogManagement({
     setProductSku(base?.sku ?? '')
     setProductPrice(base ? String(base.price_minor / 100) : '')
     setProductQuantity(String(base?.available_quantity ?? 0))
+    setShippingWeightGrams(String(product.shipping.weight_grams))
+    setShippingPackageProfileId(product.shipping.package_profile_id ?? '')
+    setShippingUnitsPerPackage(String(product.shipping.units_per_package))
     setProductCategoryIds(product.categories.map(({ id }) => id))
     const config = product.personalization
     setPersonalizationMode(config.mode as typeof personalizationMode)
@@ -2267,6 +2834,7 @@ function CatalogManagement({
     setPersonalizationViews(configuredViews)
     setActivePersonalizationViewId(selectedView.id)
     setActivePrintAreaId(selectedView.printAreas.find(({ id }) => id === preferredPrintAreaId)?.id ?? selectedView.printAreas[0].id)
+    setEditingArticleReference(false)
     setTextMaxCharacters(config.text_max_characters)
     setTextMinSize(config.text_min_size)
     setTextMaxSize(config.text_max_size)
@@ -2277,6 +2845,8 @@ function CatalogManagement({
   }
 
   function clearEditor() {
+    discardPendingProductImages()
+    setPhotoUploadMessage('')
     setPreview(null)
     setProductTitle('')
     setProductSlug('')
@@ -2286,11 +2856,15 @@ function CatalogManagement({
     setProductSku('')
     setProductPrice('')
     setProductQuantity('0')
+    setShippingWeightGrams('500')
+    setShippingPackageProfileId('')
+    setShippingUnitsPerPackage('1')
     setProductCategoryIds([])
     setPersonalizationMode('none')
     setPersonalizationViews([{ ...DEFAULT_PERSONALIZATION_VIEW, printAreas: [{ ...DEFAULT_PRINT_AREA }] }])
     setActivePersonalizationViewId(DEFAULT_PERSONALIZATION_VIEW.id)
     setActivePrintAreaId(DEFAULT_PRINT_AREA.id)
+    setEditingArticleReference(false)
     setTextMaxCharacters(35)
     setTextMinSize(12)
     setTextMaxSize(72)
@@ -2410,7 +2984,7 @@ function CatalogManagement({
                 </small>
               </div>
               <div className="product-actions">
-                <button type="button" onClick={() => loadProduct(product)}>
+                <button type="button" onClick={() => startEditingProduct(product)}>
                   <Eye size={15} /> Edit
                 </button>
                 {canUpload && (
@@ -2482,7 +3056,7 @@ function CatalogManagement({
               <Plus size={17} />
               <div>
                 <strong>{preview ? 'Edit product' : 'New product draft'}</strong>
-                <span>Product details, price and available stock.</span>
+                <span>Details, photos, stock, shipping package, and personalization.</span>
               </div>
             </div>
             <label htmlFor="product-title">Product title</label>
@@ -2525,6 +3099,74 @@ function CatalogManagement({
               onChange={(event) => setProductDescription(event.target.value)}
             />
             <small className="field-count">{productDescription.length.toLocaleString()} / 50,000</small>
+            <section className="admin-product-photos admin-product-photos--inline" aria-labelledby="product-photos-heading">
+              <header>
+                <div>
+                  <strong id="product-photos-heading">Product photos</strong>
+                  <span>Add all product views now. They will upload when you save the product.</span>
+                </div>
+                <span>{(preview?.media.length ?? 0) + pendingProductImages.length} total</span>
+              </header>
+              {(preview?.media.length ?? 0) > 0 && (
+                <div className="admin-product-photo-grid" aria-label="Uploaded product photos">
+                  {preview?.media.map((media, index) => (
+                    <figure key={media.id}>
+                      <img src={media.thumbnail_url} alt={media.alt_text} />
+                      <figcaption>{index === 0 ? 'Main photo · uploaded' : `Photo ${index + 1} · uploaded`}</figcaption>
+                    </figure>
+                  ))}
+                </div>
+              )}
+              {pendingProductImages.length > 0 && (
+                <div className="pending-product-photo-list" aria-label="Photos ready to upload">
+                  {pendingProductImages.map((image, index) => {
+                    const photoNumber = (preview?.media.length ?? 0) + index + 1
+                    return (
+                      <article className="pending-product-photo" key={image.id}>
+                        <img src={image.previewUrl} alt="" />
+                        <div>
+                          <span className="pending-photo-status">
+                            {photoNumber === 1 ? 'Main photo' : `Photo ${photoNumber}`} · ready to upload
+                          </span>
+                          <label htmlFor={`product-photo-alt-${image.id}`}>Alternative text</label>
+                          <input
+                            id={`product-photo-alt-${image.id}`}
+                            value={image.altText}
+                            maxLength={300}
+                            onChange={(event) => updatePendingProductImage(image.id, event.target.value)}
+                            placeholder="Describe the photo for accessibility"
+                            required
+                          />
+                          <button type="button" onClick={() => removePendingProductImage(image.id)}>
+                            <Trash2 size={14} /> Remove
+                          </button>
+                        </div>
+                      </article>
+                    )
+                  })}
+                </div>
+              )}
+              {canUpload ? (
+                <label className="admin-photo-dropzone" aria-label="Choose product photos">
+                  <ImageUp size={20} />
+                  <span><strong>Choose product photos</strong><small>Select several JPG, PNG, or WebP files at once.</small></span>
+                  <input
+                    type="file"
+                    multiple
+                    accept="image/jpeg,image/png,image/webp"
+                    disabled={createProduct.isPending || updateProduct.isPending}
+                    onChange={(event) => {
+                      queueProductImages(event.currentTarget.files)
+                      event.currentTarget.value = ''
+                    }}
+                  />
+                </label>
+              ) : (
+                <small className="field-help">Your account does not have permission to upload product photos.</small>
+              )}
+              <small className="field-help">The first photo is used as the main product photo. You can add more photos before the first save.</small>
+              {photoUploadMessage && <p className="photo-upload-message" role="status">{photoUploadMessage}</p>}
+            </section>
             <label htmlFor="product-keywords">Search keywords</label>
             <input id="product-keywords" name="product-keywords" maxLength={2000} value={productKeywords} onChange={(event) => setProductKeywords(event.target.value)} />
             <small className="field-help">Only administrators can see these keywords. They also support storefront search.</small>
@@ -2546,28 +3188,98 @@ function CatalogManagement({
                 />
               </div>
               <div>
-                <label htmlFor="product-quantity">Stock</label>
-                <input id="product-quantity" name="product-quantity" type="number" min="0" step="1" value={productQuantity} onChange={(event) => setProductQuantity(event.target.value)} required />
+                <label htmlFor="product-quantity">Stock real</label>
+                <input id="product-quantity" name="product-quantity" type="number" step="1" value={productQuantity} onChange={(event) => setProductQuantity(event.target.value)} aria-describedby="product-quantity-help" required />
+                <small className="field-help" id="product-quantity-help">A negative value represents sold units that need to be restocked.</small>
               </div>
             </div>
+            <fieldset className="shipping-profile-settings">
+              <legend>Shipping package</legend>
+              <p>Choose a reusable package. Packlink automatically receives the parcels created from the ordered quantity.</p>
+              <label htmlFor="shipping-package-profile">Package</label>
+              <select id="shipping-package-profile" value={shippingPackageProfileId} onChange={(event) => setShippingPackageProfileId(event.target.value)} required>
+                <option value="">Select a shipping package…</option>
+                {shippingPackages.data?.map((profile) => (
+                  <option value={profile.id} key={profile.id} disabled={!profile.active && profile.id !== shippingPackageProfileId}>
+                    {profile.name} · {profile.width_cm} × {profile.length_cm} × {profile.height_cm} cm{profile.active ? '' : ' · inactive'}
+                  </option>
+                ))}
+              </select>
+              {shippingPackages.data?.length === 0 && <p className="shipping-profile-warning" role="status">No shipping packages have been created yet. <a href="#shipping-packages">Create the first package</a></p>}
+              <div className="shipping-profile-grid">
+                <label htmlFor="shipping-weight">
+                  Weight of one unit <span>grams</span>
+                  <input id="shipping-weight" type="number" min="1" max="1000000" step="1" value={shippingWeightGrams} onChange={(event) => setShippingWeightGrams(event.target.value)} required />
+                </label>
+                <label className="shipping-capacity" htmlFor="shipping-capacity">
+                  Maximum units in this package
+                  <input id="shipping-capacity" type="number" min="1" max="100" step="1" value={shippingUnitsPerPackage} onChange={(event) => setShippingUnitsPerPackage(event.target.value)} required />
+                </label>
+              </div>
+              {selectedShippingPackage && <div className="shipping-profile-summary" aria-live="polite">
+                <strong>{selectedShippingPackage.name}</strong>
+                <span>{selectedShippingPackage.width_cm} × {selectedShippingPackage.length_cm} × {selectedShippingPackage.height_cm} cm · {selectedShippingPackage.empty_weight_grams} g empty · up to {shippingUnitsPerPackage || '—'} {Number(shippingUnitsPerPackage) === 1 ? 'unit' : 'units'}</span>
+              </div>}
+              <a className="shipping-package-manage-link" href="#shipping-packages">Manage shipping packages</a>
+            </fieldset>
             <fieldset className="product-categories">
               <legend>Categories</legend>
+              <div className="category-order-intro">
+                <GripVertical aria-hidden="true" />
+                <span><strong>Storefront order</strong><small>Drag the boxes to reorder them. The first category is featured on the website.</small></span>
+              </div>
               {categories.isPending && <span>Loading categories…</span>}
               {categories.data?.length === 0 && <span>No categories have been created yet.</span>}
-              {categories.data?.map((category) => (
-                <label key={category.id}>
-                  <input
-                    type="checkbox"
-                    checked={productCategoryIds.includes(category.id)}
-                    onChange={(event) => setProductCategoryIds((current) =>
-                      event.target.checked
-                        ? [...current, category.id]
-                        : current.filter((id) => id !== category.id)
-                    )}
-                  />
-                  <span><strong>{category.name}</strong><small>/{category.slug}</small></span>
-                </label>
-              ))}
+              <div className="product-category-order" role="list" aria-label="Storefront category order">
+                {categories.data?.map((category, index) => (
+                  <div
+                    className={`product-category-order-item${draggedCategoryId === category.id ? ' dragging' : ''}`}
+                    key={category.id}
+                    role="listitem"
+                    onDragOver={(event) => {
+                      if (!draggedCategoryId || reorderCategories.isPending) return
+                      event.preventDefault()
+                      event.dataTransfer.dropEffect = 'move'
+                    }}
+                    onDrop={(event) => {
+                      event.preventDefault()
+                      if (draggedCategoryId) moveCategory(draggedCategoryId, index)
+                      setDraggedCategoryId(null)
+                    }}
+                  >
+                    <span
+                      className="category-drag-handle"
+                      draggable={!reorderCategories.isPending}
+                      title={`Drag ${category.name} to change its storefront position`}
+                      onDragStart={(event) => {
+                        event.dataTransfer.effectAllowed = 'move'
+                        setDraggedCategoryId(category.id)
+                      }}
+                      onDragEnd={() => setDraggedCategoryId(null)}
+                    >
+                      <GripVertical aria-hidden="true" />
+                    </span>
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={productCategoryIds.includes(category.id)}
+                        onChange={(event) => setProductCategoryIds((current) =>
+                          event.target.checked
+                            ? [...current, category.id]
+                            : current.filter((id) => id !== category.id)
+                        )}
+                      />
+                      <span><strong>{category.name}</strong><small>/{category.slug}</small></span>
+                    </label>
+                    {index === 0 && <span className="featured-category-badge">Featured</span>}
+                    <div className="category-order-buttons" aria-label={`Move ${category.name}`}>
+                      <button type="button" disabled={index === 0 || reorderCategories.isPending} onClick={() => moveCategory(category.id, index - 1)} aria-label={`Move ${category.name} up`}><ChevronUp aria-hidden="true" /></button>
+                      <button type="button" disabled={index === (categories.data?.length ?? 0) - 1 || reorderCategories.isPending} onClick={() => moveCategory(category.id, index + 1)} aria-label={`Move ${category.name} down`}><ChevronDown aria-hidden="true" /></button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {categoryOrderMessage && <p className={`category-order-message${reorderCategories.isError ? ' error' : ''}`} role="status">{categoryOrderMessage}</p>}
             </fieldset>
             <fieldset className="personalization-settings">
               <legend>Personalização</legend>
@@ -2607,6 +3319,32 @@ function CatalogManagement({
                     </div>
                     <small>A fotografia selecionada aparece abaixo apenas com as áreas deste lado.</small>
                   </fieldset> : <p className="field-help">Guarda o produto e adiciona fotografias para poderes escolher a vista do editor.</p>}
+                  <section className={`article-reference-settings${activePersonalizationView.articleReference?.configured ? ' confirmed' : ''}`} aria-labelledby="article-reference-title">
+                    <header>
+                      <span className="article-reference-icon"><Ruler aria-hidden="true" /></span>
+                      <span><strong id="article-reference-title">Referência de medidas do artigo</strong><small>Delimita as laterais, o topo e o fundo reais de {activePersonalizationView.label || 'esta vista'}.</small></span>
+                      {activePersonalizationView.articleReference && <b>{activePersonalizationView.articleReference.configured ? 'Confirmada' : 'Por confirmar'}</b>}
+                    </header>
+                    {!activePersonalizationView.articleReference ? <button type="button" className="article-reference-start" onClick={enableArticleReference}>Definir limites do artigo</button> : <>
+                      <div className="article-reference-actions">
+                        <button type="button" className={editingArticleReference ? 'active' : ''} aria-pressed={editingArticleReference} onClick={() => setEditingArticleReference(true)}>Ajustar limites na fotografia</button>
+                        <button type="button" onClick={removeArticleReference}>Remover referência</button>
+                      </div>
+                      <div className="article-reference-coordinate-grid" aria-label="Posição dos limites do artigo">
+                        <label>Horizontal (%)<input type="number" min="0" max={100 - activePersonalizationView.articleReference.width} step="1" value={Math.round(activePersonalizationView.articleReference.x)} onChange={(event) => updateArticleReference({ x: Number(event.target.value) })} /></label>
+                        <label>Vertical (%)<input type="number" min="0" max={100 - activePersonalizationView.articleReference.height} step="1" value={Math.round(activePersonalizationView.articleReference.y)} onChange={(event) => updateArticleReference({ y: Number(event.target.value) })} /></label>
+                        <label>Largura (%)<input type="number" min="5" max={100 - activePersonalizationView.articleReference.x} step="1" value={Math.round(activePersonalizationView.articleReference.width)} onChange={(event) => updateArticleReference({ width: Math.max(5, Math.min(100 - activePersonalizationView.articleReference!.x, Number(event.target.value))) })} /></label>
+                        <label>Altura (%)<input type="number" min="5" max={100 - activePersonalizationView.articleReference.y} step="1" value={Math.round(activePersonalizationView.articleReference.height)} onChange={(event) => updateArticleReference({ height: Math.max(5, Math.min(100 - activePersonalizationView.articleReference!.y, Number(event.target.value))) })} /></label>
+                      </div>
+                      <div className="article-reference-size-grid">
+                        <span><strong>Medidas reais do artigo</strong><small>Usadas para converter a posição da personalização em centímetros.</small></span>
+                        <label>Largura (cm)<input type="number" min="0.5" max="300" step="0.5" value={activePersonalizationView.articleReference.physicalWidthCm} onChange={(event) => updateArticleReference({ physicalWidthCm: Math.max(.5, Math.min(300, Number(event.target.value))) })} /></label>
+                        <label>Altura (cm)<input type="number" min="0.5" max="300" step="0.5" value={activePersonalizationView.articleReference.physicalHeightCm} onChange={(event) => updateArticleReference({ physicalHeightCm: Math.max(.5, Math.min(300, Number(event.target.value))) })} /></label>
+                      </div>
+                      <label className="article-reference-confirmation"><input type="checkbox" checked={activePersonalizationView.articleReference.configured} onChange={(event) => updateArticleReference({ configured: event.target.checked })} /><span><strong>Confirmo estes limites e medidas</strong><small>Se alterares os limites ou as medidas, será necessário voltar a confirmar.</small></span></label>
+                      {!activePersonalizationView.articleReference.configured && <p className="article-reference-warning"><TriangleAlert aria-hidden="true" />As distâncias não serão mostradas ao cliente até confirmares esta referência.</p>}
+                    </>}
+                  </section>
                   <div className="print-area-manager">
                     <div className="print-area-tabs" role="tablist" aria-label={`Áreas de impressão de ${activePersonalizationView.label}`}>
                       {printAreas.map((area, index) => <button key={area.id} type="button" role="tab" aria-selected={area.id === activePrintArea.id} className={area.id === activePrintArea.id ? 'active' : ''} onClick={() => setActivePrintAreaId(area.id)}><span>{index + 1}</span>{area.label || `Área ${index + 1}`}</button>)}
@@ -2625,14 +3363,16 @@ function CatalogManagement({
                     <div className="print-area-physical-settings" aria-label="Medidas reais da área de impressão">
                       <span><strong>Medida real de impressão</strong><small>Define o tamanho máximo que esta área terá no produto final.</small></span>
                       <div>
-                        <label>Largura (cm)<input type="number" min="0.5" max="200" step="0.5" value={activePrintArea.physicalWidthCm} onChange={(event) => updatePrintArea(activePrintArea.id, { physicalWidthCm: Math.max(.5, Math.min(200, Number(event.target.value))) })} /></label>
-                        <label>Altura (cm)<input type="number" min="0.5" max="200" step="0.5" value={activePrintArea.physicalHeightCm} onChange={(event) => updatePrintArea(activePrintArea.id, { physicalHeightCm: Math.max(.5, Math.min(200, Number(event.target.value))) })} /></label>
+                        <label>Largura (cm)<input type="number" min="0.5" max="200" step="0.5" value={activePrintAreaPhysical.width} disabled={activePersonalizationView.articleReference?.configured} onChange={(event) => updatePrintArea(activePrintArea.id, { physicalWidthCm: Math.max(.5, Math.min(200, Number(event.target.value))) })} /></label>
+                        <label>Altura (cm)<input type="number" min="0.5" max="200" step="0.5" value={activePrintAreaPhysical.height} disabled={activePersonalizationView.articleReference?.configured} onChange={(event) => updatePrintArea(activePrintArea.id, { physicalHeightCm: Math.max(.5, Math.min(200, Number(event.target.value))) })} /></label>
                       </div>
                     </div>
+                    {activePersonalizationView.articleReference?.configured && <small className="field-help">Estas medidas são calculadas automaticamente a partir da referência física do artigo.</small>}
                   </div>
                   <div className="print-area-preview">
                     {personalizationPreviewMedia ? <div className="print-area-canvas"><img src={personalizationPreviewMedia.detail_url} alt={`Pré-visualização das áreas sobre ${personalizationPreviewMedia.alt_text}`} />
-                      {printAreas.map((area) => <EditablePrintArea key={area.id} area={area} label={`${area.label || 'Área sem nome'} · ${area.physicalWidthCm} × ${area.physicalHeightCm} cm`} active={area.id === activePrintArea.id} onActivate={() => setActivePrintAreaId(area.id)} onChange={(change) => updatePrintArea(area.id, change)} />)}
+                      {activePersonalizationView.articleReference && <EditablePrintArea area={activePersonalizationView.articleReference} kind="reference" label={`Limites físicos de ${activePersonalizationView.label}`} active={editingArticleReference} onActivate={() => setEditingArticleReference(true)} onChange={updateArticleReference} />}
+                      {printAreas.map((area) => { const physical = effectivePrintAreaDimensions(activePersonalizationView, area); return <EditablePrintArea key={area.id} area={area} label={`${area.label || 'Área sem nome'} · ${physical.width} × ${physical.height} cm`} active={!editingArticleReference && area.id === activePrintArea.id} onActivate={() => { setEditingArticleReference(false); setActivePrintAreaId(area.id) }} onChange={(change) => updatePrintArea(area.id, change)} /> })}
                     </div> : <span>Escolhe uma fotografia para {activePersonalizationView.label || 'esta vista'} antes de posicionares as áreas.</span>}
                   </div>
                 </>
@@ -2655,34 +3395,14 @@ function CatalogManagement({
               </p>
             )}
             <button className="primary-button" disabled={createProduct.isPending || updateProduct.isPending}>
-              {createProduct.isPending || updateProduct.isPending ? 'Saving…' : preview ? 'Save product' : 'Create draft'}
+              {createProduct.isPending || updateProduct.isPending
+                ? pendingProductImages.length > 0 ? 'Saving and uploading photos…' : 'Saving…'
+                : preview ? 'Save product' : 'Create draft'}
             </button>
             {preview && <button className="secondary-button" type="button" onClick={clearEditor}>Create another product</button>}
             {preview && <button className="danger-button" type="button" disabled={deleteProduct.isPending} onClick={() => {
               if (window.confirm(`Permanently delete ${preview.title}? Products with sales cannot be deleted.`)) deleteProduct.mutate(preview.id)
             }}>Delete product</button>}
-            {preview && (
-              <div className="admin-product-photos">
-                <div><strong>Product photos</strong><span>{preview.media.length} uploaded</span></div>
-                {preview.media.length > 0 && (
-                  <div className="admin-product-photo-grid">
-                    {preview.media.map((media, index) => (
-                      <figure key={media.id}>
-                        <img src={media.thumbnail_url} alt={media.alt_text} />
-                        <figcaption>{index === 0 ? 'Main photo' : `Photo ${index + 1}`}</figcaption>
-                      </figure>
-                    ))}
-                  </div>
-                )}
-                <label className="product-upload admin-photo-upload" aria-label="Add product photos">
-                  <ImageUp size={15} /> {uploadImage.isPending ? 'Uploading…' : 'Add photos'}
-                  <input type="file" multiple accept="image/jpeg,image/png,image/webp" disabled={uploadImage.isPending} onChange={(event) => {
-                    selectImages(preview, event.currentTarget.files)
-                    event.currentTarget.value = ''
-                  }} />
-                </label>
-              </div>
-            )}
           </form>
         )}
       </div>

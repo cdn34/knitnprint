@@ -55,6 +55,7 @@ function ProductPage() {
   const [hydrated, setHydrated] = useState(false)
   const [selectedMediaIndex, setSelectedMediaIndex] = useState(0)
   const selectedMedia = product.media[selectedMediaIndex] ?? product.media[0]
+  const personalizable = product.personalization.mode !== 'none'
 
   function showPreviousPhoto() {
     setSelectedMediaIndex((current) =>
@@ -84,6 +85,24 @@ function ProductPage() {
       setCartState('error')
     }
   }
+
+  const addToCartLabel = stock?.state === 'sold-out'
+    ? localizedStock?.label ?? t('product.unavailable')
+    : !hydrated
+      ? t('product.preparingCart')
+      : cartState === 'adding'
+        ? t('product.adding')
+        : cartState === 'added'
+          ? t('product.added')
+          : t('product.addToCart')
+  const addToCartButton = <button
+    className={`button ${personalizable ? 'button--secondary' : 'button--primary'}`}
+    type="button"
+    disabled={!hydrated || !variant || stock?.state === 'sold-out' || cartState === 'adding'}
+    onClick={addToCart}
+  >
+    {addToCartLabel}
+  </button>
 
   return (
     <>
@@ -181,22 +200,10 @@ function ProductPage() {
               <span><strong>{localizedStock?.label}</strong></span>
             </div>
           )}
-          {product.personalization.mode !== 'none' && stock?.state !== 'sold-out' ? <a className="button button--primary personalization-start-button" href={`/products/${product.slug}/personalize`}>Começa a personalizar</a> : <button
-            className="button button--primary"
-            type="button"
-            disabled={!hydrated || !variant || stock?.state === 'sold-out' || cartState === 'adding'}
-            onClick={addToCart}
-          >
-            {stock?.state === 'sold-out'
-              ? localizedStock?.label ?? t('product.unavailable')
-              : !hydrated
-                ? t('product.preparingCart')
-                : cartState === 'adding'
-                  ? t('product.adding')
-                  : cartState === 'added'
-                    ? t('product.added')
-                    : t('product.addToCart')}
-          </button>}
+          {personalizable && stock?.state !== 'sold-out' ? <div className="product-purchase-actions">
+            <a className="button button--primary personalization-start-button" href={`/products/${product.slug}/personalize`}>Começa a personalizar</a>
+            {addToCartButton}
+          </div> : addToCartButton}
           <div className="cart-action-status" aria-live="polite">
             {cartState === 'added' && <a href="/cart">{t('product.viewCart')}</a>}
             {cartState === 'error' && (

@@ -102,26 +102,22 @@ async fn cart_prices_stock_delivery_and_retries_are_server_controlled() {
         .unwrap();
     let short = request(&router, "GET", "/api/cart", Some(&cart_cookie), None, None).await;
     let short_body = response_json(short).await;
-    assert_eq!(short_body["items"][0]["available"], false);
-    assert_eq!(short_body["issues"][0]["code"], "quantity_unavailable");
+    assert_eq!(short_body["items"][0]["available"], true);
+    assert_eq!(short_body["items"][0]["available_quantity"], 100);
+    assert_eq!(short_body["issues"], json!([]));
     assert_eq!(short_body["checkout_ready"], false);
 
-    sqlx::query("UPDATE inventory_items SET available_quantity = 8 WHERE variant_id = $1")
-        .bind(variant_id)
-        .execute(&pool)
-        .await
-        .unwrap();
     let updated = request(
         &router,
         "PATCH",
         &format!("/api/cart/items/{line_id}"),
         Some(&cart_cookie),
-        Some(json!({ "quantity": 3 })),
+        Some(json!({ "quantity": 100 })),
         Some("cart-update-fixture-01"),
     )
     .await;
     assert_eq!(updated.status(), StatusCode::OK);
-    assert_eq!(response_json(updated).await["item_count"], 3);
+    assert_eq!(response_json(updated).await["item_count"], 100);
 
     let delivery = request(
         &router,

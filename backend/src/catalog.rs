@@ -49,10 +49,70 @@ pub struct Product {
     pub description: String,
     pub status: String,
     pub search_keywords: String,
+    pub shipping: ShippingProfile,
     pub variants: Vec<Variant>,
     pub media: Vec<ProductMedia>,
     pub categories: Vec<Category>,
     pub personalization: PersonalizationConfig,
+}
+
+#[derive(Clone, Serialize, Deserialize, ToSchema)]
+pub struct ShippingProfile {
+    #[serde(default)]
+    pub package_profile_id: Option<Uuid>,
+    #[serde(default)]
+    pub package_profile_name: Option<String>,
+    pub weight_grams: i32,
+    pub width_cm: i32,
+    pub length_cm: i32,
+    pub height_cm: i32,
+    #[serde(default)]
+    pub empty_weight_grams: i32,
+    pub units_per_package: i32,
+    pub configured: bool,
+}
+
+impl Default for ShippingProfile {
+    fn default() -> Self {
+        Self {
+            package_profile_id: None,
+            package_profile_name: None,
+            weight_grams: 500,
+            width_cm: 35,
+            length_cm: 50,
+            height_cm: 25,
+            empty_weight_grams: 0,
+            units_per_package: 1,
+            configured: false,
+        }
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize, ToSchema, FromRow)]
+pub struct ShippingPackageProfile {
+    pub id: Uuid,
+    pub name: String,
+    pub width_cm: i32,
+    pub length_cm: i32,
+    pub height_cm: i32,
+    pub empty_weight_grams: i32,
+    pub active: bool,
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct ShippingPackageProfileRequest {
+    pub name: String,
+    pub width_cm: i32,
+    pub length_cm: i32,
+    pub height_cm: i32,
+    #[serde(default)]
+    pub empty_weight_grams: i32,
+    #[serde(default = "default_true")]
+    pub active: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 #[derive(Clone, Serialize, Deserialize, ToSchema, FromRow)]
@@ -138,6 +198,7 @@ pub struct Category {
     pub name: String,
     pub slug: String,
     pub description: String,
+    pub position: i32,
 }
 
 #[derive(Serialize, ToSchema, FromRow)]
@@ -159,6 +220,12 @@ struct ProductRow {
     description: String,
     status: String,
     search_keywords: String,
+    shipping_weight_grams: i32,
+    shipping_width_cm: i32,
+    shipping_length_cm: i32,
+    shipping_height_cm: i32,
+    shipping_units_per_package: i32,
+    shipping_profile_configured: bool,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -169,6 +236,8 @@ pub struct CreateProductRequest {
     pub description: String,
     #[serde(default)]
     pub search_keywords: String,
+    #[serde(default)]
+    pub shipping: ShippingProfile,
     pub variants: Vec<CreateVariantRequest>,
     #[serde(default)]
     pub personalization: PersonalizationConfig,
@@ -199,6 +268,8 @@ pub struct UpdateProductRequest {
     pub currency: String,
     pub available_quantity: i64,
     #[serde(default)]
+    pub shipping: ShippingProfile,
+    #[serde(default)]
     pub personalization: PersonalizationConfig,
 }
 
@@ -213,6 +284,11 @@ pub struct CreateCategoryRequest {
     pub slug: String,
     #[serde(default)]
     pub description: String,
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct ReorderCategoriesRequest {
+    pub category_ids: Vec<Uuid>,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -321,6 +397,14 @@ pub async fn create(
     if !valid_product(&input) {
         return invalid_input();
     }
+    let package_profile =
+        match resolve_shipping_package(&pool, input.shipping.package_profile_id).await {
+            Ok(profile) => profile,
+            Err(response) => return response,
+        };
+    if input.shipping.configured && package_profile.is_none() {
+        return invalid_input();
+    }
     let product_id = Uuid::now_v7();
     let mut transaction = match pool.begin().await {
         Ok(transaction) => transaction,
@@ -328,8 +412,13 @@ pub async fn create(
     };
     if let Err(error) = sqlx::query(
         r#"
-        INSERT INTO products (id, title, slug, description, search_keywords)
-        VALUES ($1, $2, $3, $4, $5)
+        INSERT INTO products (
+            id, title, slug, description, search_keywords,
+            shipping_weight_grams, shipping_width_cm, shipping_length_cm,
+            shipping_height_cm, shipping_units_per_package, shipping_profile_configured,
+            shipping_package_profile_id
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
         "#,
     )
     .bind(product_id)
@@ -337,6 +426,25 @@ pub async fn create(
     .bind(input.slug.trim())
     .bind(input.description.trim())
     .bind(input.search_keywords.trim())
+    .bind(input.shipping.weight_grams)
+    .bind(
+        package_profile
+            .as_ref()
+            .map_or(input.shipping.width_cm, |profile| profile.width_cm),
+    )
+    .bind(
+        package_profile
+            .as_ref()
+            .map_or(input.shipping.length_cm, |profile| profile.length_cm),
+    )
+    .bind(
+        package_profile
+            .as_ref()
+            .map_or(input.shipping.height_cm, |profile| profile.height_cm),
+    )
+    .bind(input.shipping.units_per_package)
+    .bind(input.shipping.configured && package_profile.is_some())
+    .bind(package_profile.as_ref().map(|profile| profile.id))
     .execute(&mut *transaction)
     .await
     {
@@ -435,7 +543,8 @@ pub async fn update(
         || !valid_slug(input.slug.trim())
         || input.description.len() > 50_000
         || input.search_keywords.len() > 2_000
-        || !valid_variant(&variant)
+        || !valid_variant_details(&variant)
+        || !valid_shipping(&input.shipping)
         || !valid_personalization(&input.personalization)
     {
         return invalid_input();
@@ -443,6 +552,14 @@ pub async fn update(
     let Some(pool) = state.database else {
         return unavailable();
     };
+    let package_profile =
+        match resolve_shipping_package(&pool, input.shipping.package_profile_id).await {
+            Ok(profile) => profile,
+            Err(response) => return response,
+        };
+    if input.shipping.configured && package_profile.is_none() {
+        return invalid_input();
+    }
     let mut tx = match pool.begin().await {
         Ok(tx) => tx,
         Err(_) => return unavailable(),
@@ -455,12 +572,62 @@ pub async fn update(
     }) else {
         return not_found();
     };
-    if let Err(error) = sqlx::query("UPDATE products SET title=$2, slug=$3, description=$4, search_keywords=$5, updated_at=now() WHERE id=$1")
-        .bind(product_id).bind(input.title.trim()).bind(input.slug.trim()).bind(input.description.trim()).bind(input.search_keywords.trim()).execute(&mut *tx).await { return database_write_error(error); }
+    if let Err(error) = sqlx::query(
+        r#"UPDATE products SET title=$2, slug=$3, description=$4, search_keywords=$5,
+        shipping_weight_grams=$6, shipping_width_cm=$7, shipping_length_cm=$8,
+        shipping_height_cm=$9, shipping_units_per_package=$10,
+        shipping_profile_configured=$11, shipping_package_profile_id=$12, updated_at=now()
+        WHERE id=$1"#,
+    )
+    .bind(product_id)
+    .bind(input.title.trim())
+    .bind(input.slug.trim())
+    .bind(input.description.trim())
+    .bind(input.search_keywords.trim())
+    .bind(input.shipping.weight_grams)
+    .bind(
+        package_profile
+            .as_ref()
+            .map_or(input.shipping.width_cm, |profile| profile.width_cm),
+    )
+    .bind(
+        package_profile
+            .as_ref()
+            .map_or(input.shipping.length_cm, |profile| profile.length_cm),
+    )
+    .bind(
+        package_profile
+            .as_ref()
+            .map_or(input.shipping.height_cm, |profile| profile.height_cm),
+    )
+    .bind(input.shipping.units_per_package)
+    .bind(input.shipping.configured && package_profile.is_some())
+    .bind(package_profile.as_ref().map(|profile| profile.id))
+    .execute(&mut *tx)
+    .await
+    {
+        return database_write_error(error);
+    }
+    if sqlx::query(
+        r#"DELETE FROM cart_shipping_quotes quote
+        USING cart_lines line, product_variants variant
+        WHERE quote.cart_id = line.cart_id
+          AND line.variant_id = variant.id
+          AND variant.product_id = $1"#,
+    )
+    .bind(product_id)
+    .execute(&mut *tx)
+    .await
+    .is_err()
+    {
+        return unavailable();
+    }
     if let Err(error) = sqlx::query("UPDATE product_variants SET sku=$2, price_minor=$3, currency=$4, updated_at=now() WHERE id=$1")
         .bind(variant_id).bind(input.sku.trim()).bind(input.price_minor).bind(input.currency.trim()).execute(&mut *tx).await { return database_write_error(error); }
     if old_quantity != input.available_quantity {
-        let delta = input.available_quantity - old_quantity;
+        let Some(delta) = input.available_quantity.checked_sub(old_quantity) else {
+            return invalid_input();
+        };
         if sqlx::query("UPDATE inventory_items SET available_quantity=$2, updated_at=now() WHERE variant_id=$1").bind(variant_id).bind(input.available_quantity).execute(&mut *tx).await.is_err()
             || sqlx::query("INSERT INTO inventory_movements (id, variant_id, actor_staff_user_id, movement_type, quantity_delta, resulting_available_quantity, reason) VALUES ($1,$2,$3,'adjustment',$4,$5,'Product editor stock correction')")
                 .bind(Uuid::now_v7()).bind(variant_id).bind(actor.id).bind(delta).bind(input.available_quantity).execute(&mut *tx).await.is_err() { return unavailable(); }
@@ -622,7 +789,7 @@ pub async fn category_list(State(state): State<AppState>, actor: AuthenticatedSt
         return unavailable();
     };
     match sqlx::query_as::<_, Category>(
-        "SELECT id, name, slug, description FROM categories ORDER BY name, id",
+        "SELECT id, name, slug, description, position FROM categories ORDER BY position, id",
     )
     .fetch_all(&pool)
     .await
@@ -657,22 +824,33 @@ pub async fn category_create(
     let Some(pool) = state.database else {
         return unavailable();
     };
+    let mut transaction = match pool.begin().await {
+        Ok(transaction) => transaction,
+        Err(_) => return unavailable(),
+    };
+    let position = match sqlx::query_scalar::<_, i32>(
+        "SELECT COALESCE(MAX(position), -1) + 1 FROM categories",
+    )
+    .fetch_one(&mut *transaction)
+    .await
+    {
+        Ok(position) => position,
+        Err(_) => return unavailable(),
+    };
     let category = Category {
         id: Uuid::now_v7(),
         name: input.name.trim().into(),
         slug: input.slug.trim().into(),
         description: input.description.trim().into(),
-    };
-    let mut transaction = match pool.begin().await {
-        Ok(transaction) => transaction,
-        Err(_) => return unavailable(),
+        position,
     };
     let inserted =
-        sqlx::query("INSERT INTO categories (id, name, slug, description) VALUES ($1, $2, $3, $4)")
+        sqlx::query("INSERT INTO categories (id, name, slug, description, position) VALUES ($1, $2, $3, $4, $5)")
             .bind(category.id)
             .bind(&category.name)
             .bind(&category.slug)
             .bind(&category.description)
+            .bind(category.position)
             .execute(&mut *transaction)
             .await;
     match inserted {
@@ -694,6 +872,280 @@ pub async fn category_create(
         return unavailable();
     }
     (StatusCode::CREATED, Json(category)).into_response()
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/admin/shipping-packages",
+    tag = "admin catalog",
+    responses(
+        (status = 200, body = [ShippingPackageProfile]),
+        (status = 401, body = ErrorBody),
+        (status = 403, body = ErrorBody)
+    )
+)]
+pub async fn shipping_package_list(
+    State(state): State<AppState>,
+    actor: AuthenticatedStaff,
+) -> Response {
+    if let Err(response) = require_capability(&actor, CATALOG_READ) {
+        return response.into_response();
+    }
+    let Some(pool) = state.database else {
+        return unavailable();
+    };
+    match sqlx::query_as::<_, ShippingPackageProfile>(
+        r#"SELECT id, name, width_cm, length_cm, height_cm, empty_weight_grams, active
+           FROM shipping_package_profiles
+           ORDER BY active DESC, lower(name), id"#,
+    )
+    .fetch_all(&pool)
+    .await
+    {
+        Ok(profiles) => Json(profiles).into_response(),
+        Err(_) => unavailable(),
+    }
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/admin/shipping-packages",
+    tag = "admin catalog",
+    request_body = ShippingPackageProfileRequest,
+    responses(
+        (status = 201, body = ShippingPackageProfile),
+        (status = 409, body = ErrorBody),
+        (status = 422, body = ErrorBody)
+    )
+)]
+pub async fn shipping_package_create(
+    State(state): State<AppState>,
+    actor: AuthenticatedStaff,
+    Json(input): Json<ShippingPackageProfileRequest>,
+) -> Response {
+    if let Err(response) = require_capability(&actor, CATALOG_WRITE) {
+        return response.into_response();
+    }
+    if !valid_shipping_package(&input) {
+        return invalid_input();
+    }
+    let Some(pool) = state.database else {
+        return unavailable();
+    };
+    let profile = ShippingPackageProfile {
+        id: Uuid::now_v7(),
+        name: input.name.trim().into(),
+        width_cm: input.width_cm,
+        length_cm: input.length_cm,
+        height_cm: input.height_cm,
+        empty_weight_grams: input.empty_weight_grams,
+        active: input.active,
+    };
+    let mut transaction = match pool.begin().await {
+        Ok(transaction) => transaction,
+        Err(_) => return unavailable(),
+    };
+    if let Err(error) = sqlx::query(
+        r#"INSERT INTO shipping_package_profiles
+           (id, name, width_cm, length_cm, height_cm, empty_weight_grams, active)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)"#,
+    )
+    .bind(profile.id)
+    .bind(&profile.name)
+    .bind(profile.width_cm)
+    .bind(profile.length_cm)
+    .bind(profile.height_cm)
+    .bind(profile.empty_weight_grams)
+    .bind(profile.active)
+    .execute(&mut *transaction)
+    .await
+    {
+        return database_write_error(error);
+    }
+    if audit_entity(
+        &mut transaction,
+        actor.id,
+        "shipping_package.create",
+        "shipping_package_profile",
+        profile.id,
+        None,
+    )
+    .await
+    .is_err()
+        || transaction.commit().await.is_err()
+    {
+        return unavailable();
+    }
+    (StatusCode::CREATED, Json(profile)).into_response()
+}
+
+#[utoipa::path(
+    put,
+    path = "/api/admin/shipping-packages/{profile_id}",
+    params(("profile_id" = Uuid, Path)),
+    tag = "admin catalog",
+    request_body = ShippingPackageProfileRequest,
+    responses(
+        (status = 200, body = ShippingPackageProfile),
+        (status = 404, body = ErrorBody),
+        (status = 409, body = ErrorBody),
+        (status = 422, body = ErrorBody)
+    )
+)]
+pub async fn shipping_package_update(
+    State(state): State<AppState>,
+    actor: AuthenticatedStaff,
+    Path(profile_id): Path<Uuid>,
+    Json(input): Json<ShippingPackageProfileRequest>,
+) -> Response {
+    if let Err(response) = require_capability(&actor, CATALOG_WRITE) {
+        return response.into_response();
+    }
+    if !valid_shipping_package(&input) {
+        return invalid_input();
+    }
+    let Some(pool) = state.database else {
+        return unavailable();
+    };
+    let profile = ShippingPackageProfile {
+        id: profile_id,
+        name: input.name.trim().into(),
+        width_cm: input.width_cm,
+        length_cm: input.length_cm,
+        height_cm: input.height_cm,
+        empty_weight_grams: input.empty_weight_grams,
+        active: input.active,
+    };
+    let mut transaction = match pool.begin().await {
+        Ok(transaction) => transaction,
+        Err(_) => return unavailable(),
+    };
+    let updated = sqlx::query(
+        r#"UPDATE shipping_package_profiles
+           SET name=$2, width_cm=$3, length_cm=$4, height_cm=$5,
+               empty_weight_grams=$6, active=$7, updated_at=now()
+           WHERE id=$1"#,
+    )
+    .bind(profile.id)
+    .bind(&profile.name)
+    .bind(profile.width_cm)
+    .bind(profile.length_cm)
+    .bind(profile.height_cm)
+    .bind(profile.empty_weight_grams)
+    .bind(profile.active)
+    .execute(&mut *transaction)
+    .await;
+    let updated = match updated {
+        Ok(updated) => updated,
+        Err(error) => return database_write_error(error),
+    };
+    if updated.rows_affected() == 0 {
+        return not_found();
+    }
+    if sqlx::query(
+        r#"DELETE FROM cart_shipping_quotes quote
+           USING cart_lines line, product_variants variant, products product
+           WHERE quote.cart_id=line.cart_id
+             AND line.variant_id=variant.id
+             AND variant.product_id=product.id
+             AND product.shipping_package_profile_id=$1"#,
+    )
+    .bind(profile.id)
+    .execute(&mut *transaction)
+    .await
+    .is_err()
+    {
+        return unavailable();
+    }
+    if audit_entity(
+        &mut transaction,
+        actor.id,
+        "shipping_package.update",
+        "shipping_package_profile",
+        profile.id,
+        None,
+    )
+    .await
+    .is_err()
+        || transaction.commit().await.is_err()
+    {
+        return unavailable();
+    }
+    Json(profile).into_response()
+}
+
+#[utoipa::path(
+    delete,
+    path = "/api/admin/shipping-packages/{profile_id}",
+    params(("profile_id" = Uuid, Path)),
+    tag = "admin catalog",
+    responses(
+        (status = 204),
+        (status = 404, body = ErrorBody),
+        (status = 409, body = ErrorBody)
+    )
+)]
+pub async fn shipping_package_delete(
+    State(state): State<AppState>,
+    actor: AuthenticatedStaff,
+    Path(profile_id): Path<Uuid>,
+) -> Response {
+    if let Err(response) = require_capability(&actor, CATALOG_WRITE) {
+        return response.into_response();
+    }
+    let Some(pool) = state.database else {
+        return unavailable();
+    };
+    let mut transaction = match pool.begin().await {
+        Ok(transaction) => transaction,
+        Err(_) => return unavailable(),
+    };
+    let used: bool = match sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM products WHERE shipping_package_profile_id=$1)",
+    )
+    .bind(profile_id)
+    .fetch_one(&mut *transaction)
+    .await
+    {
+        Ok(used) => used,
+        Err(_) => return unavailable(),
+    };
+    if used {
+        return (
+            StatusCode::CONFLICT,
+            Json(ErrorBody::new(
+                "shipping_package_in_use",
+                "This package is assigned to one or more products.",
+            )),
+        )
+            .into_response();
+    }
+    let deleted = match sqlx::query("DELETE FROM shipping_package_profiles WHERE id=$1")
+        .bind(profile_id)
+        .execute(&mut *transaction)
+        .await
+    {
+        Ok(deleted) => deleted,
+        Err(error) => return database_write_error(error),
+    };
+    if deleted.rows_affected() == 0 {
+        return not_found();
+    }
+    if audit_entity(
+        &mut transaction,
+        actor.id,
+        "shipping_package.delete",
+        "shipping_package_profile",
+        profile_id,
+        None,
+    )
+    .await
+    .is_err()
+        || transaction.commit().await.is_err()
+    {
+        return unavailable();
+    }
+    StatusCode::NO_CONTENT.into_response()
 }
 
 #[utoipa::path(
@@ -777,6 +1229,84 @@ pub async fn add_variant(
     let mut response = product_by_id(&pool, product_id).await;
     *response.status_mut() = StatusCode::CREATED;
     response
+}
+
+#[utoipa::path(
+    put,
+    path = "/api/admin/categories/order",
+    tag = "admin catalog",
+    request_body = ReorderCategoriesRequest,
+    responses((status = 200, body = [Category]), (status = 401, body = ErrorBody), (status = 403, body = ErrorBody), (status = 422, body = ErrorBody))
+)]
+pub async fn category_reorder(
+    State(state): State<AppState>,
+    actor: AuthenticatedStaff,
+    Json(input): Json<ReorderCategoriesRequest>,
+) -> Response {
+    if let Err(response) = require_capability(&actor, CATALOG_WRITE) {
+        return response.into_response();
+    }
+    let unique_ids = input.category_ids.iter().copied().collect::<BTreeSet<_>>();
+    if unique_ids.len() != input.category_ids.len() {
+        return invalid_input();
+    }
+    let Some(pool) = state.database else {
+        return unavailable();
+    };
+    let category_count = match sqlx::query_scalar::<_, i64>("SELECT count(*) FROM categories")
+        .fetch_one(&pool)
+        .await
+    {
+        Ok(count) => count,
+        Err(_) => return unavailable(),
+    };
+    if category_count != input.category_ids.len() as i64 {
+        return invalid_input();
+    }
+    let mut transaction = match pool.begin().await {
+        Ok(transaction) => transaction,
+        Err(_) => return unavailable(),
+    };
+    for (position, category_id) in input.category_ids.iter().enumerate() {
+        let updated =
+            sqlx::query("UPDATE categories SET position = $1, updated_at = now() WHERE id = $2")
+                .bind(position as i32)
+                .bind(category_id)
+                .execute(&mut *transaction)
+                .await;
+        match updated {
+            Ok(result) if result.rows_affected() == 1 => {}
+            Ok(_) => return invalid_input(),
+            Err(_) => return unavailable(),
+        }
+    }
+    if let Some(featured_category_id) = input.category_ids.first() {
+        if audit_entity(
+            &mut transaction,
+            actor.id,
+            "category.reorder",
+            "category",
+            *featured_category_id,
+            Some("Updated storefront category order"),
+        )
+        .await
+        .is_err()
+        {
+            return unavailable();
+        }
+    }
+    if transaction.commit().await.is_err() {
+        return unavailable();
+    }
+    match sqlx::query_as::<_, Category>(
+        "SELECT id, name, slug, description, position FROM categories ORDER BY position, id",
+    )
+    .fetch_all(&pool)
+    .await
+    {
+        Ok(categories) => Json(categories).into_response(),
+        Err(_) => unavailable(),
+    }
 }
 
 #[utoipa::path(
@@ -911,7 +1441,7 @@ pub async fn public_category_list(State(state): State<AppState>) -> Response {
     };
     match sqlx::query_as::<_, Category>(
         r#"
-        SELECT category.id, category.name, category.slug, category.description
+        SELECT category.id, category.name, category.slug, category.description, category.position
         FROM categories category
         WHERE EXISTS (
             SELECT 1
@@ -919,7 +1449,7 @@ pub async fn public_category_list(State(state): State<AppState>) -> Response {
             JOIN products product ON product.id = assignment.product_id
             WHERE assignment.category_id = category.id AND product.status = 'active'
         )
-        ORDER BY category.name, category.id
+        ORDER BY category.position, category.id
         "#,
     )
     .fetch_all(&pool)
@@ -943,7 +1473,9 @@ pub async fn public_detail(State(state): State<AppState>, Path(slug): Path<Strin
     };
     let row = sqlx::query_as::<_, ProductRow>(
         r#"
-        SELECT id, title, slug, description, status, search_keywords
+        SELECT id, title, slug, description, status, search_keywords,
+               shipping_weight_grams, shipping_width_cm, shipping_length_cm,
+               shipping_height_cm, shipping_units_per_package, shipping_profile_configured
         FROM products
         WHERE slug = $1 AND status = 'active'
         "#,
@@ -970,7 +1502,9 @@ async fn product_rows(
     let category = category.unwrap_or("").trim();
     sqlx::query_as(
         r#"
-        SELECT id, title, slug, description, status, search_keywords
+        SELECT id, title, slug, description, status, search_keywords,
+               shipping_weight_grams, shipping_width_cm, shipping_length_cm,
+               shipping_height_cm, shipping_units_per_package, shipping_profile_configured
         FROM products
         WHERE ($1 = '' OR status = $1)
           AND (
@@ -1023,6 +1557,7 @@ async fn public_products_response(pool: &PgPool, rows: Vec<ProductRow>) -> Respo
         match hydrate_product(pool, row).await {
             Ok(mut product) => {
                 product.search_keywords.clear();
+                hide_inventory(&mut product);
                 products.push(product);
             }
             Err(_) => return unavailable(),
@@ -1035,15 +1570,26 @@ async fn public_product_response(pool: &PgPool, row: ProductRow) -> Response {
     match hydrate_product(pool, row).await {
         Ok(mut product) => {
             product.search_keywords.clear();
+            hide_inventory(&mut product);
             Json(product).into_response()
         }
         Err(_) => unavailable(),
     }
 }
 
+fn hide_inventory(product: &mut Product) {
+    for variant in &mut product.variants {
+        variant.available_quantity = 100;
+        variant.low_stock = false;
+    }
+}
+
 async fn product_by_id(pool: &PgPool, id: Uuid) -> Response {
     match sqlx::query_as::<_, ProductRow>(
-        "SELECT id, title, slug, description, status, search_keywords FROM products WHERE id = $1",
+        r#"SELECT id, title, slug, description, status, search_keywords,
+        shipping_weight_grams, shipping_width_cm, shipping_length_cm,
+        shipping_height_cm, shipping_units_per_package, shipping_profile_configured
+        FROM products WHERE id = $1"#,
     )
     .bind(id)
     .fetch_optional(pool)
@@ -1063,6 +1609,17 @@ async fn product_response(pool: &PgPool, row: ProductRow) -> Response {
 }
 
 async fn hydrate_product(pool: &PgPool, row: ProductRow) -> Result<Product, sqlx::Error> {
+    let package_profile = sqlx::query_as::<_, ShippingPackageProfile>(
+        r#"SELECT profile.id, profile.name, profile.width_cm, profile.length_cm,
+                  profile.height_cm, profile.empty_weight_grams, profile.active
+           FROM products product
+           JOIN shipping_package_profiles profile
+             ON profile.id=product.shipping_package_profile_id
+           WHERE product.id=$1"#,
+    )
+    .bind(row.id)
+    .fetch_optional(pool)
+    .await?;
     let variants = sqlx::query_as::<_, Variant>(
         r#"
         SELECT
@@ -1107,7 +1664,7 @@ async fn hydrate_product(pool: &PgPool, row: ProductRow) -> Result<Product, sqlx
     .await?;
     let categories = sqlx::query_as::<_, Category>(
         r#"
-        SELECT category.id, category.name, category.slug, category.description
+        SELECT category.id, category.name, category.slug, category.description, category.position
         FROM product_categories assignment
         JOIN categories category ON category.id = assignment.category_id
         WHERE assignment.product_id = $1
@@ -1139,6 +1696,28 @@ async fn hydrate_product(pool: &PgPool, row: ProductRow) -> Result<Product, sqlx
         description: row.description,
         status: row.status,
         search_keywords: row.search_keywords,
+        shipping: ShippingProfile {
+            package_profile_id: package_profile.as_ref().map(|profile| profile.id),
+            package_profile_name: package_profile.as_ref().map(|profile| profile.name.clone()),
+            weight_grams: row.shipping_weight_grams,
+            width_cm: package_profile
+                .as_ref()
+                .map_or(row.shipping_width_cm, |profile| profile.width_cm),
+            length_cm: package_profile
+                .as_ref()
+                .map_or(row.shipping_length_cm, |profile| profile.length_cm),
+            height_cm: package_profile
+                .as_ref()
+                .map_or(row.shipping_height_cm, |profile| profile.height_cm),
+            empty_weight_grams: package_profile
+                .as_ref()
+                .map_or(0, |profile| profile.empty_weight_grams),
+            units_per_package: row.shipping_units_per_package,
+            configured: row.shipping_profile_configured
+                && package_profile
+                    .as_ref()
+                    .is_some_and(|profile| profile.active),
+        },
         variants,
         media,
         categories,
@@ -1163,9 +1742,50 @@ fn valid_product(input: &CreateProductRequest) -> bool {
         && valid_slug(slug)
         && input.description.len() <= 50_000
         && input.search_keywords.len() <= 2_000
+        && valid_shipping(&input.shipping)
         && currency_and_variants_valid
         && unique_skus
         && valid_personalization(&input.personalization)
+}
+
+fn valid_shipping(shipping: &ShippingProfile) -> bool {
+    (1..=1_000_000).contains(&shipping.weight_grams)
+        && (1..=300).contains(&shipping.width_cm)
+        && (1..=300).contains(&shipping.length_cm)
+        && (1..=300).contains(&shipping.height_cm)
+        && (0..=100_000).contains(&shipping.empty_weight_grams)
+        && (1..=100).contains(&shipping.units_per_package)
+        && (!shipping.configured || shipping.package_profile_id.is_some())
+}
+
+fn valid_shipping_package(input: &ShippingPackageProfileRequest) -> bool {
+    !input.name.trim().is_empty()
+        && input.name.trim().len() <= 120
+        && (1..=300).contains(&input.width_cm)
+        && (1..=300).contains(&input.length_cm)
+        && (1..=300).contains(&input.height_cm)
+        && (0..=100_000).contains(&input.empty_weight_grams)
+}
+
+async fn resolve_shipping_package(
+    pool: &PgPool,
+    profile_id: Option<Uuid>,
+) -> Result<Option<ShippingPackageProfile>, Response> {
+    let Some(profile_id) = profile_id else {
+        return Ok(None);
+    };
+    match sqlx::query_as::<_, ShippingPackageProfile>(
+        r#"SELECT id, name, width_cm, length_cm, height_cm, empty_weight_grams, active
+           FROM shipping_package_profiles WHERE id=$1"#,
+    )
+    .bind(profile_id)
+    .fetch_optional(pool)
+    .await
+    {
+        Ok(Some(profile)) if profile.active => Ok(Some(profile)),
+        Ok(_) => Err(invalid_input()),
+        Err(_) => Err(unavailable()),
+    }
 }
 
 fn valid_personalization(config: &PersonalizationConfig) -> bool {
@@ -1235,7 +1855,86 @@ fn valid_personalization_views(value: &Value) -> bool {
             && label.len() <= 80
             && media_valid
             && valid_print_areas(print_areas)
+            && valid_article_reference(view.get("article_reference"), print_areas)
             && unique_area_ids
+    })
+}
+
+fn valid_article_reference(reference: Option<&Value>, print_areas: &Value) -> bool {
+    let Some(reference) = reference.filter(|value| !value.is_null()) else {
+        return true;
+    };
+    let coordinate = |key: &str| reference.get(key).and_then(Value::as_i64);
+    let dimension = |key: &str| {
+        reference
+            .get(key)
+            .and_then(Value::as_f64)
+            .is_some_and(|value| (0.5..=300.0).contains(&value))
+    };
+    let configured = reference
+        .get("configured")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let (Some(x), Some(y), Some(width), Some(height)) = (
+        coordinate("x"),
+        coordinate("y"),
+        coordinate("width"),
+        coordinate("height"),
+    ) else {
+        return false;
+    };
+    if !reference.is_object()
+        || x < 0
+        || y < 0
+        || width < 100
+        || height < 100
+        || x + width > 10_000
+        || y + height > 10_000
+        || !dimension("physical_width_cm")
+        || !dimension("physical_height_cm")
+    {
+        return false;
+    }
+    let Some(areas) = print_areas.as_array() else {
+        return false;
+    };
+    let physical_width = reference
+        .get("physical_width_cm")
+        .and_then(Value::as_f64)
+        .unwrap_or_default();
+    let physical_height = reference
+        .get("physical_height_cm")
+        .and_then(Value::as_f64)
+        .unwrap_or_default();
+    areas.iter().all(|area| {
+        let Some(area_x) = area.get("x").and_then(Value::as_i64) else {
+            return false;
+        };
+        let Some(area_y) = area.get("y").and_then(Value::as_i64) else {
+            return false;
+        };
+        let Some(area_width) = area.get("width").and_then(Value::as_i64) else {
+            return false;
+        };
+        let Some(area_height) = area.get("height").and_then(Value::as_i64) else {
+            return false;
+        };
+        let contained = area_x >= x
+            && area_y >= y
+            && area_x + area_width <= x + width
+            && area_y + area_height <= y + height;
+        if !contained || !configured {
+            return contained;
+        }
+        let expected_width = physical_width * area_width as f64 / width as f64;
+        let expected_height = physical_height * area_height as f64 / height as f64;
+        area.get("physical_width_cm")
+            .and_then(Value::as_f64)
+            .zip(area.get("physical_height_cm").and_then(Value::as_f64))
+            .is_some_and(|(actual_width, actual_height)| {
+                (actual_width - expected_width).abs() <= 0.05
+                    && (actual_height - expected_height).abs() <= 0.05
+            })
     })
 }
 
@@ -1373,6 +2072,10 @@ async fn upsert_personalization(
 }
 
 fn valid_variant(variant: &CreateVariantRequest) -> bool {
+    valid_variant_details(variant) && variant.available_quantity >= 0
+}
+
+fn valid_variant_details(variant: &CreateVariantRequest) -> bool {
     !variant.title.trim().is_empty()
         && variant.title.trim().len() <= 200
         && !variant.sku.trim().is_empty()
@@ -1385,7 +2088,6 @@ fn valid_variant(variant: &CreateVariantRequest) -> bool {
             .chars()
             .all(|character| character.is_ascii_uppercase())
         && variant.option_values.is_object()
-        && variant.available_quantity >= 0
 }
 
 fn valid_slug(slug: &str) -> bool {
@@ -1488,4 +2190,37 @@ fn unavailable() -> Response {
         )),
     )
         .into_response()
+}
+
+#[cfg(test)]
+mod personalization_calibration_tests {
+    use super::valid_personalization_views;
+
+    #[test]
+    fn calibrated_article_reference_must_contain_areas_and_share_the_same_scale() {
+        let valid = serde_json::json!([{
+            "id": "front",
+            "label": "Frente",
+            "media_id": null,
+            "article_reference": {
+                "configured": true,
+                "x": 1000, "y": 1000, "width": 8000, "height": 8000,
+                "physical_width_cm": 40, "physical_height_cm": 50
+            },
+            "print_areas": [{
+                "id": "chest", "label": "Peito",
+                "x": 2000, "y": 2000, "width": 6000, "height": 5600,
+                "physical_width_cm": 30, "physical_height_cm": 35
+            }]
+        }]);
+        assert!(valid_personalization_views(&valid));
+
+        let mut outside = valid.clone();
+        outside[0]["print_areas"][0]["x"] = serde_json::json!(500);
+        assert!(!valid_personalization_views(&outside));
+
+        let mut inconsistent_scale = valid;
+        inconsistent_scale[0]["print_areas"][0]["physical_width_cm"] = serde_json::json!(60);
+        assert!(!valid_personalization_views(&inconsistent_scale));
+    }
 }

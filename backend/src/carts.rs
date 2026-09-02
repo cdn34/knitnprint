@@ -22,7 +22,11 @@ use crate::{
         find_by_code_in_transaction, normalize_code,
     },
     error::ErrorBody,
-    settings::{PricingError, ShippingSelection, TaxSelection, evaluate as evaluate_commercial},
+    packlink::{PackageItem, PacklinkPackage, packages_for_items},
+    settings::{
+        PricingError, ShippingSelection, TaxSelection, evaluate as evaluate_commercial,
+        evaluate_packlink,
+    },
 };
 
 const CART_COOKIE: &str = "knitprint_cart";
@@ -132,6 +136,7 @@ struct CartRow {
     customer_id: Option<Uuid>,
     discount_id: Option<Uuid>,
     shipping_method_id: Option<Uuid>,
+    shipping_quote_id: Option<Uuid>,
     expires_at: String,
 }
 
@@ -147,11 +152,22 @@ struct CartLineRow {
     quantity: i32,
     unit_price_minor: i64,
     currency: String,
-    available_quantity: i64,
     image_url: Option<String>,
     customization: Option<Value>,
     customization_media_asset_id: Option<Uuid>,
     customization_media_asset_ids: Vec<Uuid>,
+}
+
+#[derive(FromRow)]
+struct CartPackageItemRow {
+    quantity: i64,
+    shipping_weight_grams: i32,
+    shipping_width_cm: i32,
+    shipping_length_cm: i32,
+    shipping_height_cm: i32,
+    shipping_empty_weight_grams: i32,
+    shipping_units_per_package: i32,
+    shipping_profile_configured: bool,
 }
 
 #[derive(FromRow)]
@@ -176,7 +192,6 @@ struct DeliveryRow {
 struct VariantForCart {
     price_minor: i64,
     currency: String,
-    available_quantity: i64,
     personalization_mode: String,
     print_areas: Value,
     personalization_views: Value,
@@ -264,7 +279,7 @@ pub async fn add_item(
     headers: HeaderMap,
     Json(input): Json<AddCartItemRequest>,
 ) -> Response {
-    if !(1..=99).contains(&input.quantity) || !valid_customization(input.customization.as_ref()) {
+    if !(1..=100).contains(&input.quantity) || !valid_customization(input.customization.as_ref()) {
         return invalid_quantity();
     }
     let mut media_ids = input.customization_media_asset_ids.clone();
@@ -336,8 +351,8 @@ pub async fn add_item(
     let Some(resulting_quantity) = existing_quantity.checked_add(input.quantity) else {
         return invalid_quantity();
     };
-    if resulting_quantity > 99 || i64::from(resulting_quantity) > variant.available_quantity {
-        return insufficient_stock();
+    if resulting_quantity > 100 {
+        return invalid_quantity();
     }
     if let Err(error) = ensure_currency(&mut transaction, session.id, &variant.currency).await {
         return match error {
@@ -397,7 +412,7 @@ pub async fn update_item(
     Path(line_id): Path<Uuid>,
     Json(input): Json<UpdateCartItemRequest>,
 ) -> Response {
-    if !(1..=99).contains(&input.quantity) {
+    if !(1..=100).contains(&input.quantity) {
         return invalid_quantity();
     }
     let Some(idempotency_hash) = idempotency_hash(&headers) else {
@@ -443,9 +458,6 @@ pub async fn update_item(
         Ok(None) => return unavailable_item(),
         Err(_) => return unavailable(),
     };
-    if i64::from(input.quantity) > variant.available_quantity {
-        return insufficient_stock();
-    }
     if sqlx::query(
         r#"
         UPDATE cart_lines
@@ -648,10 +660,16 @@ pub async fn set_delivery(
         insert_address(&mut transaction, address_id, customer_id, &input.address).await
     };
     if address_result.is_err()
+        || sqlx::query("DELETE FROM cart_shipping_quotes WHERE cart_id=$1")
+            .bind(session.id)
+            .execute(&mut *transaction)
+            .await
+            .is_err()
         || sqlx::query(
             r#"
             UPDATE carts
             SET customer_id = $2, shipping_address_id = $3,
+                shipping_method_id = NULL, shipping_quote_id = NULL,
                 updated_at = now(), expires_at = now() + interval '30 days'
             WHERE id = $1
             "#,
@@ -670,6 +688,194 @@ pub async fn set_delivery(
         return unavailable();
     }
     cart_response(&pool, session).await
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/cart/shipping-quotes",
+    tag = "cart",
+    responses(
+        (status = 200, body = Cart),
+        (status = 422, body = ErrorBody),
+        (status = 503, body = ErrorBody)
+    )
+)]
+pub async fn refresh_shipping_quotes(State(state): State<AppState>, jar: CookieJar) -> Response {
+    let Some(pool) = state.database.as_ref() else {
+        return unavailable();
+    };
+    let session = match resolve_cart(pool, jar, state.secure_cookies).await {
+        Ok(session) => session,
+        Err(_) => return unavailable(),
+    };
+    if !state.packlink.enabled() {
+        return cart_response(pool, session).await;
+    }
+    let delivery = match delivery_for(pool, session.id).await {
+        Ok(Some(delivery)) => delivery,
+        Ok(None) => {
+            return error(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "delivery_required",
+                "Add a delivery address before requesting shipping prices.",
+            );
+        }
+        Err(_) => return unavailable(),
+    };
+    let currency: Option<String> = match sqlx::query_scalar(
+        "SELECT currency::text FROM carts WHERE id=$1 AND status='active'",
+    )
+    .bind(session.id)
+    .fetch_one(pool)
+    .await
+    {
+        Ok(currency) => currency,
+        Err(_) => return unavailable(),
+    };
+    let Some(currency) = currency else {
+        return error(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "empty_cart",
+            "Add a product before requesting shipping prices.",
+        );
+    };
+    let packages = match cart_packages(pool, session.id).await {
+        Ok(Some(packages)) => packages,
+        Ok(None) => {
+            return error(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "shipping_package_invalid",
+                "Review the product shipping dimensions before requesting prices.",
+            );
+        }
+        Err(_) => return unavailable(),
+    };
+    let request_hash = state.packlink.request_hash(
+        &delivery.address.country_code,
+        &delivery.address.postal_code,
+        &packages,
+    );
+    let cached: bool = match sqlx::query_scalar(
+        r#"SELECT EXISTS(
+        SELECT 1 FROM cart_shipping_quotes
+        WHERE cart_id=$1 AND request_hash=$2 AND expires_at>now() AND currency=$3
+        )"#,
+    )
+    .bind(session.id)
+    .bind(request_hash.as_slice())
+    .bind(&currency)
+    .fetch_one(pool)
+    .await
+    {
+        Ok(cached) => cached,
+        Err(_) => return unavailable(),
+    };
+    if cached {
+        return cart_response(pool, session).await;
+    }
+    let quotes = match state
+        .packlink
+        .quotes(
+            &delivery.address.country_code,
+            &delivery.address.postal_code,
+            &packages,
+        )
+        .await
+    {
+        Ok(quotes) => quotes,
+        Err(_) => {
+            return error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "packlink_unavailable",
+                "Shipping prices are temporarily unavailable. Try again in a moment.",
+            );
+        }
+    };
+    let quotes = quotes
+        .into_iter()
+        .filter(|quote| quote.currency == currency)
+        .collect::<Vec<_>>();
+    if quotes.is_empty() {
+        return error(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "packlink_no_services",
+            "No delivery service is available for this address and package.",
+        );
+    }
+    let previous_selection: Option<(String, bool, bool)> = match sqlx::query_as(
+        r#"SELECT quote.service_id,quote.departure_dropoff,quote.destination_dropoff
+        FROM carts cart
+        JOIN cart_shipping_quotes quote ON quote.id=cart.shipping_quote_id
+        WHERE cart.id=$1"#,
+    )
+    .bind(session.id)
+    .fetch_optional(pool)
+    .await
+    {
+        Ok(selection) => selection,
+        Err(_) => return unavailable(),
+    };
+    let mut transaction = match pool.begin().await {
+        Ok(transaction) => transaction,
+        Err(_) => return unavailable(),
+    };
+    if sqlx::query("DELETE FROM cart_shipping_quotes WHERE cart_id=$1")
+        .bind(session.id)
+        .execute(&mut *transaction)
+        .await
+        .is_err()
+    {
+        return unavailable();
+    }
+    let mut cheapest_id = None;
+    let mut matching_id = None;
+    for quote in quotes {
+        let quote_id = Uuid::now_v7();
+        cheapest_id.get_or_insert(quote_id);
+        if previous_selection.as_ref().is_some_and(|selection| {
+            selection.0 == quote.service_id
+                && selection.1 == quote.departure_dropoff
+                && selection.2 == quote.destination_dropoff
+        }) {
+            matching_id = Some(quote_id);
+        }
+        if sqlx::query(
+            r#"INSERT INTO cart_shipping_quotes (
+            id,cart_id,service_id,carrier_name,service_name,amount_minor,currency,
+            departure_dropoff,destination_dropoff,transit_hours,request_hash,expires_at
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,now()+interval '15 minutes')"#,
+        )
+        .bind(quote_id)
+        .bind(session.id)
+        .bind(&quote.service_id)
+        .bind(&quote.carrier_name)
+        .bind(&quote.service_name)
+        .bind(quote.amount_minor)
+        .bind(&quote.currency)
+        .bind(quote.departure_dropoff)
+        .bind(quote.destination_dropoff)
+        .bind(quote.transit_hours)
+        .bind(request_hash.as_slice())
+        .execute(&mut *transaction)
+        .await
+        .is_err()
+        {
+            return unavailable();
+        }
+    }
+    if sqlx::query(
+        "UPDATE carts SET shipping_method_id=NULL,shipping_quote_id=$2,updated_at=now() WHERE id=$1",
+    )
+    .bind(session.id)
+    .bind(matching_id.or(cheapest_id))
+    .execute(&mut *transaction)
+    .await
+    .is_err()
+        || transaction.commit().await.is_err()
+    {
+        return unavailable();
+    }
+    cart_response(pool, session).await
 }
 
 #[utoipa::path(
@@ -823,6 +1029,7 @@ pub async fn select_shipping_method(
     let Some(idempotency_hash) = idempotency_hash(&headers) else {
         return invalid_idempotency_key();
     };
+    let packlink_enabled = state.packlink.enabled();
     let Some(pool) = state.database else {
         return unavailable();
     };
@@ -846,7 +1053,14 @@ pub async fn select_shipping_method(
         Ok(MutationClaim::New) => {}
         Err(_) => return unavailable(),
     }
-    let eligible: bool = match sqlx::query_scalar(
+    let eligibility_query = if packlink_enabled {
+        r#"SELECT EXISTS (
+        SELECT 1 FROM carts cart
+        JOIN cart_shipping_quotes quote ON quote.id=$2 AND quote.cart_id=cart.id
+        WHERE cart.id=$1 AND cart.status='active' AND quote.currency=cart.currency
+          AND quote.expires_at>now()
+        )"#
+    } else {
         r#"SELECT EXISTS (
         SELECT 1 FROM carts cart
         JOIN customer_addresses address ON address.id=cart.shipping_address_id
@@ -854,12 +1068,13 @@ pub async fn select_shipping_method(
         JOIN shipping_zones zone ON zone.id=method.shipping_zone_id AND zone.active
         WHERE cart.id=$1 AND cart.status='active' AND method.currency=cart.currency
           AND (cardinality(zone.country_codes)=0 OR address.country_code::text=ANY(zone.country_codes))
-        )"#,
-    )
-    .bind(session.id)
-    .bind(input.shipping_method_id)
-    .fetch_one(&mut *tx)
-    .await
+        )"#
+    };
+    let eligible: bool = match sqlx::query_scalar(eligibility_query)
+        .bind(session.id)
+        .bind(input.shipping_method_id)
+        .fetch_one(&mut *tx)
+        .await
     {
         Ok(eligible) => eligible,
         Err(_) => return unavailable(),
@@ -871,10 +1086,21 @@ pub async fn select_shipping_method(
             "Choose an available shipping method for this delivery address.",
         );
     }
-    if sqlx::query("UPDATE carts SET shipping_method_id=$2,updated_at=now(),expires_at=now()+interval '30 days' WHERE id=$1")
-        .bind(session.id).bind(input.shipping_method_id).execute(&mut *tx).await.is_err()
+    let update_query = if packlink_enabled {
+        "UPDATE carts SET shipping_method_id=NULL,shipping_quote_id=$2,updated_at=now(),expires_at=now()+interval '30 days' WHERE id=$1"
+    } else {
+        "UPDATE carts SET shipping_method_id=$2,shipping_quote_id=NULL,updated_at=now(),expires_at=now()+interval '30 days' WHERE id=$1"
+    };
+    if sqlx::query(update_query)
+        .bind(session.id)
+        .bind(input.shipping_method_id)
+        .execute(&mut *tx)
+        .await
+        .is_err()
         || tx.commit().await.is_err()
-    { return unavailable() }
+    {
+        return unavailable();
+    }
     cart_response(&pool, session).await
 }
 
@@ -954,7 +1180,7 @@ async fn load_cart(pool: &PgPool, cart_id: Uuid) -> Result<Cart, sqlx::Error> {
     .await?;
     let cart = sqlx::query_as::<_, CartRow>(
         r#"
-        SELECT currency::text AS currency, customer_id, discount_id, shipping_method_id,
+        SELECT currency::text AS currency, customer_id, discount_id, shipping_method_id, shipping_quote_id,
                to_char(expires_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS expires_at
         FROM carts WHERE id = $1 AND status = 'active'
         "#,
@@ -968,7 +1194,6 @@ async fn load_cart(pool: &PgPool, cart_id: Uuid) -> Result<Cart, sqlx::Error> {
                product.title AS product_title, product.status AS product_status,
                variant.title AS variant_title, variant.sku, line.quantity,
                line.unit_price_minor, line.currency::text AS currency,
-               inventory.available_quantity,
                (
                    SELECT '/api/media/' || media.id || '/thumbnail'
                    FROM product_media relation
@@ -980,7 +1205,6 @@ async fn load_cart(pool: &PgPool, cart_id: Uuid) -> Result<Cart, sqlx::Error> {
         FROM cart_lines line
         JOIN product_variants variant ON variant.id = line.variant_id
         JOIN products product ON product.id = variant.product_id
-        JOIN inventory_items inventory ON inventory.variant_id = variant.id
         WHERE line.cart_id = $1
         ORDER BY line.created_at, line.id
         "#,
@@ -995,21 +1219,11 @@ async fn load_cart(pool: &PgPool, cart_id: Uuid) -> Result<Cart, sqlx::Error> {
     let mut subtotal_minor = 0_i64;
     for row in rows {
         let published = row.product_status == "active";
-        let enough_stock = row.available_quantity >= i64::from(row.quantity);
         if !published {
             issues.push(CartIssue {
                 code: "product_unavailable".into(),
                 line_id: Some(row.id),
                 message: format!("{} is no longer available.", row.product_title),
-            });
-        } else if !enough_stock {
-            issues.push(CartIssue {
-                code: "quantity_unavailable".into(),
-                line_id: Some(row.id),
-                message: format!(
-                    "Only {} of {} is currently available.",
-                    row.available_quantity, row.product_title
-                ),
             });
         }
         if repriced.contains(&row.id) {
@@ -1043,8 +1257,8 @@ async fn load_cart(pool: &PgPool, cart_id: Uuid) -> Result<Cart, sqlx::Error> {
             unit_price_minor: row.unit_price_minor,
             currency: row.currency,
             line_total_minor,
-            available_quantity: row.available_quantity,
-            available: published && enough_stock,
+            available_quantity: 100,
+            available: published,
             image_url: row.image_url,
             customization: row.customization,
             customization_media_asset_id: row.customization_media_asset_id,
@@ -1088,28 +1302,57 @@ async fn load_cart(pool: &PgPool, cart_id: Uuid) -> Result<Cart, sqlx::Error> {
     let mut tax = None;
     let mut tax_minor = 0;
     if let (Some(delivery), Some(currency)) = (&delivery, cart.currency.as_deref()) {
-        match evaluate_commercial(
-            pool,
-            currency,
-            &delivery.address.country_code,
-            cart.shipping_method_id,
-            merchandise_minor,
-        )
-        .await
-        {
-            Ok(pricing) => {
-                shipping_methods = pricing.shipping_methods;
-                shipping_minor = pricing.shipping.amount_minor;
-                tax_minor = pricing.tax.amount_minor;
-                shipping = Some(pricing.shipping);
-                tax = Some(pricing.tax);
+        let pricing_result = if crate::packlink::configured_in_environment() {
+            let has_current_quotes: bool = sqlx::query_scalar(
+                "SELECT EXISTS(SELECT 1 FROM cart_shipping_quotes WHERE cart_id=$1 AND expires_at>now() AND currency=$2)",
+            )
+            .bind(cart_id)
+            .bind(currency)
+            .fetch_one(pool)
+            .await?;
+            if has_current_quotes {
+                Some(
+                    evaluate_packlink(
+                        pool,
+                        cart_id,
+                        currency,
+                        &delivery.address.country_code,
+                        cart.shipping_quote_id,
+                        merchandise_minor,
+                    )
+                    .await,
+                )
+            } else {
+                None
             }
-            Err(PricingError::Unavailable) => issues.push(CartIssue {
-                code: "commercial_pricing_unavailable".into(),
-                line_id: None,
-                message: "Shipping or tax is not configured for this delivery address.".into(),
-            }),
-            Err(PricingError::Database(error)) => return Err(error),
+        } else {
+            Some(
+                evaluate_commercial(
+                    pool,
+                    currency,
+                    &delivery.address.country_code,
+                    cart.shipping_method_id,
+                    merchandise_minor,
+                )
+                .await,
+            )
+        };
+        if let Some(pricing_result) = pricing_result {
+            match pricing_result {
+                Ok(pricing) => {
+                    shipping_methods = pricing.shipping_methods;
+                    shipping_minor = pricing.shipping.amount_minor;
+                    tax_minor = pricing.tax.amount_minor;
+                    shipping = Some(pricing.shipping);
+                    tax = Some(pricing.tax);
+                }
+                Err(PricingError::Unavailable) => issues.push(CartIssue {
+                    code: "commercial_pricing_unavailable".into(),
+                    line_id: None,
+                    message: "Shipping or tax is not configured for this delivery address.".into(),
+                }),
+                Err(PricingError::Database(error)) => return Err(error),
+            }
         }
     }
     let total_minor = merchandise_minor
@@ -1335,6 +1578,10 @@ fn view_customization_allowed(
         if version >= 6 && !valid_measurement_snapshot(area, configured_view, configured_area) {
             return false;
         }
+        if version >= 7 && !valid_article_reference_snapshot(area, configured_view, configured_area)
+        {
+            return false;
+        }
         seen_assignments.push((view_id, area_id));
         let photo = area.get("photo");
         let text = area.get("text");
@@ -1385,6 +1632,63 @@ fn valid_measurement_snapshot(
             == configured_area.get("label").and_then(Value::as_str)
         && matches_dimension("print_width_cm", "physical_width_cm")
         && matches_dimension("print_height_cm", "physical_height_cm")
+}
+
+fn valid_article_reference_snapshot(
+    customization_area: &Value,
+    configured_view: &Value,
+    configured_area: &Value,
+) -> bool {
+    let configured_reference = configured_view
+        .get("article_reference")
+        .filter(|reference| {
+            reference
+                .get("configured")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        });
+    let Some(configured_reference) = configured_reference else {
+        return customization_area.get("article_reference").is_none();
+    };
+    let Some(snapshot) = customization_area.get("article_reference") else {
+        return false;
+    };
+    let configured = |key: &str| configured_reference.get(key).and_then(Value::as_f64);
+    let area = |key: &str| configured_area.get(key).and_then(Value::as_f64);
+    let Some((reference_x, reference_y, reference_width, reference_height)) = configured("x")
+        .zip(configured("y"))
+        .zip(configured("width").zip(configured("height")))
+        .map(|((x, y), (width, height))| (x, y, width, height))
+    else {
+        return false;
+    };
+    let Some((area_x, area_y)) = area("x").zip(area("y")) else {
+        return false;
+    };
+    let Some((physical_width, physical_height)) =
+        configured("physical_width_cm").zip(configured("physical_height_cm"))
+    else {
+        return false;
+    };
+    let expected = [
+        ("article_width_cm", physical_width),
+        ("article_height_cm", physical_height),
+        (
+            "print_left_cm",
+            physical_width * (area_x - reference_x) / reference_width,
+        ),
+        (
+            "print_top_cm",
+            physical_height * (area_y - reference_y) / reference_height,
+        ),
+    ];
+    snapshot.is_object()
+        && expected.iter().all(|(key, expected)| {
+            snapshot
+                .get(*key)
+                .and_then(Value::as_f64)
+                .is_some_and(|actual| (actual - expected).abs() <= 0.05)
+        })
 }
 
 fn valid_area_text(text: &Value, variant: &VariantForCart) -> bool {
@@ -1506,7 +1810,7 @@ async fn active_variant(
     sqlx::query_as(
         r##"
         SELECT variant.price_minor, variant.currency::text AS currency,
-               inventory.available_quantity, COALESCE(personalization.mode, 'none') AS personalization_mode,
+               COALESCE(personalization.mode, 'none') AS personalization_mode,
                COALESCE(personalization.print_areas, '[{"id":"area-1"}]'::jsonb) AS print_areas,
                COALESCE(personalization.views, '[{"id":"view-front","print_areas":[{"id":"area-1"}]}]'::jsonb) AS personalization_views,
                COALESCE(personalization.text_max_characters, 35) AS text_max_characters,
@@ -1516,10 +1820,9 @@ async fn active_variant(
                COALESCE(personalization.allowed_colors, '["#111111"]'::jsonb) AS allowed_colors
         FROM product_variants variant
         JOIN products product ON product.id = variant.product_id
-        JOIN inventory_items inventory ON inventory.variant_id = variant.id
         LEFT JOIN product_personalization personalization ON personalization.product_id = product.id
         WHERE variant.id = $1 AND product.status = 'active'
-        FOR UPDATE OF variant, inventory
+        FOR UPDATE OF variant
         "##,
     )
     .bind(variant_id)
@@ -1577,13 +1880,65 @@ async fn touch_cart(
     transaction: &mut Transaction<'_, Postgres>,
     cart_id: Uuid,
 ) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM cart_shipping_quotes WHERE cart_id = $1")
+        .bind(cart_id)
+        .execute(&mut **transaction)
+        .await?;
     sqlx::query(
-        "UPDATE carts SET updated_at = now(), expires_at = now() + interval '30 days' WHERE id = $1",
+        "UPDATE carts SET shipping_quote_id = NULL, updated_at = now(), expires_at = now() + interval '30 days' WHERE id = $1",
     )
     .bind(cart_id)
     .execute(&mut **transaction)
     .await?;
     Ok(())
+}
+
+async fn cart_packages(
+    pool: &PgPool,
+    cart_id: Uuid,
+) -> Result<Option<Vec<PacklinkPackage>>, sqlx::Error> {
+    let rows = sqlx::query_as::<_, CartPackageItemRow>(
+        r#"
+        SELECT sum(line.quantity)::bigint AS quantity,
+               product.shipping_weight_grams,
+               COALESCE(profile.width_cm, product.shipping_width_cm) AS shipping_width_cm,
+               COALESCE(profile.length_cm, product.shipping_length_cm) AS shipping_length_cm,
+               COALESCE(profile.height_cm, product.shipping_height_cm) AS shipping_height_cm,
+               COALESCE(profile.empty_weight_grams, 0) AS shipping_empty_weight_grams,
+               product.shipping_units_per_package,
+               (product.shipping_profile_configured AND COALESCE(profile.active, false)) AS shipping_profile_configured
+        FROM cart_lines line
+        JOIN product_variants variant ON variant.id = line.variant_id
+        JOIN products product ON product.id = variant.product_id
+        LEFT JOIN shipping_package_profiles profile ON profile.id=product.shipping_package_profile_id
+        WHERE line.cart_id = $1
+        GROUP BY product.id, product.shipping_weight_grams, profile.width_cm,
+                 profile.length_cm, profile.height_cm, profile.empty_weight_grams,
+                 profile.active, product.shipping_width_cm, product.shipping_length_cm,
+                 product.shipping_height_cm, product.shipping_units_per_package,
+                 product.shipping_profile_configured
+        ORDER BY product.id
+        "#,
+    )
+    .bind(cart_id)
+    .fetch_all(pool)
+    .await?;
+    if rows.iter().any(|row| !row.shipping_profile_configured) {
+        return Ok(None);
+    }
+    let items = rows
+        .into_iter()
+        .map(|row| PackageItem {
+            quantity: row.quantity,
+            unit_weight_grams: row.shipping_weight_grams,
+            width_cm: row.shipping_width_cm,
+            length_cm: row.shipping_length_cm,
+            height_cm: row.shipping_height_cm,
+            empty_weight_grams: row.shipping_empty_weight_grams,
+            units_per_package: row.shipping_units_per_package,
+        })
+        .collect::<Vec<_>>();
+    Ok(packages_for_items(&items))
 }
 
 async fn claim_mutation(
@@ -1870,7 +2225,7 @@ fn invalid_quantity() -> Response {
     error(
         StatusCode::UNPROCESSABLE_ENTITY,
         "invalid_cart_quantity",
-        "Cart quantities must be between 1 and 99.",
+        "Cart quantities must be between 1 and 100.",
     )
 }
 
@@ -1895,14 +2250,6 @@ fn idempotency_conflict() -> Response {
         StatusCode::CONFLICT,
         "idempotency_conflict",
         "That Idempotency-Key was already used for a different cart change.",
-    )
-}
-
-fn insufficient_stock() -> Response {
-    error(
-        StatusCode::UNPROCESSABLE_ENTITY,
-        "insufficient_stock",
-        "The requested quantity is not currently available.",
     )
 }
 
@@ -1965,14 +2312,13 @@ mod personalization_tests {
         VariantForCart {
             price_minor: 1000,
             currency: "EUR".into(),
-            available_quantity: 10,
             personalization_mode: mode.into(),
             print_areas: serde_json::json!([
                 { "id": "area-1" },
                 { "id": "pocket-side" }
             ]),
             personalization_views: serde_json::json!([
-                { "id": "view-front", "label": "Frente", "print_areas": [{ "id": "area-1", "label": "Peito", "physical_width_cm": 30, "physical_height_cm": 35 }] },
+                { "id": "view-front", "label": "Frente", "article_reference": { "configured": true, "x": 1000, "y": 1000, "width": 8000, "height": 8000, "physical_width_cm": 40, "physical_height_cm": 50 }, "print_areas": [{ "id": "area-1", "label": "Peito", "x": 2000, "y": 2000, "width": 6000, "height": 5600, "physical_width_cm": 30, "physical_height_cm": 35 }] },
                 { "id": "view-back", "label": "Costas", "print_areas": [{ "id": "pocket-side", "label": "Costas", "physical_width_cm": 28, "physical_height_cm": 32 }] }
             ]),
             text_max_characters: 35,
@@ -2198,6 +2544,40 @@ mod personalization_tests {
         ));
         let mut tampered = valid;
         tampered["areas"][0]["print_width_cm"] = serde_json::json!(60);
+        assert!(!customization_allowed(
+            &variant("photo_text"),
+            Some(&tampered),
+            &[]
+        ));
+    }
+
+    #[test]
+    fn physical_article_offsets_are_trusted_only_when_they_match_the_calibration() {
+        let valid = serde_json::json!({
+            "version": 7,
+            "areas": [{
+                "view_id": "view-front",
+                "view_label": "Frente",
+                "area_id": "area-1",
+                "area_label": "Peito",
+                "print_width_cm": 30,
+                "print_height_cm": 35,
+                "article_reference": {
+                    "article_width_cm": 40,
+                    "article_height_cm": 50,
+                    "print_left_cm": 5,
+                    "print_top_cm": 6.25
+                },
+                "text": { "content": "Olá", "font": "Roboto", "color": "#111111", "size": 24, "x": 10, "y": 20, "width": 80, "height": 40 }
+            }]
+        });
+        assert!(customization_allowed(
+            &variant("photo_text"),
+            Some(&valid),
+            &[]
+        ));
+        let mut tampered = valid;
+        tampered["areas"][0]["article_reference"]["print_left_cm"] = serde_json::json!(15);
         assert!(!customization_allowed(
             &variant("photo_text"),
             Some(&tampered),

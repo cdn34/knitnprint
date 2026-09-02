@@ -83,7 +83,7 @@ export function StorefrontHeader() {
         </a>
         <a className="icon-button cart-icon-button" aria-label={`${t('shell.viewCart')} · ${cartCount}`} href="/cart">
           <ShoppingBag />
-          {cartCount > 0 && <span className="cart-count-badge" aria-hidden="true">{cartCount > 99 ? '99+' : cartCount}</span>}
+          {cartCount > 0 && <span className="cart-count-badge" aria-hidden="true">{cartCount > 999 ? '999+' : cartCount}</span>}
         </a>
         <span className="mobile-action">
           <IconButton label={t('shell.openMenu')}>

@@ -1,5 +1,5 @@
 import type { PersonalizationConfig } from '@knitprint/api-client'
-import { ImagePlus, Move, ShoppingBag, Type } from 'lucide-react'
+import { ImagePlus, Move, Ruler, ShoppingBag, Type } from 'lucide-react'
 import { type KeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import { cartApi } from '../cart-api'
 
@@ -10,7 +10,8 @@ const safeBasisPoints = (value: unknown, fallback: number) => typeof value === '
 type ElementFrame = { x: number; y: number; width: number; height: number }
 type Interaction = { pointerX: number; pointerY: number; frame: ElementFrame; handle: 'move' | 'nw' | 'ne' | 'sw' | 'se' }
 type PrintArea = ElementFrame & { id: string; label: string; physicalWidthCm: number; physicalHeightCm: number }
-type PrintView = { id: string; label: string; mediaId?: string; printAreas: PrintArea[] }
+type ArticleReference = ElementFrame & { physicalWidthCm: number; physicalHeightCm: number }
+type PrintView = { id: string; label: string; mediaId?: string; articleReference?: ArticleReference; printAreas: PrintArea[] }
 type ProductMediaForPersonalizer = { id: string; url: string }
 
 function normalizedFrame(frame: ElementFrame): ElementFrame {
@@ -54,10 +55,19 @@ function configuredViews(config: PersonalizationConfig): PrintView[] {
       if (!item || typeof item !== 'object') return []
       const view = item as Record<string, unknown>
       const printAreas = configuredPrintAreas(view.print_areas, config)
+      const rawReference = view.article_reference && typeof view.article_reference === 'object' ? view.article_reference as Record<string, unknown> : undefined
+      const referenceCoordinates = rawReference ? ['x', 'y', 'width', 'height'].map((key) => rawReference[key]) : []
+      const articleReference = rawReference?.configured === true
+        && referenceCoordinates.every((value) => typeof value === 'number' && Number.isFinite(value))
+        && typeof rawReference.physical_width_cm === 'number' && Number.isFinite(rawReference.physical_width_cm)
+        && typeof rawReference.physical_height_cm === 'number' && Number.isFinite(rawReference.physical_height_cm)
+        ? { x: Number(rawReference.x) / 100, y: Number(rawReference.y) / 100, width: Number(rawReference.width) / 100, height: Number(rawReference.height) / 100, physicalWidthCm: rawReference.physical_width_cm, physicalHeightCm: rawReference.physical_height_cm }
+        : undefined
       return [{
         id: typeof view.id === 'string' && view.id ? view.id : `view-${index + 1}`,
         label: typeof view.label === 'string' && view.label ? view.label : index === 0 ? 'Frente' : `Vista ${index + 1}`,
         mediaId: typeof view.media_id === 'string' ? view.media_id : undefined,
+        articleReference,
         printAreas,
       }]
     })
@@ -70,8 +80,39 @@ const designKey = (viewId: string, areaId: string) => `${viewId}:${areaId}`
 const formatCm = (value: number) => new Intl.NumberFormat('pt-PT', { maximumFractionDigits: 1 }).format(Math.round(value * 10) / 10)
 const physicalFrameSize = (area: PrintArea, frame: ElementFrame) => `${formatCm(area.physicalWidthCm * frame.width / 100)} × ${formatCm(area.physicalHeightCm * frame.height / 100)} cm`
 
+type ElementPlacement = { left: number; right: number; top: number; bottom: number; absoluteFrame: ElementFrame }
+
+function elementPlacement(view: PrintView, area: PrintArea, frame: ElementFrame): ElementPlacement | undefined {
+  const reference = view.articleReference
+  if (!reference) return undefined
+  const absoluteFrame = {
+    x: area.x + area.width * frame.x / 100,
+    y: area.y + area.height * frame.y / 100,
+    width: area.width * frame.width / 100,
+    height: area.height * frame.height / 100,
+  }
+  return {
+    left: reference.physicalWidthCm * (absoluteFrame.x - reference.x) / reference.width,
+    right: reference.physicalWidthCm * (reference.x + reference.width - absoluteFrame.x - absoluteFrame.width) / reference.width,
+    top: reference.physicalHeightCm * (absoluteFrame.y - reference.y) / reference.height,
+    bottom: reference.physicalHeightCm * (reference.y + reference.height - absoluteFrame.y - absoluteFrame.height) / reference.height,
+    absoluteFrame,
+  }
+}
+
+function articleReferenceSnapshot(view: PrintView, area: PrintArea) {
+  const reference = view.articleReference
+  if (!reference) return undefined
+  return {
+    article_width_cm: reference.physicalWidthCm,
+    article_height_cm: reference.physicalHeightCm,
+    print_left_cm: Math.round(reference.physicalWidthCm * (area.x - reference.x) / reference.width * 100) / 100,
+    print_top_cm: Math.round(reference.physicalHeightCm * (area.y - reference.y) / reference.height * 100) / 100,
+  }
+}
+
 export type CustomerCustomization = {
-  version: 6
+  version: 7
   areas: Array<{
     view_id: string
     view_label: string
@@ -79,6 +120,7 @@ export type CustomerCustomization = {
     area_label: string
     print_width_cm: number
     print_height_cm: number
+    article_reference?: { article_width_cm: number; article_height_cm: number; print_left_cm: number; print_top_cm: number }
     text?: { content: string; font: string; color: string; size: number; x: number; y: number; width: number; height: number }
     photo?: { media_id: string; x: number; y: number; width: number; height: number; crop_x: number; crop_y: number; scale: number }
   }>
@@ -174,6 +216,32 @@ function DesignElement({ frame, kind, label, measurement, selected, onSelect, on
   </div>
 }
 
+function PlacementSummary({ placement }: Readonly<{ placement?: ElementPlacement }>) {
+  if (!placement) return <p className="personalizer-placement-unavailable"><Ruler />As distâncias ficam disponíveis depois de o artigo ser calibrado no administrador.</p>
+  return <div className="personalizer-placement-summary" aria-label="Distâncias da personalização aos limites do artigo">
+    <span><small>Topo</small><b>{formatCm(placement.top)} cm</b></span>
+    <span><small>Esquerda</small><b>{formatCm(placement.left)} cm</b></span>
+    <span><small>Direita</small><b>{formatCm(placement.right)} cm</b></span>
+    <span><small>Fundo</small><b>{formatCm(placement.bottom)} cm</b></span>
+  </div>
+}
+
+function MeasurementGuides({ reference, placement }: Readonly<{ reference?: ArticleReference; placement?: ElementPlacement }>) {
+  if (!reference || !placement) return null
+  const frame = placement.absoluteFrame
+  const right = frame.x + frame.width
+  const bottom = frame.y + frame.height
+  const referenceRight = reference.x + reference.width
+  const referenceBottom = reference.y + reference.height
+  return <div className="personalizer-measurement-layer" aria-hidden="true">
+    <div className="personalizer-article-reference" style={{ left: `${reference.x}%`, top: `${reference.y}%`, width: `${reference.width}%`, height: `${reference.height}%` }}><span>Limites do artigo</span></div>
+    <span className="personalizer-distance-guide personalizer-distance-guide--horizontal" style={{ left: `${reference.x}%`, top: `${frame.y + frame.height / 2}%`, width: `${Math.max(0, frame.x - reference.x)}%` }}><b>{formatCm(placement.left)} cm</b></span>
+    <span className="personalizer-distance-guide personalizer-distance-guide--horizontal" style={{ left: `${right}%`, top: `${frame.y + frame.height / 2}%`, width: `${Math.max(0, referenceRight - right)}%` }}><b>{formatCm(placement.right)} cm</b></span>
+    <span className="personalizer-distance-guide personalizer-distance-guide--vertical" style={{ left: `${frame.x + frame.width / 2}%`, top: `${reference.y}%`, height: `${Math.max(0, frame.y - reference.y)}%` }}><b>{formatCm(placement.top)} cm</b></span>
+    <span className="personalizer-distance-guide personalizer-distance-guide--vertical" style={{ left: `${frame.x + frame.width / 2}%`, top: `${bottom}%`, height: `${Math.max(0, referenceBottom - bottom)}%` }}><b>{formatCm(placement.bottom)} cm</b></span>
+  </div>
+}
+
 export function ProductPersonalizer({ config, productMedia, onChange, previewOpen, onPreviewClose, onAddToCart, addToCartDisabled, addToCartLabel }: Readonly<{
   config: PersonalizationConfig
   productMedia: ProductMediaForPersonalizer[]
@@ -213,6 +281,9 @@ export function ProductPersonalizer({ config, productMedia, onChange, previewOpe
   const activePrintArea = printAreas.find(({ id }) => id === activeAreaId) ?? printAreas[0]
   const activePhotoMeasurement = physicalFrameSize(activePrintArea, activeDesign.photoFrame)
   const activeTextMeasurement = physicalFrameSize(activePrintArea, activeDesign.textFrame)
+  const activePhotoPlacement = elementPlacement(activeView, activePrintArea, activeDesign.photoFrame)
+  const activeTextPlacement = elementPlacement(activeView, activePrintArea, activeDesign.textFrame)
+  const selectedPlacement = selected === 'photo' ? activePhotoPlacement : activeTextPlacement
   const activeProductImage = productMedia.find(({ id }) => id === activeView.mediaId)?.url ?? (views.length === 1 ? productMedia[0]?.url : undefined)
   const previewView = views.find(({ id }) => id === previewViewId) ?? views[0]
   const previewProductImage = productMedia.find(({ id }) => id === previewView.mediaId)?.url ?? (views.length === 1 ? productMedia[0]?.url : undefined)
@@ -230,13 +301,14 @@ export function ProductPersonalizer({ config, productMedia, onChange, previewOpe
   }
 
   const customization = useMemo<CustomerCustomization>(() => ({
-    version: 6,
+    version: 7,
     areas: views.flatMap((view) => view.printAreas.flatMap((area) => {
       const design = designs[designKey(view.id, area.id)]
       if (!design) return []
       const photo = wantsPhoto && design.mediaId ? { media_id: design.mediaId, ...normalizedFrame(design.photoFrame), crop_x: 50, crop_y: 50, scale: 1 } : undefined
       const text = wantsText && design.text.trim() ? { content: design.text.trim(), font: design.font, color: design.color, size: design.size, ...normalizedFrame(design.textFrame) } : undefined
-      return photo || text ? [{ view_id: view.id, view_label: view.label, area_id: area.id, area_label: area.label, print_width_cm: area.physicalWidthCm, print_height_cm: area.physicalHeightCm, ...(photo ? { photo } : {}), ...(text ? { text } : {}) }] : []
+      const reference = articleReferenceSnapshot(view, area)
+      return photo || text ? [{ view_id: view.id, view_label: view.label, area_id: area.id, area_label: area.label, print_width_cm: area.physicalWidthCm, print_height_cm: area.physicalHeightCm, ...(reference ? { article_reference: reference } : {}), ...(photo ? { photo } : {}), ...(text ? { text } : {}) }] : []
     })),
   }), [designs, views, wantsPhoto, wantsText])
   const mediaIds = useMemo(() => customization.areas.flatMap((area) => area.photo ? [area.photo.media_id] : []), [customization])
@@ -298,12 +370,14 @@ export function ProductPersonalizer({ config, productMedia, onChange, previewOpe
         {wantsPhoto && <div className={`personalizer-tool${selected === 'photo' ? ' personalizer-tool--selected' : ''}`} onClick={() => setSelected('photo')}>
           <header className="personalizer-sidebar-heading"><span className="personalizer-step">2</span><div><strong><ImagePlus /> Fotografia · {activePrintArea.label}</strong><small>Opcional</small></div></header>
           <span className="personalizer-measure"><small>Tamanho final</small><b>{activePhotoMeasurement}</b></span>
+          <PlacementSummary placement={activePhotoPlacement} />
           <label className="personalizer-upload">{uploadingAreas[activeDesignKey] ? 'A preparar fotografia…' : activeDesign.photoUrl ? 'Trocar fotografia' : 'Carregar fotografia'}<input type="file" accept="image/jpeg,image/png,image/webp" disabled={uploadingAreas[activeDesignKey]} onChange={(event) => void upload(activeDesignKey, event.currentTarget.files?.[0])} /></label>
           <span className="personalizer-drag-hint"><Move /> Arrasta e dimensiona a fotografia dentro desta área. A imagem não tem zoom.</span>
         </div>}
         {wantsText && <div className={`personalizer-tool${selected === 'text' ? ' personalizer-tool--selected' : ''}`} onClick={() => setSelected('text')}>
           <header className="personalizer-sidebar-heading"><span className="personalizer-step">{wantsPhoto ? 3 : 2}</span><div><strong><Type /> Texto · {activePrintArea.label}</strong><small>Opcional</small></div></header>
           <span className="personalizer-measure"><small>Caixa de texto</small><b>{activeTextMeasurement}</b></span>
+          <PlacementSummary placement={activeTextPlacement} />
           <label>O teu texto<textarea rows={2} maxLength={config.text_max_characters} value={activeDesign.text} onChange={(event) => { updateDesign(activeDesignKey, { text: event.target.value }); setSelected('text') }} placeholder="Escreve aqui" /></label>
           <small>{activeDesign.text.length} / {config.text_max_characters}</small>
           <span className="personalizer-drag-hint"><Move /> Arrasta e dimensiona o texto dentro desta área.</span>
@@ -316,6 +390,7 @@ export function ProductPersonalizer({ config, productMedia, onChange, previewOpe
       </div>
       <div className="personalizer-stage">
         {activeProductImage ? <div className="personalizer-canvas"><img className="personalizer-product" src={activeProductImage} alt={`Pré-visualização do produto · ${activeView.label}`} />
+          <MeasurementGuides reference={activeView.articleReference} placement={selectedPlacement} />
           {printAreas.map((area) => {
             const key = designKey(activeView.id, area.id)
             const design = designs[key] ?? newDesign()
