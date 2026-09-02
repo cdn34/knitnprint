@@ -107,6 +107,7 @@ export interface Category {
   "description": string
   "id": string
   "name": string
+  "position": number
   "slug": string
 }
 
@@ -188,6 +189,7 @@ export interface CreateProductRequest {
   "description"?: string
   "personalization"?: PersonalizationConfig
   "search_keywords"?: string
+  "shipping"?: ShippingProfile
   "slug": string
   "title": string
   "variants": Array<CreateVariantRequest>
@@ -436,6 +438,7 @@ export interface IntegrationHealth {
   "database": string
   "email": string
   "media_storage": string
+  "packlink": PacklinkConfigurationStatus
   "payments": string
 }
 
@@ -579,6 +582,7 @@ export interface OrderLine {
   "fulfilled_quantity": number
   "id": string
   "line_total_minor": number
+  "personalization_context"?: unknown
   "product_title": string
   "quantity": number
   "sku": string
@@ -608,9 +612,15 @@ export interface OrderPayment {
 
 export interface OrderShipping {
   "amount_minor": number
+  "carrier_name": string
   "country_code": string
   "currency": string
+  "departure_dropoff": boolean
+  "destination_dropoff": boolean
+  "external_service_id": string
   "method_name": string
+  "provider": string
+  "transit_hours": number
   "zone_name": string
 }
 
@@ -635,6 +645,12 @@ export interface OrderTax {
   "rate_basis_points": number
   "rule_name": string
   "taxable_amount_minor": number
+}
+
+export interface PacklinkConfigurationStatus {
+  "origin": string
+  "package": string
+  "status": string
 }
 
 export interface PaymentAttempt {
@@ -700,6 +716,7 @@ export interface Product {
   "media": Array<ProductMedia>
   "personalization": PersonalizationConfig
   "search_keywords": string
+  "shipping": ShippingProfile
   "slug": string
   "status": string
   "title": string
@@ -744,6 +761,10 @@ export interface RefundLine {
   "variant_title": string
 }
 
+export interface ReorderCategoriesRequest {
+  "category_ids": Array<string>
+}
+
 export interface ResetPasswordRequest {
   "password": string
   "token": string
@@ -774,11 +795,48 @@ export interface ShippingMethodInput {
   "name": string
 }
 
+export interface ShippingPackageProfile {
+  "active": boolean
+  "empty_weight_grams": number
+  "height_cm": number
+  "id": string
+  "length_cm": number
+  "name": string
+  "width_cm": number
+}
+
+export interface ShippingPackageProfileRequest {
+  "active"?: boolean
+  "empty_weight_grams"?: number
+  "height_cm": number
+  "length_cm": number
+  "name": string
+  "width_cm": number
+}
+
+export interface ShippingProfile {
+  "configured": boolean
+  "empty_weight_grams"?: number
+  "height_cm": number
+  "length_cm": number
+  "package_profile_id"?: string | null
+  "package_profile_name"?: string | null
+  "units_per_package": number
+  "weight_grams": number
+  "width_cm": number
+}
+
 export interface ShippingSelection {
   "amount_minor": number
+  "carrier_name": string
   "currency": string
+  "departure_dropoff": boolean
+  "destination_dropoff": boolean
   "id": string
   "method_name": string
+  "provider": string
+  "service_id": string
+  "transit_hours": number
   "zone_name": string
 }
 
@@ -871,6 +929,7 @@ export interface UpdateProductRequest {
   "personalization"?: PersonalizationConfig
   "price_minor": number
   "search_keywords"?: string
+  "shipping"?: ShippingProfile
   "sku": string
   "slug": string
   "title": string

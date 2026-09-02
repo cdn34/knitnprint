@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use axum::{
     Json,
     extract::{Path, State},
@@ -26,10 +28,12 @@ use crate::{
     notifications::{
         NotificationStatus, enqueue_order_confirmation, load_for_order as load_notifications,
     },
+    packlink::{PackageItem, PacklinkPackage, PacklinkService, packages_for_items},
     payments::{PaymentAttempt, PaymentStatusEvent, load_attempts, load_status_events},
     settings::{
         OrderShipping, OrderTax, PricingError, evaluate_in_transaction as evaluate_commercial,
-        load_order_shipping, load_order_tax, record_order_snapshots,
+        evaluate_packlink_in_transaction, load_order_shipping, load_order_tax,
+        record_order_snapshots,
     },
 };
 
@@ -109,6 +113,7 @@ pub struct OrderLine {
     pub customization: Option<Value>,
     pub customization_media_asset_id: Option<Uuid>,
     pub customization_media_asset_ids: Vec<Uuid>,
+    pub personalization_context: Option<Value>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -158,6 +163,7 @@ struct CheckoutCart {
     shipping_address_id: Option<Uuid>,
     discount_id: Option<Uuid>,
     shipping_method_id: Option<Uuid>,
+    shipping_quote_id: Option<Uuid>,
     expired: bool,
 }
 
@@ -174,10 +180,17 @@ struct CheckoutLine {
     current_price_minor: i64,
     stored_currency: String,
     current_currency: String,
-    available_quantity: i64,
+    shipping_weight_grams: i32,
+    shipping_width_cm: i32,
+    shipping_length_cm: i32,
+    shipping_height_cm: i32,
+    shipping_empty_weight_grams: i32,
+    shipping_units_per_package: i32,
+    shipping_profile_configured: bool,
     customization: Option<Value>,
     customization_media_asset_id: Option<Uuid>,
     customization_media_asset_ids: Vec<Uuid>,
+    personalization_context: Option<Value>,
 }
 
 #[derive(FromRow)]
@@ -270,10 +283,18 @@ pub async fn create(
         return cart_not_ready();
     };
     let token_hash: [u8; 32] = Sha256::digest(cookie.value().as_bytes()).into();
-    let Some(pool) = state.database else {
+    let Some(pool) = state.database.as_ref() else {
         return unavailable();
     };
-    match create_order(&pool, token_hash, idempotency_hash, provider).await {
+    match create_order(
+        pool,
+        token_hash,
+        idempotency_hash,
+        provider,
+        &state.packlink,
+    )
+    .await
+    {
         Ok((order, created)) => no_store(
             (
                 if created {
@@ -287,7 +308,6 @@ pub async fn create(
         ),
         Err(CreateError::NotReady) => cart_not_ready(),
         Err(CreateError::Changed) => cart_changed(),
-        Err(CreateError::InsufficientStock) => insufficient_stock(),
         Err(CreateError::IdempotencyConflict) => error(
             StatusCode::CONFLICT,
             "checkout_idempotency_conflict",
@@ -481,7 +501,6 @@ pub async fn record_manual_payment(
 enum CreateError {
     NotReady,
     Changed,
-    InsufficientStock,
     IdempotencyConflict,
     Database,
 }
@@ -491,12 +510,13 @@ async fn create_order(
     token_hash: [u8; 32],
     idempotency_hash: [u8; 32],
     provider: &str,
+    packlink: &PacklinkService,
 ) -> Result<(Order, bool), CreateError> {
     let mut transaction = pool.begin().await.map_err(|_| CreateError::Database)?;
     let cart = sqlx::query_as::<_, CheckoutCart>(
         r#"
         SELECT id, status, currency::text AS currency, customer_id, shipping_address_id, discount_id,
-               shipping_method_id,
+               shipping_method_id, shipping_quote_id,
                expires_at <= now() AS expired
         FROM carts WHERE token_hash = $1
         FOR UPDATE
@@ -552,12 +572,28 @@ async fn create_order(
                variant.price_minor AS current_price_minor,
                line.currency::text AS stored_currency,
                variant.currency::text AS current_currency,
-               inventory.available_quantity, line.customization, line.customization_media_asset_id,
-               line.customization_media_asset_ids
+               product.shipping_weight_grams,
+               COALESCE(package_profile.width_cm, product.shipping_width_cm) AS shipping_width_cm,
+               COALESCE(package_profile.length_cm, product.shipping_length_cm) AS shipping_length_cm,
+               COALESCE(package_profile.height_cm, product.shipping_height_cm) AS shipping_height_cm,
+               COALESCE(package_profile.empty_weight_grams, 0) AS shipping_empty_weight_grams,
+               product.shipping_units_per_package,
+               (product.shipping_profile_configured AND COALESCE(package_profile.active, false)) AS shipping_profile_configured,
+               line.customization, line.customization_media_asset_id,
+               line.customization_media_asset_ids,
+               CASE WHEN line.customization IS NULL THEN NULL ELSE
+                 jsonb_build_object(
+                   'version', 1,
+                   'views', COALESCE(personalization.views, '[]'::jsonb)
+                 )
+               END AS personalization_context
         FROM cart_lines line
         JOIN product_variants variant ON variant.id = line.variant_id
         JOIN products product ON product.id = variant.product_id
         JOIN inventory_items inventory ON inventory.variant_id = variant.id
+        LEFT JOIN shipping_package_profiles package_profile
+          ON package_profile.id=product.shipping_package_profile_id
+        LEFT JOIN product_personalization personalization ON personalization.product_id = product.id
         WHERE line.cart_id = $1
         ORDER BY variant.id
         FOR UPDATE OF variant, inventory
@@ -579,9 +615,6 @@ async fn create_order(
             || line.current_currency != currency
         {
             return Err(CreateError::Changed);
-        }
-        if line.available_quantity < i64::from(line.quantity) {
-            return Err(CreateError::InsufficientStock);
         }
         subtotal_minor = subtotal_minor
             .checked_add(
@@ -624,14 +657,30 @@ async fn create_order(
     let merchandise_minor = subtotal_minor
         .checked_sub(discount_minor)
         .ok_or(CreateError::Changed)?;
-    let commercial_pricing = evaluate_commercial(
-        &mut transaction,
-        currency,
-        &delivery.country_code,
-        cart.shipping_method_id,
-        merchandise_minor,
-    )
-    .await
+    let commercial_pricing = if packlink.enabled() {
+        let packages = checkout_packages(&lines).ok_or(CreateError::Changed)?;
+        let request_hash =
+            packlink.request_hash(&delivery.country_code, &delivery.postal_code, &packages);
+        evaluate_packlink_in_transaction(
+            &mut transaction,
+            cart.id,
+            currency,
+            &delivery.country_code,
+            cart.shipping_quote_id,
+            merchandise_minor,
+            Some(request_hash.as_slice()),
+        )
+        .await
+    } else {
+        evaluate_commercial(
+            &mut transaction,
+            currency,
+            &delivery.country_code,
+            cart.shipping_method_id,
+            merchandise_minor,
+        )
+        .await
+    }
     .map_err(|error| match error {
         PricingError::Unavailable => CreateError::Changed,
         PricingError::Database(_) => CreateError::Database,
@@ -695,16 +744,18 @@ async fn create_order(
         .map_err(|_| CreateError::Database)?;
 
     for (position, line) in lines.iter().enumerate() {
+        let order_line_id = Uuid::now_v7();
         sqlx::query(
             r#"
             INSERT INTO order_lines (
                 id, order_id, product_id, variant_id, product_title, variant_title,
                 sku, quantity, unit_price_minor, line_total_minor, currency, position,
-                customization, customization_media_asset_id, customization_media_asset_ids
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9 * $8, $10, $11, $12, $13, $14)
+                customization, customization_media_asset_id, customization_media_asset_ids,
+                personalization_context
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9 * $8, $10, $11, $12, $13, $14, $15)
             "#,
         )
-        .bind(Uuid::now_v7())
+        .bind(order_line_id)
         .bind(order_id)
         .bind(line.product_id)
         .bind(line.variant_id)
@@ -718,9 +769,21 @@ async fn create_order(
         .bind(&line.customization)
         .bind(line.customization_media_asset_id)
         .bind(&line.customization_media_asset_ids)
+        .bind(&line.personalization_context)
         .execute(&mut *transaction)
         .await
         .map_err(|_| CreateError::Database)?;
+        for (media_position, media_id) in line.customization_media_asset_ids.iter().enumerate() {
+            sqlx::query(
+                "INSERT INTO order_line_personalization_media (order_line_id, media_asset_id, position) VALUES ($1, $2, $3)",
+            )
+            .bind(order_line_id)
+            .bind(media_id)
+            .bind(media_position as i32)
+            .execute(&mut *transaction)
+            .await
+            .map_err(|_| CreateError::Database)?;
+        }
         reserve_in_transaction(
             &mut transaction,
             line.variant_id,
@@ -774,6 +837,26 @@ async fn create_order(
         .map_err(|_| CreateError::Database)?
         .ok_or(CreateError::Database)?;
     Ok((order, true))
+}
+
+fn checkout_packages(lines: &[CheckoutLine]) -> Option<Vec<PacklinkPackage>> {
+    if lines.iter().any(|line| !line.shipping_profile_configured) {
+        return None;
+    }
+    let mut items = BTreeMap::<Uuid, PackageItem>::new();
+    for line in lines {
+        let item = items.entry(line.product_id).or_insert_with(|| PackageItem {
+            quantity: 0,
+            unit_weight_grams: line.shipping_weight_grams,
+            width_cm: line.shipping_width_cm,
+            length_cm: line.shipping_length_cm,
+            height_cm: line.shipping_height_cm,
+            empty_weight_grams: line.shipping_empty_weight_grams,
+            units_per_package: line.shipping_units_per_package,
+        });
+        item.quantity = item.quantity.checked_add(i64::from(line.quantity))?;
+    }
+    packages_for_items(&items.into_values().collect::<Vec<_>>())
 }
 
 async fn delivery_snapshot(
@@ -993,7 +1076,7 @@ pub(crate) async fn load_order(
                COALESCE((SELECT sum(fulfilled.quantity)::bigint FROM fulfillment_lines fulfilled WHERE fulfilled.order_line_id = line.id), 0) AS fulfilled_quantity,
                line.unit_price_minor, line.line_total_minor, line.currency::text AS currency,
                line.customization, line.customization_media_asset_id,
-               line.customization_media_asset_ids
+               line.customization_media_asset_ids, line.personalization_context
         FROM order_lines line WHERE line.order_id = $1 ORDER BY line.position, line.id
         "#,
     )
@@ -1083,10 +1166,8 @@ pub(crate) async fn load_order(
 }
 
 fn map_inventory_create_error(error: InventoryOperationError) -> CreateError {
-    match error {
-        InventoryOperationError::InsufficientAvailable => CreateError::InsufficientStock,
-        _ => CreateError::Database,
-    }
+    let _ = error;
+    CreateError::Database
 }
 
 fn idempotency_hash(headers: &HeaderMap) -> Option<[u8; 32]> {
@@ -1134,14 +1215,6 @@ fn cart_changed() -> Response {
         StatusCode::CONFLICT,
         "cart_changed",
         "The cart changed. Review it before creating the order.",
-    )
-}
-
-fn insufficient_stock() -> Response {
-    error(
-        StatusCode::CONFLICT,
-        "insufficient_stock",
-        "One or more items no longer have enough stock.",
     )
 }
 

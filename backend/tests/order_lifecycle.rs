@@ -74,6 +74,48 @@ async fn checkout_snapshots_reserves_and_manual_payment_are_idempotent() {
         .await
         .expect("migrations should run");
     let variant_id = insert_product(&pool).await;
+    let product_id: Uuid =
+        sqlx::query_scalar("SELECT product_id FROM product_variants WHERE id = $1")
+            .bind(variant_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let product_media_id = Uuid::now_v7();
+    let customer_media_id = Uuid::now_v7();
+    for (media_id, object_key) in [
+        (product_media_id, "tests/order-product.png"),
+        (customer_media_id, "tests/customer-original.png"),
+    ] {
+        sqlx::query("INSERT INTO media_assets (id, object_key, content_type, byte_size, status, completed_at, scan_status, scanned_at) VALUES ($1, $2, 'image/png', 1, 'ready', now(), 'clean', now())")
+            .bind(media_id)
+            .bind(object_key)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+    sqlx::query("INSERT INTO product_media (product_id, media_asset_id, alt_text, position) VALUES ($1, $2, 'Order product', 0)")
+        .bind(product_id)
+        .bind(product_media_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let personalization_views = json!([{
+        "id": "view-front",
+        "label": "Frente",
+        "media_id": product_media_id,
+        "print_areas": [{
+            "id": "area-1", "label": "Peito", "x": 2500, "y": 2500,
+            "width": 5000, "height": 5000,
+            "physical_width_cm": 20, "physical_height_cm": 20
+        }]
+    }]);
+    sqlx::query("INSERT INTO product_personalization (product_id, mode, preview_media_asset_id, views) VALUES ($1, 'photo', $2, $3) ON CONFLICT (product_id) DO UPDATE SET mode='photo', preview_media_asset_id=$2, views=$3")
+        .bind(product_id)
+        .bind(product_media_id)
+        .bind(&personalization_views)
+        .execute(&pool)
+        .await
+        .unwrap();
     insert_owner(&pool).await;
     insert_order_reader(&pool).await;
     let email = EmailService::development("http://127.0.0.1:3000");
@@ -164,7 +206,24 @@ async fn checkout_snapshots_reserves_and_manual_payment_are_idempotent() {
         "POST",
         "/api/cart/items",
         Some(&cart_cookie),
-        Some(json!({ "variant_id": variant_id, "quantity": 2 })),
+        Some(json!({
+            "variant_id": variant_id,
+            "quantity": 2,
+            "customization_media_asset_ids": [customer_media_id],
+            "customization": {
+                "version": 7,
+                "areas": [{
+                    "view_id": "view-front", "view_label": "Frente",
+                    "area_id": "area-1", "area_label": "Peito",
+                    "print_width_cm": 20, "print_height_cm": 20,
+                    "photo": {
+                        "media_id": customer_media_id,
+                        "x": 10, "y": 15, "width": 70, "height": 65,
+                        "crop_x": 50, "crop_y": 50, "scale": 1
+                    }
+                }]
+            }
+        })),
         Some("order-cart-add-0001"),
     )
     .await;
@@ -249,6 +308,20 @@ async fn checkout_snapshots_reserves_and_manual_payment_are_idempotent() {
     assert_eq!(created_body["total_minor"], 8191);
     assert_eq!(created_body["discount"]["code"], "ORDER10");
     assert_eq!(created_body["lines"][0]["product_title"], "Order Loom");
+    assert_eq!(
+        created_body["lines"][0]["personalization_context"]["version"],
+        1
+    );
+    assert_eq!(
+        created_body["lines"][0]["personalization_context"]["views"][0]["media_id"],
+        product_media_id.to_string()
+    );
+    let retained_media: (Uuid, i32) =
+        sqlx::query_as("SELECT media_asset_id, position FROM order_line_personalization_media")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(retained_media, (customer_media_id, 0));
     assert_eq!(created_body["shipping_address"]["line1"], "9 Thread Street");
     let order_id = created_body["id"].as_str().unwrap();
 

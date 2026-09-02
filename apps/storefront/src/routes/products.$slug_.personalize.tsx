@@ -1,5 +1,5 @@
 import { ApiError } from '@knitprint/api-client'
-import { createFileRoute, notFound, redirect } from '@tanstack/react-router'
+import { createFileRoute, notFound } from '@tanstack/react-router'
 import { ArrowLeft, Eye, ShoppingBag } from 'lucide-react'
 import { useState } from 'react'
 import { announceCartUpdate, cartApi, cartMutationKey } from '../cart-api'
@@ -11,9 +11,6 @@ export const Route = createFileRoute('/products/$slug_/personalize')({
   loader: async ({ params }) => {
     const product = await publishedProduct(params.slug)
     if (!product || product.personalization.mode === 'none') throw notFound()
-    if (!product.variants.some(({ available_quantity }) => available_quantity > 0)) {
-      throw redirect({ to: '/products/$slug', params: { slug: params.slug }, replace: true })
-    }
     return product
   },
   head: ({ loaderData }) => ({ meta: [{ title: loaderData ? `Personalizar ${loaderData.title} — KnitnPrint` : 'KnitnPrint' }] }),
@@ -44,9 +41,7 @@ function PersonalizeProductPage() {
       setStatus('added')
     } catch (error) {
       setStatus('error')
-      setErrorMessage(error instanceof ApiError && error.body.error.code === 'insufficient_stock'
-        ? 'Este produto está esgotado. Atualiza o stock no administrador antes de o adicionares ao carrinho.'
-        : error instanceof ApiError && error.body.error.code === 'invalid_customization'
+      setErrorMessage(error instanceof ApiError && error.body.error.code === 'invalid_customization'
           ? 'Não foi possível validar esta personalização. Revê os elementos e tenta novamente.'
           : 'Não foi possível adicionar o produto ao carrinho. Tenta novamente.')
     }
@@ -87,7 +82,7 @@ function PersonalizeProductPage() {
         {status === 'added' && <a className="text-link" href="/cart">Ver carrinho</a>}
         {status === 'error' && <strong role="alert">{errorMessage}</strong>}
       </div>
-      {confirmingIncomplete && <div className="personalization-confirmation-backdrop" role="presentation" onKeyDown={(event) => { if (event.key === 'Escape') setConfirmingIncomplete(false) }}><section className="personalization-confirmation" role="alertdialog" aria-modal="true" aria-labelledby="incomplete-personalization-title" aria-describedby="incomplete-personalization-description"><span>Confirmação</span><h2 id="incomplete-personalization-title">Queres avançar sem completar?</h2><p id="incomplete-personalization-description">Ainda falta {design.missing.slice(0, 3).join(', ')}{design.missing.length > 3 ? ` e mais ${design.missing.length - 3} opção(ões)` : ''}. O produto será colocado no carrinho apenas com as opções que preencheste.</p><div><button className="button button--secondary" type="button" autoFocus onClick={() => setConfirmingIncomplete(false)}>Continuar a editar</button><button className="button button--primary" type="button" onClick={() => void addToCart()}>Sim, adicionar</button></div></section></div>}
+      {confirmingIncomplete && <div className="personalization-confirmation-backdrop" role="presentation" onKeyDown={(event) => { if (event.key === 'Escape') setConfirmingIncomplete(false) }}><section className="personalization-confirmation" role="alertdialog" aria-modal="true" aria-labelledby="incomplete-personalization-title" aria-describedby="incomplete-personalization-description"><span>Confirmação</span><h2 id="incomplete-personalization-title">Já realizou todas as personalizações pretendidas?</h2><p id="incomplete-personalization-description">Pode continuar a personalizar ou adicionar o produto ao carrinho tal como está.</p><div><button className="button button--secondary" type="button" autoFocus onClick={() => setConfirmingIncomplete(false)}>Continuar a personalizar</button><button className="button button--primary" type="button" onClick={() => void addToCart()}>Sim, adicionar</button></div></section></div>}
     </main>
   </>
 }

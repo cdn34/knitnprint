@@ -232,7 +232,7 @@ function HomePage() {
           <div className="category-grid">
             {categoryCards.map((category, index) => (
               <a
-                className={`category-card category-card--${(index % 6) + 1}`}
+                className={`category-card category-card--${(index % 6) + 1}${index === 0 && !category.isPlaceholder ? ' category-card--featured' : ''}`}
                 href={category.href}
                 key={category.id}
               >
@@ -254,7 +254,7 @@ function HomePage() {
                     : t('home.newCollection')}
                 </span>
                 <span className="category-copy">
-                  <small>{category.isPlaceholder ? t('home.comingSoon') : t('home.knitprintCollection')}</small>
+                  <small>{category.isPlaceholder ? t('home.comingSoon') : index === 0 ? t('home.featuredCollection') : t('home.knitprintCollection')}</small>
                   <strong>{category.name}</strong>
                   <span>{category.description}</span>
                   <em>{t('home.viewCollection')} <ArrowRight size={14} /></em>

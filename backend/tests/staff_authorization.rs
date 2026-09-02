@@ -373,7 +373,8 @@ async fn staff_authorization_and_audit_lifecycle() {
     let public_detail = request(&router, "GET", "/api/products/woven-planter", None, None).await;
     assert_eq!(public_detail.status(), StatusCode::OK);
     let public_body = response_json(public_detail).await;
-    assert_eq!(public_body["variants"][0]["available_quantity"], 8);
+    assert_eq!(public_body["variants"][0]["available_quantity"], 100);
+    assert_eq!(public_body["variants"][0]["low_stock"], false);
     assert_eq!(public_body["search_keywords"], "");
 
     let archived = request(

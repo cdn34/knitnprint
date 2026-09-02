@@ -460,8 +460,7 @@ async fn transition_in_transaction(
                 let available = current
                     .available_quantity
                     .checked_sub(quantity)
-                    .filter(|value| *value >= 0)
-                    .ok_or(InventoryOperationError::InsufficientAvailable)?;
+                    .ok_or(InventoryOperationError::QuantityOverflow)?;
                 let reserved = current
                     .reserved_quantity
                     .checked_add(quantity)

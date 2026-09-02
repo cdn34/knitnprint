@@ -182,7 +182,7 @@ impl ValidatedFulfillment {
         if input.lines.is_empty()
             || input.lines.len() > 100
             || input.lines.iter().any(|line| {
-                !(1..=99).contains(&line.quantity) || !line_ids.insert(line.order_line_id)
+                !(1..=100).contains(&line.quantity) || !line_ids.insert(line.order_line_id)
             })
             || carrier.len() > 100
             || tracking_number.len() > 200

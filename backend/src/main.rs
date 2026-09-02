@@ -45,6 +45,10 @@ async fn main() {
             eprintln!("invalid payment configuration: {error}");
             std::process::exit(2);
         });
+    let packlink = knitprint_api::packlink::PacklinkService::from_env().unwrap_or_else(|error| {
+        eprintln!("invalid Packlink configuration: {error}");
+        std::process::exit(2);
+    });
 
     if config.environment == Environment::Production && database.is_none() {
         eprintln!("database connection is required in production");
@@ -78,6 +82,7 @@ async fn main() {
             media_scanner,
             email,
             payments,
+            packlink,
             trust_proxy_headers: config.trust_proxy_headers,
             secure_cookies: config.environment == Environment::Production,
             manual_payments_enabled: config.environment != Environment::Production,

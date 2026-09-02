@@ -542,7 +542,7 @@ pub async fn public_asset(
     response
 }
 
-#[utoipa::path(get, path = "/api/admin/personalization/media/{media_id}/{variant}", params(("media_id" = Uuid, Path), ("variant" = String, Path)), tag = "admin personalization", responses((status = 200, description = "Processed customer personalization image"), (status = 401, body = ErrorBody), (status = 403, body = ErrorBody), (status = 404, body = ErrorBody)))]
+#[utoipa::path(get, path = "/api/admin/personalization/media/{media_id}/{variant}", params(("media_id" = Uuid, Path), ("variant" = String, Path)), tag = "admin personalization", responses((status = 200, description = "Private customer personalization image or original file"), (status = 401, body = ErrorBody), (status = 403, body = ErrorBody), (status = 404, body = ErrorBody)))]
 pub async fn admin_personalization_asset(
     State(state): State<AppState>,
     actor: AuthenticatedStaff,
@@ -551,14 +551,82 @@ pub async fn admin_personalization_asset(
     if let Err(response) = require_capability(&actor, "orders.read") {
         return response.into_response();
     }
-    if !matches!(variant.as_str(), "thumbnail" | "detail") {
+    if !matches!(variant.as_str(), "thumbnail" | "detail" | "original") {
+        return not_found();
+    }
+    let (Some(pool), Some(storage)) = (state.database, state.media_storage) else {
+        return unavailable();
+    };
+    let asset = if variant == "original" {
+        sqlx::query_as::<_, (String, String)>(
+            "SELECT m.object_key, m.content_type FROM media_assets m WHERE m.id=$1 AND m.status='ready' AND NOT EXISTS (SELECT 1 FROM product_media pm WHERE pm.media_asset_id=m.id) AND EXISTS (SELECT 1 FROM order_line_personalization_media ordered WHERE ordered.media_asset_id=m.id) LIMIT 1"
+        ).bind(media_id).fetch_optional(&pool).await
+    } else {
+        sqlx::query_as::<_, (String, String)>(
+            "SELECT mv.object_key, mv.content_type FROM media_assets m JOIN media_variants mv ON mv.media_asset_id=m.id WHERE m.id=$1 AND mv.kind=$2 AND m.status='ready' AND NOT EXISTS (SELECT 1 FROM product_media pm WHERE pm.media_asset_id=m.id) AND EXISTS (SELECT 1 FROM order_line_personalization_media ordered WHERE ordered.media_asset_id=m.id) LIMIT 1"
+        ).bind(media_id).bind(&variant).fetch_optional(&pool).await
+    };
+    let (object_key, content_type) = match asset {
+        Ok(Some(asset)) => asset,
+        Ok(None) => return not_found(),
+        Err(_) => return unavailable(),
+    };
+    let object = storage
+        .client
+        .get_object()
+        .bucket(&storage.bucket)
+        .key(object_key)
+        .send()
+        .await;
+    let Ok(object) = object else {
+        return not_found();
+    };
+    let body = match object.body.collect().await {
+        Ok(body) => body.into_bytes(),
+        Err(_) => return unavailable(),
+    };
+    let mut response = Response::new(Body::from(body));
+    response.headers_mut().insert(
+        header::CONTENT_TYPE,
+        content_type
+            .parse()
+            .unwrap_or_else(|_| header::HeaderValue::from_static("image/webp")),
+    );
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        header::HeaderValue::from_static("private, no-store"),
+    );
+    if variant == "original" {
+        let filename = format!(
+            "attachment; filename=personalizacao-original.{}",
+            extension_for(&content_type)
+        );
+        if let Ok(value) = filename.parse() {
+            response
+                .headers_mut()
+                .insert(header::CONTENT_DISPOSITION, value);
+        }
+    }
+    response
+}
+
+#[utoipa::path(get, path = "/api/admin/order-product/media/{media_id}/{variant}", params(("media_id" = Uuid, Path), ("variant" = String, Path)), tag = "admin personalization", responses((status = 200, description = "Product image retained for an order personalization proof"), (status = 401, body = ErrorBody), (status = 403, body = ErrorBody), (status = 404, body = ErrorBody)))]
+pub async fn admin_order_product_asset(
+    State(state): State<AppState>,
+    actor: AuthenticatedStaff,
+    Path((media_id, variant)): Path<(Uuid, String)>,
+) -> Response {
+    if let Err(response) = require_capability(&actor, "orders.read") {
+        return response.into_response();
+    }
+    if !matches!(variant.as_str(), "thumbnail" | "card" | "detail") {
         return not_found();
     }
     let (Some(pool), Some(storage)) = (state.database, state.media_storage) else {
         return unavailable();
     };
     let asset = sqlx::query_as::<_, (String, String)>(
-        "SELECT mv.object_key, mv.content_type FROM media_assets m JOIN media_variants mv ON mv.media_asset_id=m.id WHERE m.id=$1 AND mv.kind=$2 AND m.status='ready' AND NOT EXISTS (SELECT 1 FROM product_media pm WHERE pm.media_asset_id=m.id) LIMIT 1"
+        "SELECT mv.object_key, mv.content_type FROM media_assets m JOIN media_variants mv ON mv.media_asset_id=m.id JOIN product_media pm ON pm.media_asset_id=m.id WHERE m.id=$1 AND mv.kind=$2 AND m.status='ready' LIMIT 1"
     ).bind(media_id).bind(&variant).fetch_optional(&pool).await;
     let (object_key, content_type) = match asset {
         Ok(Some(asset)) => asset,

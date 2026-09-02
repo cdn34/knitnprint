@@ -66,10 +66,7 @@ export function variantPrice(variant: Variant) {
 }
 
 export function preferredVariant(product: Product) {
-  return (
-    product.variants.find(({ available_quantity }) => available_quantity > 0) ??
-    product.variants[0]
-  )
+  return product.variants[0]
 }
 
 export type StockPresentation = {
@@ -78,18 +75,11 @@ export type StockPresentation = {
   detail: string
 }
 
-export function variantStock(variant: Variant): StockPresentation {
-  if (variant.available_quantity <= 0) {
-    return {
-      state: 'sold-out',
-      label: 'Sold out',
-      detail: 'This option is currently unavailable.',
-    }
-  }
+export function variantStock(_variant: Variant): StockPresentation {
   return {
     state: 'available',
     label: 'In stock',
-    detail: 'Available from our studio inventory.',
+    detail: 'Available to order.',
   }
 }
 

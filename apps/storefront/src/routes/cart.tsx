@@ -4,6 +4,7 @@ import type {
   Order,
   PaymentOptions,
 } from '@knitprint/api-client'
+import { ApiError } from '@knitprint/api-client'
 import { createFileRoute } from '@tanstack/react-router'
 import {
   ArrowLeft,
@@ -48,6 +49,11 @@ function personalizationSummary(value: unknown, mediaIds: string[]) {
   return `Personalizado${mediaIds.length || customization.photo ? ' com fotografia' : ''}${typeof text === 'string' ? ` · “${text}”` : ''}`
 }
 
+function shippingDetails(shipping: { carrier_name: string; method_name: string; transit_hours: number }) {
+  const carrier = shipping.carrier_name.trim() || shipping.method_name
+  return shipping.transit_hours > 0 ? `${carrier} · ${shipping.transit_hours} h` : carrier
+}
+
 function CartPage() {
   const { t, formatCurrency } = useI18n()
   const [cart, setCart] = useState<Cart | null>(null)
@@ -59,6 +65,23 @@ function CartPage() {
   const [paymentOptions, setPaymentOptions] = useState<PaymentOptions | null>(null)
   const [discountBusy, setDiscountBusy] = useState(false)
   const [shippingBusy, setShippingBusy] = useState(false)
+
+  function shippingErrorMessage(error: unknown) {
+    const code = error instanceof ApiError ? error.body.error.code : ''
+    if (code === 'shipping_package_invalid') return t('cart.shippingPackageInvalid')
+    if (code === 'packlink_no_services') return t('cart.shippingNoServices')
+    return t('cart.shippingUnavailable')
+  }
+
+  async function refreshShippingQuotes(nextCart: Cart) {
+    if (!nextCart.delivery) return nextCart
+    setShippingBusy(true)
+    try {
+      return await cartApi.refreshCartShippingQuotes()
+    } finally {
+      setShippingBusy(false)
+    }
+  }
 
   useEffect(() => {
     let active = true
@@ -72,8 +95,24 @@ function CartPage() {
         setPaymentOptions(options)
         if (orderId) setOrder(resource as Order)
         else {
-          setCart(resource as Cart)
-          announceCartUpdate(resource as Cart)
+          const loadedCart = resource as Cart
+          if (loadedCart.delivery) {
+            refreshShippingQuotes(loadedCart)
+              .then((quotedCart) => {
+                if (!active) return
+                setCart(quotedCart)
+                announceCartUpdate(quotedCart)
+              })
+              .catch((error) => {
+                if (!active) return
+                setCart(loadedCart)
+                announceCartUpdate(loadedCart)
+                setMessage(shippingErrorMessage(error))
+              })
+          } else {
+            setCart(loadedCart)
+            announceCartUpdate(loadedCart)
+          }
         }
       })
       .catch(() => {
@@ -123,9 +162,16 @@ function CartPage() {
     setBusyLine(lineId)
     setMessage('')
     try {
-      const nextCart = await cartApi.updateCartItem(lineId, { quantity }, cartMutationKey())
-      setCart(nextCart)
-      announceCartUpdate(nextCart)
+      const changedCart = await cartApi.updateCartItem(lineId, { quantity }, cartMutationKey())
+      setCart(changedCart)
+      announceCartUpdate(changedCart)
+      try {
+        const nextCart = await refreshShippingQuotes(changedCart)
+        setCart(nextCart)
+        announceCartUpdate(nextCart)
+      } catch (error) {
+        setMessage(shippingErrorMessage(error))
+      }
     } catch {
       setMessage(t('cart.quantityUnavailable'))
     } finally {
@@ -137,7 +183,8 @@ function CartPage() {
     setBusyLine(lineId)
     setMessage('')
     try {
-      const nextCart = await cartApi.removeCartItem(lineId, cartMutationKey())
+      const changedCart = await cartApi.removeCartItem(lineId, cartMutationKey())
+      const nextCart = changedCart.items.length ? await refreshShippingQuotes(changedCart) : changedCart
       setCart(nextCart)
       announceCartUpdate(nextCart)
     } catch {
@@ -169,9 +216,17 @@ function CartPage() {
       },
     }
     try {
-      const nextCart = await cartApi.setCartDelivery(input, cartMutationKey())
-      setCart(nextCart)
-      setMessage(t('cart.deliverySaved'))
+      const deliveryCart = await cartApi.setCartDelivery(input, cartMutationKey())
+      setCart(deliveryCart)
+      announceCartUpdate(deliveryCart)
+      try {
+        const nextCart = await refreshShippingQuotes(deliveryCart)
+        setCart(nextCart)
+        announceCartUpdate(nextCart)
+        setMessage(t('cart.deliverySaved'))
+      } catch (error) {
+        setMessage(shippingErrorMessage(error))
+      }
     } catch {
       setMessage(t('cart.deliveryError'))
     }
@@ -227,6 +282,22 @@ function CartPage() {
   async function createOrder() {
     setSubmittingOrder(true)
     setMessage('')
+    if (cart?.delivery) {
+      try {
+        const currentCart = await refreshShippingQuotes(cart)
+        setCart(currentCart)
+        announceCartUpdate(currentCart)
+        if (!currentCart.checkout_ready) {
+          setMessage(t('cart.shippingUnavailable'))
+          setSubmittingOrder(false)
+          return
+        }
+      } catch (error) {
+        setMessage(shippingErrorMessage(error))
+        setSubmittingOrder(false)
+        return
+      }
+    }
     try {
       if (!paymentOptions) return
       const method = paymentOptions.stripe ? 'stripe' : 'manual'
@@ -342,10 +413,8 @@ function CartPage() {
                           disabled={busyLine === item.id || !item.available}
                           onChange={(event) => updateQuantity(item.id, Number(event.target.value))}
                         >
-                          {Array.from(
-                            { length: Math.min(10, Math.max(item.available_quantity, item.quantity)) },
-                            (_, index) => index + 1,
-                          ).map((quantity) => <option key={quantity}>{quantity}</option>)}
+                          {Array.from({ length: 100 }, (_, index) => index + 1)
+                            .map((quantity) => <option key={quantity}>{quantity}</option>)}
                         </select>
                       </label>
                     </div>
@@ -377,7 +446,7 @@ function CartPage() {
                 </div>
               )}
               {cart.shipping ? (
-                <div><span>{t('cart.shipping')} · {cart.shipping.method_name}</span><strong>{formatCurrency(cart.shipping_minor, currency)}</strong></div>
+                <div><span>{t('cart.shipping')} · {shippingDetails(cart.shipping)}</span><strong>{formatCurrency(cart.shipping_minor, currency)}</strong></div>
               ) : (
                 <div><span>{t('cart.shipping')}</span><span>{t('cart.addDelivery')}</span></div>
               )}
@@ -393,9 +462,9 @@ function CartPage() {
                     disabled={shippingBusy}
                     onChange={(event) => selectShippingMethod(event.target.value)}
                   >
-                    {cart.shipping_methods.map((method) => (
+                    {cart.shipping_methods.map((method, index) => (
                       <option value={method.id} key={method.id}>
-                        {method.method_name} · {formatCurrency(method.amount_minor, method.currency)}
+                        {index === 0 ? 'Mais barato' : 'Mais rápido'} — {shippingDetails(method)} · {formatCurrency(method.amount_minor, method.currency)}
                       </option>
                     ))}
                   </select>
@@ -488,7 +557,7 @@ function OrderConfirmation({
         <div><dt>{t('order.payment')}</dt><dd>{order.payment_status}</dd></div>
         <div><dt>{t('cart.subtotal')}</dt><dd>{formatCurrency(order.subtotal_minor, order.currency)}</dd></div>
         {order.discount && <div><dt>{t('order.discount')} ({order.discount.code})</dt><dd>−{formatCurrency(order.discount_minor, order.currency)}</dd></div>}
-        <div><dt>{t('cart.shipping')} ({order.shipping.method_name})</dt><dd>{formatCurrency(order.shipping_minor, order.currency)}</dd></div>
+        <div><dt>{t('cart.shipping')} ({shippingDetails(order.shipping)})</dt><dd>{formatCurrency(order.shipping_minor, order.currency)}</dd></div>
         <div><dt>{t('cart.tax')} ({order.tax.rate_basis_points / 100}%)</dt><dd>{formatCurrency(order.tax_minor, order.currency)}</dd></div>
         <div><dt>{t('cart.total')}</dt><dd>{formatCurrency(order.total_minor, order.currency)}</dd></div>
       </dl>
