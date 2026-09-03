@@ -32,8 +32,8 @@ use crate::{
     payments::{PaymentAttempt, PaymentStatusEvent, load_attempts, load_status_events},
     settings::{
         OrderShipping, OrderTax, PricingError, evaluate_in_transaction as evaluate_commercial,
-        evaluate_packlink_in_transaction, load_order_shipping, load_order_tax,
-        record_order_snapshots,
+        evaluate_packlink_in_transaction, latch_vat_activation, load_order_shipping,
+        load_order_tax, record_order_snapshots,
     },
 };
 
@@ -731,6 +731,13 @@ async fn create_order(
     .bind(&delivery.country_code)
     .bind(&delivery.address_phone)
     .fetch_one(&mut *transaction)
+    .await
+    .map_err(|_| CreateError::Database)?;
+
+    latch_vat_activation(
+        &mut transaction,
+        commercial_pricing.vat_activation_reason.as_deref(),
+    )
     .await
     .map_err(|_| CreateError::Database)?;
 

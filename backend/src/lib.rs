@@ -10,6 +10,7 @@ pub mod dashboard;
 pub mod discounts;
 pub mod email;
 pub mod error;
+pub mod feedback;
 pub mod fulfillment;
 pub mod health;
 pub mod inventory;
@@ -128,6 +129,15 @@ pub fn app(state: AppState) -> Router {
         .route(
             "/api/admin/products/{product_id}/categories",
             axum::routing::post(catalog::assign_categories),
+        )
+        .route("/api/admin/feedback", get(feedback::admin_list))
+        .route(
+            "/api/admin/feedback/{feedback_id}",
+            axum::routing::put(feedback::moderate),
+        )
+        .route(
+            "/api/admin/feedback/{feedback_id}/reply",
+            axum::routing::put(feedback::reply),
         )
         .route(
             "/api/admin/categories",
@@ -268,6 +278,10 @@ pub fn app(state: AppState) -> Router {
             axum::routing::post(customers::create_guest),
         )
         .route("/api/categories", get(catalog::public_category_list))
+        .route(
+            "/api/products/{slug}/feedback",
+            get(feedback::public_list).post(feedback::create),
+        )
         .route("/api/products/{slug}", get(catalog::public_detail))
         .route("/api/media/{media_id}/{variant}", get(media::public_asset))
         .fallback(error::not_found)

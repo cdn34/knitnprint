@@ -18,6 +18,23 @@ export interface AdjustInventoryRequest {
   "reason": string
 }
 
+export interface AdminProductFeedback {
+  "comment": string
+  "created_at": string
+  "display_name": string
+  "id": string
+  "moderated_at"?: string | null
+  "moderated_by_name"?: string | null
+  "product_id": string
+  "product_slug": string
+  "product_title": string
+  "rating": number
+  "replied_at"?: string | null
+  "replied_by_name"?: string | null
+  "status": string
+  "store_reply"?: string | null
+}
+
 export interface AppliedDiscount {
   "amount_minor": number
   "code": string
@@ -127,6 +144,7 @@ export interface CommercialSettings {
   "shipping_zones": Array<ShippingZone>
   "store_name": string
   "support_email": string
+  "tax_automation": TaxAutomationStatus
   "tax_enabled": boolean
   "tax_rules": Array<TaxRule>
   "updated_at": string
@@ -185,7 +203,15 @@ export interface CreateOrderRequest {
   "payment_method": string
 }
 
+export interface CreateProductFeedbackRequest {
+  "comment": string
+  "display_name": string
+  "rating": number
+}
+
 export interface CreateProductRequest {
+  "additional_information"?: string
+  "care_instructions"?: string
   "description"?: string
   "personalization"?: PersonalizationConfig
   "search_keywords"?: string
@@ -297,6 +323,7 @@ export interface CustomerSummary {
 export interface DashboardAccess {
   "inventory": boolean
   "orders": boolean
+  "settings": boolean
 }
 
 export interface DashboardFailedPayment {
@@ -487,6 +514,10 @@ export interface MetricDefinition {
   "key": string
 }
 
+export interface ModerateProductFeedbackRequest {
+  "status": string
+}
+
 export interface NotificationStatus {
   "attempt_count": number
   "created_at": string
@@ -509,6 +540,7 @@ export interface OperationalDashboard {
   "period_start": string
   "recent_orders": Array<DashboardOrder>
   "recent_refunds": Array<DashboardRefund>
+  "tax_automation"?: null | TaxAutomationStatus
   "timezone": string
 }
 
@@ -710,6 +742,8 @@ export interface PersonalizationMediaRecord {
 }
 
 export interface Product {
+  "additional_information": string
+  "care_instructions": string
   "categories": Array<Category>
   "description": string
   "id": string
@@ -723,6 +757,23 @@ export interface Product {
   "variants": Array<Variant>
 }
 
+export interface ProductFeedback {
+  "comment": string
+  "created_at": string
+  "display_name": string
+  "id": string
+  "rating": number
+  "replied_at"?: string | null
+  "store_reply"?: string | null
+}
+
+export interface ProductFeedbackSummary {
+  "average_rating"?: number | null
+  "rating_counts": Array<RatingCount>
+  "reviews": Array<ProductFeedback>
+  "total_reviews": number
+}
+
 export interface ProductMedia {
   "alt_text": string
   "card_url": string
@@ -731,6 +782,11 @@ export interface ProductMedia {
   "position": number
   "thumbnail_url": string
   "url": string
+}
+
+export interface RatingCount {
+  "count": number
+  "rating": number
 }
 
 export interface Refund {
@@ -763,6 +819,10 @@ export interface RefundLine {
 
 export interface ReorderCategoriesRequest {
   "category_ids": Array<string>
+}
+
+export interface ReplyToProductFeedbackRequest {
+  "reply"?: string | null
 }
 
 export interface ResetPasswordRequest {
@@ -872,6 +932,25 @@ export interface StaffRecord {
   "role": string
 }
 
+export interface SubmittedProductFeedback {
+  "id": string
+  "status": string
+}
+
+export interface TaxAutomationStatus {
+  "activated_at"?: string | null
+  "activation_reason"?: string | null
+  "enabled": boolean
+  "immediate_threshold_minor": number
+  "remaining_to_immediate_minor": number
+  "remaining_to_standard_minor": number
+  "standard_threshold_minor": number
+  "state": string
+  "turnover_minor": number
+  "warning_threshold_minor": number
+  "year": number
+}
+
 export interface TaxRule {
   "active": boolean
   "country_codes": Array<string>
@@ -923,7 +1002,9 @@ export interface UpdateDiscountRequest {
 }
 
 export interface UpdateProductRequest {
+  "additional_information"?: string
   "available_quantity": number
+  "care_instructions"?: string
   "currency": string
   "description"?: string
   "personalization"?: PersonalizationConfig
@@ -938,6 +1019,8 @@ export interface UpdateProductRequest {
 export interface Variant {
   "available_quantity": number
   "currency": string
+  "display_price_minor": number
+  "display_tax_rate_basis_points": number
   "id": string
   "low_stock": boolean
   "option_values": unknown

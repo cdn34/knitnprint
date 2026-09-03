@@ -1245,6 +1245,271 @@
         }
       }
     },
+    "/api/admin/feedback": {
+      "get": {
+        "tags": [
+          "admin product feedback"
+        ],
+        "operationId": "admin_list",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AdminProductFeedback"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/feedback/{feedback_id}": {
+      "put": {
+        "tags": [
+          "admin product feedback"
+        ],
+        "operationId": "moderate",
+        "parameters": [
+          {
+            "name": "feedback_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModerateProductFeedbackRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminProductFeedback"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/feedback/{feedback_id}/reply": {
+      "put": {
+        "tags": [
+          "admin product feedback"
+        ],
+        "operationId": "reply",
+        "parameters": [
+          {
+            "name": "feedback_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplyToProductFeedbackRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminProductFeedback"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/admin/inventory": {
       "get": {
         "tags": [
@@ -4521,6 +4786,124 @@
         }
       }
     },
+    "/api/products/{slug}/feedback": {
+      "get": {
+        "tags": [
+          "product feedback"
+        ],
+        "operationId": "public_list",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductFeedbackSummary"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "product feedback"
+        ],
+        "operationId": "create",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateProductFeedbackRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmittedProductFeedback"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/ready": {
       "get": {
         "tags": [
@@ -4617,6 +5000,82 @@
           },
           "reason": {
             "type": "string"
+          }
+        }
+      },
+      "AdminProductFeedback": {
+        "type": "object",
+        "required": [
+          "id",
+          "product_id",
+          "product_title",
+          "product_slug",
+          "display_name",
+          "rating",
+          "comment",
+          "status",
+          "created_at"
+        ],
+        "properties": {
+          "comment": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "moderated_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "moderated_by_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "product_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "product_slug": {
+            "type": "string"
+          },
+          "product_title": {
+            "type": "string"
+          },
+          "rating": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "replied_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "replied_by_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "store_reply": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -5040,6 +5499,7 @@
           "support_email",
           "currency",
           "tax_enabled",
+          "tax_automation",
           "shipping_zones",
           "tax_rules",
           "integrations",
@@ -5070,6 +5530,9 @@
           },
           "support_email": {
             "type": "string"
+          },
+          "tax_automation": {
+            "$ref": "#/components/schemas/TaxAutomationStatus"
           },
           "tax_enabled": {
             "type": "boolean"
@@ -5275,6 +5738,26 @@
           }
         }
       },
+      "CreateProductFeedbackRequest": {
+        "type": "object",
+        "required": [
+          "display_name",
+          "rating",
+          "comment"
+        ],
+        "properties": {
+          "comment": {
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "rating": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
       "CreateProductRequest": {
         "type": "object",
         "required": [
@@ -5283,6 +5766,12 @@
           "variants"
         ],
         "properties": {
+          "additional_information": {
+            "type": "string"
+          },
+          "care_instructions": {
+            "type": "string"
+          },
           "description": {
             "type": "string"
           },
@@ -5665,13 +6154,17 @@
         "type": "object",
         "required": [
           "orders",
-          "inventory"
+          "inventory",
+          "settings"
         ],
         "properties": {
           "inventory": {
             "type": "boolean"
           },
           "orders": {
+            "type": "boolean"
+          },
+          "settings": {
             "type": "boolean"
           }
         }
@@ -6382,6 +6875,17 @@
           }
         }
       },
+      "ModerateProductFeedbackRequest": {
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "type": "string"
+          }
+        }
+      },
       "NotificationStatus": {
         "type": "object",
         "required": [
@@ -6490,6 +6994,16 @@
             "items": {
               "$ref": "#/components/schemas/DashboardRefund"
             }
+          },
+          "tax_automation": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TaxAutomationStatus"
+              }
+            ]
           },
           "timezone": {
             "type": "string"
@@ -7280,6 +7794,8 @@
           "title",
           "slug",
           "description",
+          "additional_information",
+          "care_instructions",
           "status",
           "search_keywords",
           "shipping",
@@ -7289,6 +7805,12 @@
           "personalization"
         ],
         "properties": {
+          "additional_information": {
+            "type": "string"
+          },
+          "care_instructions": {
+            "type": "string"
+          },
           "categories": {
             "type": "array",
             "items": {
@@ -7334,6 +7856,80 @@
           }
         }
       },
+      "ProductFeedback": {
+        "type": "object",
+        "required": [
+          "id",
+          "display_name",
+          "rating",
+          "comment",
+          "created_at"
+        ],
+        "properties": {
+          "comment": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "rating": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "replied_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "store_reply": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "ProductFeedbackSummary": {
+        "type": "object",
+        "required": [
+          "total_reviews",
+          "rating_counts",
+          "reviews"
+        ],
+        "properties": {
+          "average_rating": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "rating_counts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RatingCount"
+            }
+          },
+          "reviews": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProductFeedback"
+            }
+          },
+          "total_reviews": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
       "ProductMedia": {
         "type": "object",
         "required": [
@@ -7368,6 +7964,23 @@
           },
           "url": {
             "type": "string"
+          }
+        }
+      },
+      "RatingCount": {
+        "type": "object",
+        "required": [
+          "rating",
+          "count"
+        ],
+        "properties": {
+          "count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "rating": {
+            "type": "integer",
+            "format": "int32"
           }
         }
       },
@@ -7505,6 +8118,17 @@
               "type": "string",
               "format": "uuid"
             }
+          }
+        }
+      },
+      "ReplyToProductFeedbackRequest": {
+        "type": "object",
+        "properties": {
+          "reply": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -7919,6 +8543,84 @@
           }
         }
       },
+      "SubmittedProductFeedback": {
+        "type": "object",
+        "required": [
+          "id",
+          "status"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string"
+          }
+        }
+      },
+      "TaxAutomationStatus": {
+        "type": "object",
+        "required": [
+          "enabled",
+          "state",
+          "year",
+          "turnover_minor",
+          "warning_threshold_minor",
+          "standard_threshold_minor",
+          "immediate_threshold_minor",
+          "remaining_to_standard_minor",
+          "remaining_to_immediate_minor"
+        ],
+        "properties": {
+          "activated_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "activation_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "immediate_threshold_minor": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "remaining_to_immediate_minor": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "remaining_to_standard_minor": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "standard_threshold_minor": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "state": {
+            "type": "string"
+          },
+          "turnover_minor": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "warning_threshold_minor": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "year": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
       "TaxRule": {
         "type": "object",
         "required": [
@@ -8130,9 +8832,15 @@
           "available_quantity"
         ],
         "properties": {
+          "additional_information": {
+            "type": "string"
+          },
           "available_quantity": {
             "type": "integer",
             "format": "int64"
+          },
+          "care_instructions": {
+            "type": "string"
           },
           "currency": {
             "type": "string"
@@ -8171,6 +8879,8 @@
           "title",
           "sku",
           "price_minor",
+          "display_price_minor",
+          "display_tax_rate_basis_points",
           "currency",
           "option_values",
           "position",
@@ -8184,6 +8894,14 @@
           },
           "currency": {
             "type": "string"
+          },
+          "display_price_minor": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "display_tax_rate_basis_points": {
+            "type": "integer",
+            "format": "int32"
           },
           "id": {
             "type": "string",
@@ -8235,6 +8953,14 @@
     {
       "name": "catalog",
       "description": "Public published product catalog"
+    },
+    {
+      "name": "product feedback",
+      "description": "Public approved product feedback and moderated submissions"
+    },
+    {
+      "name": "admin product feedback",
+      "description": "Capability-protected feedback moderation"
     },
     {
       "name": "admin media",

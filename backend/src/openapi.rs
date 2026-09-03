@@ -2,7 +2,8 @@ use utoipa::{OpenApi, openapi::OpenApi as OpenApiDocument};
 
 use crate::{
     auth, cancellations, carts, catalog, customer_auth, customers, dashboard, discounts, error,
-    fulfillment, health, inventory, media, notifications, orders, payments, settings, staff,
+    feedback, fulfillment, health, inventory, media, notifications, orders, payments, settings,
+    staff,
 };
 
 #[derive(OpenApi)]
@@ -72,6 +73,11 @@ use crate::{
         catalog::public_list,
         catalog::public_category_list,
         catalog::public_detail,
+        feedback::public_list,
+        feedback::create,
+        feedback::admin_list,
+        feedback::moderate,
+        feedback::reply,
         media::initiate,
         media::complete,
         media::public_asset,
@@ -146,6 +152,7 @@ use crate::{
         dashboard::DashboardFailedPayment,
         dashboard::DashboardRefund,
         settings::CommercialSettings,
+        settings::TaxAutomationStatus,
         settings::ShippingZone,
         settings::ShippingMethod,
         settings::TaxRule,
@@ -180,6 +187,14 @@ use crate::{
         catalog::CreateCategoryRequest,
         catalog::ReorderCategoriesRequest,
         catalog::AssignCategoriesRequest,
+        feedback::CreateProductFeedbackRequest,
+        feedback::ProductFeedback,
+        feedback::RatingCount,
+        feedback::ProductFeedbackSummary,
+        feedback::SubmittedProductFeedback,
+        feedback::AdminProductFeedback,
+        feedback::ModerateProductFeedbackRequest,
+        feedback::ReplyToProductFeedbackRequest,
         media::InitiateUploadRequest,
         media::InitiateUploadResponse,
         media::CompleteUploadRequest,
@@ -205,6 +220,8 @@ use crate::{
         (name = "staff", description = "Owner-authorized staff management"),
         (name = "admin catalog", description = "Capability-protected catalog management"),
         (name = "catalog", description = "Public published product catalog")
+        ,(name = "product feedback", description = "Public approved product feedback and moderated submissions")
+        ,(name = "admin product feedback", description = "Capability-protected feedback moderation")
         ,(name = "admin media", description = "Capability-protected direct media uploads"),
         (name = "media", description = "Stable published product media")
         ,(name = "inventory", description = "Variant availability and immutable stock movements")

@@ -7,7 +7,7 @@ export function useLocalizedCatalog() {
 
   function priceForVariant(variant: Variant | null | undefined) {
     return variant
-      ? formatCurrency(variant.price_minor, variant.currency)
+      ? formatCurrency(variant.display_price_minor, variant.currency)
       : t('common.priceUnavailable')
   }
 

@@ -26,6 +26,7 @@ import { Route as CollectionsIndexRouteImport } from './routes/collections.index
 import { Route as CollectionsSlugRouteImport } from './routes/collections.$slug'
 import { Route as ProductsIndexRouteImport } from './routes/products.index'
 import { Route as ProductsSlugRouteImport } from './routes/products.$slug'
+import { Route as ProductsSlugFeedbackThanksRouteImport } from './routes/products.$slug_.feedback-thanks'
 import { Route as ProductsSlugPersonalizeRouteImport } from './routes/products.$slug_.personalize'
 
 const IndexRoute = IndexRouteImport.update({
@@ -113,6 +114,12 @@ const ProductsSlugRoute = ProductsSlugRouteImport.update({
   path: '/products/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ProductsSlugFeedbackThanksRoute =
+  ProductsSlugFeedbackThanksRouteImport.update({
+    id: '/products/$slug_/feedback-thanks',
+    path: '/products/$slug/feedback-thanks',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ProductsSlugPersonalizeRoute = ProductsSlugPersonalizeRouteImport.update({
   id: '/products/$slug_/personalize',
   path: '/products/$slug/personalize',
@@ -137,6 +144,7 @@ export interface FileRoutesByFullPath {
   '/products/$slug': typeof ProductsSlugRoute
   '/collections/': typeof CollectionsIndexRoute
   '/products/': typeof ProductsIndexRoute
+  '/products/$slug/feedback-thanks': typeof ProductsSlugFeedbackThanksRoute
   '/products/$slug/personalize': typeof ProductsSlugPersonalizeRoute
 }
 export interface FileRoutesByTo {
@@ -157,6 +165,7 @@ export interface FileRoutesByTo {
   '/products/$slug': typeof ProductsSlugRoute
   '/collections': typeof CollectionsIndexRoute
   '/products': typeof ProductsIndexRoute
+  '/products/$slug/feedback-thanks': typeof ProductsSlugFeedbackThanksRoute
   '/products/$slug/personalize': typeof ProductsSlugPersonalizeRoute
 }
 export interface FileRoutesById {
@@ -178,6 +187,7 @@ export interface FileRoutesById {
   '/products/$slug': typeof ProductsSlugRoute
   '/collections/': typeof CollectionsIndexRoute
   '/products/': typeof ProductsIndexRoute
+  '/products/$slug_/feedback-thanks': typeof ProductsSlugFeedbackThanksRoute
   '/products/$slug_/personalize': typeof ProductsSlugPersonalizeRoute
 }
 export interface FileRouteTypes {
@@ -200,6 +210,7 @@ export interface FileRouteTypes {
     | '/products/$slug'
     | '/collections/'
     | '/products/'
+    | '/products/$slug/feedback-thanks'
     | '/products/$slug/personalize'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -220,6 +231,7 @@ export interface FileRouteTypes {
     | '/products/$slug'
     | '/collections'
     | '/products'
+    | '/products/$slug/feedback-thanks'
     | '/products/$slug/personalize'
   id:
     | '__root__'
@@ -240,6 +252,7 @@ export interface FileRouteTypes {
     | '/products/$slug'
     | '/collections/'
     | '/products/'
+    | '/products/$slug_/feedback-thanks'
     | '/products/$slug_/personalize'
   fileRoutesById: FileRoutesById
 }
@@ -261,6 +274,7 @@ export interface RootRouteChildren {
   ProductsSlugRoute: typeof ProductsSlugRoute
   CollectionsIndexRoute: typeof CollectionsIndexRoute
   ProductsIndexRoute: typeof ProductsIndexRoute
+  ProductsSlugFeedbackThanksRoute: typeof ProductsSlugFeedbackThanksRoute
   ProductsSlugPersonalizeRoute: typeof ProductsSlugPersonalizeRoute
 }
 
@@ -385,6 +399,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProductsSlugRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/products/$slug_/feedback-thanks': {
+      id: '/products/$slug_/feedback-thanks'
+      path: '/products/$slug/feedback-thanks'
+      fullPath: '/products/$slug/feedback-thanks'
+      preLoaderRoute: typeof ProductsSlugFeedbackThanksRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/products/$slug_/personalize': {
       id: '/products/$slug_/personalize'
       path: '/products/$slug/personalize'
@@ -413,6 +434,7 @@ const rootRouteChildren: RootRouteChildren = {
   ProductsSlugRoute: ProductsSlugRoute,
   CollectionsIndexRoute: CollectionsIndexRoute,
   ProductsIndexRoute: ProductsIndexRoute,
+  ProductsSlugFeedbackThanksRoute: ProductsSlugFeedbackThanksRoute,
   ProductsSlugPersonalizeRoute: ProductsSlugPersonalizeRoute,
 }
 export const routeTree = rootRouteImport

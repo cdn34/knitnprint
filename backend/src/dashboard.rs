@@ -9,10 +9,16 @@ use sqlx::{FromRow, PgPool};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::{AppState, auth::AuthenticatedStaff, error::ErrorBody};
+use crate::{
+    AppState,
+    auth::AuthenticatedStaff,
+    error::ErrorBody,
+    settings::{TaxAutomationStatus, tax_automation_status},
+};
 
 const ORDERS_READ: &str = "orders.read";
 const INVENTORY_ADJUST: &str = "inventory.adjust";
+const SETTINGS_MANAGE: &str = "settings.manage";
 
 #[derive(Serialize, ToSchema)]
 pub struct OperationalDashboard {
@@ -22,6 +28,7 @@ pub struct OperationalDashboard {
     pub currency: String,
     pub access: DashboardAccess,
     pub metrics: DashboardMetrics,
+    pub tax_automation: Option<TaxAutomationStatus>,
     pub definitions: Vec<MetricDefinition>,
     pub paid_awaiting_fulfillment: Vec<DashboardOrder>,
     pub recent_orders: Vec<DashboardOrder>,
@@ -34,6 +41,7 @@ pub struct OperationalDashboard {
 pub struct DashboardAccess {
     pub orders: bool,
     pub inventory: bool,
+    pub settings: bool,
 }
 
 #[derive(Serialize, ToSchema, Default)]
@@ -136,6 +144,10 @@ pub async fn get(State(state): State<AppState>, actor: AuthenticatedStaff) -> Re
             .capabilities
             .iter()
             .any(|value| value == INVENTORY_ADJUST),
+        settings: actor
+            .capabilities
+            .iter()
+            .any(|value| value == SETTINGS_MANAGE),
     };
     match load(&pool, access).await {
         Ok(dashboard) => no_store(Json(dashboard).into_response()),
@@ -159,6 +171,11 @@ async fn load(pool: &PgPool, access: DashboardAccess) -> Result<OperationalDashb
     let mut recent_orders = Vec::new();
     let mut failed_payments = Vec::new();
     let mut recent_refunds = Vec::new();
+    let tax_automation = if access.settings {
+        Some(tax_automation_status(pool).await?)
+    } else {
+        None
+    };
     if access.orders {
         let order_metrics = sqlx::query_as::<_, OrderMetrics>(
             r#"SELECT
@@ -241,6 +258,7 @@ async fn load(pool: &PgPool, access: DashboardAccess) -> Result<OperationalDashb
         currency: clock.currency,
         access,
         metrics,
+        tax_automation,
         definitions: metric_definitions(),
         paid_awaiting_fulfillment,
         recent_orders,

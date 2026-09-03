@@ -19,6 +19,9 @@ use crate::{
 };
 
 const SETTINGS_MANAGE: &str = "settings.manage";
+const ARTICLE_53_THRESHOLD_MINOR: i64 = 1_500_000;
+const ARTICLE_53_IMMEDIATE_THRESHOLD_MINOR: i64 = 1_875_000;
+const ARTICLE_53_WARNING_THRESHOLD_MINOR: i64 = 1_200_000;
 
 #[derive(Serialize, ToSchema)]
 pub struct CommercialSettings {
@@ -26,11 +29,27 @@ pub struct CommercialSettings {
     pub support_email: String,
     pub currency: String,
     pub tax_enabled: bool,
+    pub tax_automation: TaxAutomationStatus,
     pub shipping_zones: Vec<ShippingZone>,
     pub tax_rules: Vec<TaxRule>,
     pub integrations: IntegrationHealth,
     pub history: Vec<SettingsHistoryRecord>,
     pub updated_at: String,
+}
+
+#[derive(Clone, Serialize, ToSchema)]
+pub struct TaxAutomationStatus {
+    pub enabled: bool,
+    pub state: String,
+    pub year: i32,
+    pub turnover_minor: i64,
+    pub warning_threshold_minor: i64,
+    pub standard_threshold_minor: i64,
+    pub immediate_threshold_minor: i64,
+    pub remaining_to_standard_minor: i64,
+    pub remaining_to_immediate_minor: i64,
+    pub activated_at: Option<String>,
+    pub activation_reason: Option<String>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -142,6 +161,7 @@ pub struct CommercialPricing {
     pub tax: TaxSelection,
     pub tax_rule_id: Option<Uuid>,
     pub country_code: String,
+    pub vat_activation_reason: Option<String>,
 }
 
 #[derive(Serialize, ToSchema, FromRow)]
@@ -181,7 +201,17 @@ struct SettingsRow {
     support_email: String,
     currency: String,
     tax_enabled: bool,
+    vat_automation_enabled: bool,
+    vat_activated_at: Option<String>,
+    vat_activation_reason: Option<String>,
     updated_at: String,
+}
+
+#[derive(FromRow)]
+struct PricingVatSettingsRow {
+    tax_enabled: bool,
+    vat_automation_enabled: bool,
+    vat_activated: bool,
 }
 
 #[derive(FromRow)]
@@ -368,6 +398,10 @@ pub async fn update(
 async fn load(pool: &PgPool, state: &AppState) -> Result<CommercialSettings, sqlx::Error> {
     let settings = sqlx::query_as::<_, SettingsRow>(
         r#"SELECT store_name,support_email,currency::text AS currency,tax_enabled,
+        vat_automation_enabled,
+        CASE WHEN vat_activated_at IS NULL THEN NULL ELSE
+          to_char(vat_activated_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') END AS vat_activated_at,
+        vat_activation_reason,
         to_char(updated_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') AS updated_at
         FROM store_settings WHERE singleton"#,
     )
@@ -416,11 +450,13 @@ async fn load(pool: &PgPool, state: &AppState) -> Result<CommercialSettings, sql
     )
     .fetch_all(pool)
     .await?;
+    let tax_automation = load_tax_automation_status(pool, &settings).await?;
     Ok(CommercialSettings {
         store_name: settings.store_name,
         support_email: settings.support_email,
         currency: settings.currency,
         tax_enabled: settings.tax_enabled,
+        tax_automation,
         shipping_zones,
         tax_rules,
         integrations: IntegrationHealth {
@@ -445,6 +481,85 @@ async fn load(pool: &PgPool, state: &AppState) -> Result<CommercialSettings, sql
         history,
         updated_at: settings.updated_at,
     })
+}
+
+async fn load_tax_automation_status(
+    pool: &PgPool,
+    settings: &SettingsRow,
+) -> Result<TaxAutomationStatus, sqlx::Error> {
+    let (year, current_turnover, previous_turnover): (i32, i64, i64) = sqlx::query_as(
+        r#"WITH clock AS (
+            SELECT
+              extract(year FROM now() AT TIME ZONE 'Europe/Lisbon')::integer AS year,
+              date_trunc('year', now() AT TIME ZONE 'Europe/Lisbon') AT TIME ZONE 'Europe/Lisbon' AS current_start,
+              (date_trunc('year', now() AT TIME ZONE 'Europe/Lisbon') - interval '1 year') AT TIME ZONE 'Europe/Lisbon' AS previous_start
+        ), turnover AS (
+            SELECT
+              order_record.created_at,
+              GREATEST(
+                order_record.subtotal_minor - order_record.discount_minor + order_record.shipping_minor
+                - COALESCE((
+                    SELECT sum(refund.amount_minor)::bigint
+                    FROM order_refunds refund
+                    WHERE refund.order_id = order_record.id AND refund.status = 'succeeded'
+                  ), 0),
+                0
+              )::bigint AS amount_minor
+            FROM orders order_record
+            WHERE order_record.currency = $1
+              AND order_record.order_status <> 'cancelled'
+              AND order_record.payment_status NOT IN ('failed', 'cancelled')
+        )
+        SELECT clock.year,
+          COALESCE(sum(turnover.amount_minor) FILTER (WHERE turnover.created_at >= clock.current_start), 0)::bigint,
+          COALESCE(sum(turnover.amount_minor) FILTER (
+            WHERE turnover.created_at >= clock.previous_start AND turnover.created_at < clock.current_start
+          ), 0)::bigint
+        FROM clock LEFT JOIN turnover ON true
+        GROUP BY clock.year"#,
+    )
+    .bind(&settings.currency)
+    .fetch_one(pool)
+    .await?;
+    let state = article_53_state(
+        settings.tax_enabled,
+        settings.vat_automation_enabled,
+        settings.vat_activated_at.is_some(),
+        previous_turnover,
+        current_turnover,
+        0,
+    );
+    Ok(TaxAutomationStatus {
+        enabled: settings.vat_automation_enabled,
+        state: state.name().into(),
+        year,
+        turnover_minor: current_turnover,
+        warning_threshold_minor: ARTICLE_53_WARNING_THRESHOLD_MINOR,
+        standard_threshold_minor: ARTICLE_53_THRESHOLD_MINOR,
+        immediate_threshold_minor: ARTICLE_53_IMMEDIATE_THRESHOLD_MINOR,
+        remaining_to_standard_minor: ARTICLE_53_THRESHOLD_MINOR.saturating_sub(current_turnover),
+        remaining_to_immediate_minor: ARTICLE_53_IMMEDIATE_THRESHOLD_MINOR
+            .saturating_sub(current_turnover),
+        activated_at: settings.vat_activated_at.clone(),
+        activation_reason: settings.vat_activation_reason.clone(),
+    })
+}
+
+pub(crate) async fn tax_automation_status(
+    pool: &PgPool,
+) -> Result<TaxAutomationStatus, sqlx::Error> {
+    let settings = sqlx::query_as::<_, SettingsRow>(
+        r#"SELECT store_name,support_email,currency::text AS currency,tax_enabled,
+        vat_automation_enabled,
+        CASE WHEN vat_activated_at IS NULL THEN NULL ELSE
+          to_char(vat_activated_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') END AS vat_activated_at,
+        vat_activation_reason,
+        to_char(updated_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') AS updated_at
+        FROM store_settings WHERE singleton"#,
+    )
+    .fetch_one(pool)
+    .await?;
+    load_tax_automation_status(pool, &settings).await
 }
 
 #[derive(Serialize)]
@@ -497,6 +612,11 @@ impl ValidatedSettings {
             || input.tax_rules.iter().any(|rule| {
                 !(2..=100).contains(&rule.name.len())
                     || !(0..=10_000).contains(&rule.rate_basis_points)
+            })
+            || !input.tax_rules.iter().any(|rule| {
+                rule.active
+                    && rule.rate_basis_points == 2_300
+                    && rule.country_codes.iter().any(|country| country == "PT")
             })
             || overlaps(
                 &input
@@ -559,6 +679,99 @@ fn overlaps(groups: &[&Vec<String>]) -> bool {
         }
     }
     false
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Article53State {
+    Exempt,
+    ApproachingThreshold,
+    NextYearTransitionPending,
+    StandardAutomatic,
+    StandardManual,
+}
+
+impl Article53State {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Exempt => "article_53_exempt",
+            Self::ApproachingThreshold => "approaching_threshold",
+            Self::NextYearTransitionPending => "next_year_transition_pending",
+            Self::StandardAutomatic => "standard_automatic",
+            Self::StandardManual => "standard_manual",
+        }
+    }
+
+    fn charges_vat(self) -> bool {
+        matches!(self, Self::StandardAutomatic | Self::StandardManual)
+    }
+}
+
+fn article_53_state(
+    manual_tax_enabled: bool,
+    automation_enabled: bool,
+    activation_latched: bool,
+    previous_year_turnover_minor: i64,
+    current_year_turnover_minor: i64,
+    candidate_turnover_minor: i64,
+) -> Article53State {
+    if manual_tax_enabled {
+        return Article53State::StandardManual;
+    }
+    if !automation_enabled {
+        return Article53State::Exempt;
+    }
+    if activation_latched
+        || previous_year_turnover_minor > ARTICLE_53_THRESHOLD_MINOR
+        || current_year_turnover_minor.saturating_add(candidate_turnover_minor)
+            > ARTICLE_53_IMMEDIATE_THRESHOLD_MINOR
+    {
+        return Article53State::StandardAutomatic;
+    }
+    if current_year_turnover_minor > ARTICLE_53_THRESHOLD_MINOR {
+        Article53State::NextYearTransitionPending
+    } else if current_year_turnover_minor >= ARTICLE_53_WARNING_THRESHOLD_MINOR {
+        Article53State::ApproachingThreshold
+    } else {
+        Article53State::Exempt
+    }
+}
+
+async fn turnover_totals_in_transaction(
+    tx: &mut Transaction<'_, Postgres>,
+    currency: &str,
+) -> Result<(i64, i64), sqlx::Error> {
+    sqlx::query_as(
+        r#"WITH clock AS (
+            SELECT
+              date_trunc('year', now() AT TIME ZONE 'Europe/Lisbon') AT TIME ZONE 'Europe/Lisbon' AS current_start,
+              (date_trunc('year', now() AT TIME ZONE 'Europe/Lisbon') - interval '1 year') AT TIME ZONE 'Europe/Lisbon' AS previous_start
+        ), turnover AS (
+            SELECT
+              order_record.created_at,
+              GREATEST(
+                order_record.subtotal_minor - order_record.discount_minor + order_record.shipping_minor
+                - COALESCE((
+                    SELECT sum(refund.amount_minor)::bigint
+                    FROM order_refunds refund
+                    WHERE refund.order_id = order_record.id AND refund.status = 'succeeded'
+                  ), 0),
+                0
+              )::bigint AS amount_minor
+            FROM orders order_record
+            WHERE order_record.currency = $1
+              AND order_record.order_status <> 'cancelled'
+              AND order_record.payment_status NOT IN ('failed', 'cancelled')
+        )
+        SELECT
+          COALESCE(sum(turnover.amount_minor) FILTER (WHERE turnover.created_at >= clock.current_start), 0)::bigint,
+          COALESCE(sum(turnover.amount_minor) FILTER (
+            WHERE turnover.created_at >= clock.previous_start AND turnover.created_at < clock.current_start
+          ), 0)::bigint
+        FROM clock LEFT JOIN turnover ON true"#,
+    )
+    .bind(currency)
+    .fetch_one(&mut **tx)
+    .await
 }
 
 pub async fn evaluate(
@@ -767,15 +980,28 @@ async fn pricing_for_shipping(
     shipping_methods: Vec<ShippingSelection>,
     shipping: ShippingSelection,
 ) -> Result<CommercialPricing, PricingError> {
-    let tax_enabled: bool =
-        sqlx::query_scalar("SELECT tax_enabled FROM store_settings WHERE singleton FOR SHARE")
-            .fetch_one(&mut **tx)
+    let vat_settings = sqlx::query_as::<_, PricingVatSettingsRow>(
+        "SELECT tax_enabled,vat_automation_enabled,(vat_activated_at IS NOT NULL) AS vat_activated FROM store_settings WHERE singleton FOR SHARE",
+    )
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(PricingError::Database)?;
+    let (current_turnover, previous_turnover) =
+        turnover_totals_in_transaction(tx, &shipping.currency)
             .await
             .map_err(PricingError::Database)?;
-    let taxable_amount_minor = merchandise_minor
+    let candidate_turnover = merchandise_minor
         .checked_add(shipping.amount_minor)
         .ok_or(PricingError::Unavailable)?;
-    let tax_rule = if tax_enabled {
+    let article_53 = article_53_state(
+        vat_settings.tax_enabled,
+        vat_settings.vat_automation_enabled,
+        vat_settings.vat_activated,
+        previous_turnover,
+        current_turnover,
+        candidate_turnover,
+    );
+    let tax_rule = if article_53.charges_vat() {
         Some(sqlx::query_as::<_, PricingTaxRow>(
             "SELECT id,name,rate_basis_points FROM tax_rules WHERE active AND (cardinality(country_codes)=0 OR $1=ANY(country_codes)) ORDER BY (cardinality(country_codes)=0),priority,id LIMIT 1 FOR SHARE",
         )
@@ -796,9 +1022,24 @@ async fn pricing_for_shipping(
         ),
         None => (None, "Tax calculation disabled".into(), 0, "disabled"),
     };
-    let amount_minor =
-        i64::try_from(i128::from(taxable_amount_minor) * i128::from(rate_basis_points) / 10_000)
-            .map_err(|_| PricingError::Unavailable)?;
+    // Packlink's total_price is presented unchanged. VAT is added only to
+    // discounted merchandise, as configured for the store.
+    let taxable_amount_minor = merchandise_minor;
+    let amount_minor = i64::try_from(
+        (i128::from(merchandise_minor) * i128::from(rate_basis_points) + 5_000) / 10_000,
+    )
+    .map_err(|_| PricingError::Unavailable)?;
+    let vat_activation_reason =
+        if article_53 == Article53State::StandardAutomatic && !vat_settings.vat_activated {
+            Some(if previous_turnover > ARTICLE_53_THRESHOLD_MINOR {
+            "Article 53 transition from 1 January after exceeding EUR 15,000 in the previous year"
+        } else {
+            "Article 53 immediate transition after exceeding EUR 18,750 in the current year"
+        }
+        .into())
+        } else {
+            None
+        };
     Ok(CommercialPricing {
         shipping_methods,
         shipping,
@@ -811,7 +1052,32 @@ async fn pricing_for_shipping(
         },
         tax_rule_id,
         country_code: country_code.into(),
+        vat_activation_reason,
     })
+}
+
+pub async fn latch_vat_activation(
+    tx: &mut Transaction<'_, Postgres>,
+    reason: Option<&str>,
+) -> Result<(), sqlx::Error> {
+    let Some(reason) = reason else {
+        return Ok(());
+    };
+    let updated = sqlx::query(
+        "UPDATE store_settings SET vat_activated_at=now(),vat_activation_reason=$1,updated_at=now() WHERE singleton AND vat_activated_at IS NULL",
+    )
+    .bind(reason)
+    .execute(&mut **tx)
+    .await?;
+    if updated.rows_affected() > 0 {
+        sqlx::query(
+            "INSERT INTO audit_log (action,entity_type,entity_id,reason,metadata) VALUES ('settings.vat_automatically_activated','store_settings','store',$1,jsonb_build_object('article','53','rate_basis_points',2300))",
+        )
+        .bind(reason)
+        .execute(&mut **tx)
+        .await?;
+    }
+    Ok(())
 }
 
 fn packlink_method_name(carrier: &str, service: &str, departure_dropoff: bool) -> String {
@@ -874,4 +1140,59 @@ fn unavailable() -> Response {
 
 fn error(status: StatusCode, code: &'static str, message: &'static str) -> Response {
     (status, Json(ErrorBody::new(code, message))).into_response()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        ARTICLE_53_IMMEDIATE_THRESHOLD_MINOR, ARTICLE_53_THRESHOLD_MINOR, Article53State,
+        article_53_state,
+    };
+
+    #[test]
+    fn article_53_does_not_switch_at_exactly_fifteen_thousand() {
+        assert_eq!(
+            article_53_state(false, true, false, 0, ARTICLE_53_THRESHOLD_MINOR, 0),
+            Article53State::ApproachingThreshold,
+        );
+    }
+
+    #[test]
+    fn article_53_schedules_next_year_after_fifteen_thousand() {
+        assert_eq!(
+            article_53_state(false, true, false, 0, ARTICLE_53_THRESHOLD_MINOR + 1, 0),
+            Article53State::NextYearTransitionPending,
+        );
+    }
+
+    #[test]
+    fn crossing_order_is_taxed_after_eighteen_thousand_seven_hundred_and_fifty() {
+        assert_eq!(
+            article_53_state(
+                false,
+                true,
+                false,
+                0,
+                ARTICLE_53_IMMEDIATE_THRESHOLD_MINOR - 100,
+                101,
+            ),
+            Article53State::StandardAutomatic,
+        );
+    }
+
+    #[test]
+    fn previous_year_turnover_activates_tax_in_the_new_year() {
+        assert_eq!(
+            article_53_state(false, true, false, ARTICLE_53_THRESHOLD_MINOR + 1, 0, 0),
+            Article53State::StandardAutomatic,
+        );
+    }
+
+    #[test]
+    fn latched_transition_cannot_be_reversed_by_later_refunds() {
+        assert_eq!(
+            article_53_state(false, true, true, 0, 0, 0),
+            Article53State::StandardAutomatic,
+        );
+    }
 }

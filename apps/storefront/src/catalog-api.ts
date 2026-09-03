@@ -2,6 +2,9 @@ import {
   createApiClient,
   type Category,
   type Product,
+  type ProductFeedbackSummary,
+  type CreateProductFeedbackRequest,
+  type SubmittedProductFeedback,
   type Variant,
 } from '@knitprint/api-client'
 
@@ -9,6 +12,7 @@ const configuredApiBaseUrl = process.env.API_BASE_URL
 const api = createApiClient({
   baseUrl: configuredApiBaseUrl ?? 'http://127.0.0.1:8080',
 })
+const browserApi = createApiClient()
 
 export async function publishedProducts(): Promise<Product[]> {
   try {
@@ -52,6 +56,28 @@ export async function publishedProduct(slug: string): Promise<Product | null> {
   }
 }
 
+export async function publishedProductFeedback(
+  slug: string,
+): Promise<ProductFeedbackSummary> {
+  try {
+    return await api.productFeedback(slug)
+  } catch {
+    return {
+      average_rating: null,
+      total_reviews: 0,
+      rating_counts: [5, 4, 3, 2, 1].map((rating) => ({ rating, count: 0 })),
+      reviews: [],
+    }
+  }
+}
+
+export function submitProductFeedback(
+  slug: string,
+  input: CreateProductFeedbackRequest,
+): Promise<SubmittedProductFeedback> {
+  return browserApi.submitProductFeedback(slug, input)
+}
+
 export function productPrice(product: Product) {
   const variant = preferredVariant(product)
   if (!variant) return 'Price unavailable'
@@ -62,7 +88,7 @@ export function variantPrice(variant: Variant) {
   return new Intl.NumberFormat('en', {
     style: 'currency',
     currency: variant.currency,
-  }).format(variant.price_minor / 100)
+  }).format(variant.display_price_minor / 100)
 }
 
 export function preferredVariant(product: Product) {

@@ -33,6 +33,7 @@ import {
   LockKeyhole,
   LogOut,
   Mail,
+  MessageSquareText,
   MapPin,
   Package,
   Pencil,
@@ -44,6 +45,7 @@ import {
   Send,
   ShieldCheck,
   SlidersHorizontal,
+  Star,
   TriangleAlert,
   Trash2,
   UsersRound,
@@ -53,6 +55,7 @@ import {
   ApiError,
   createApiClient,
   type CustomerDetail,
+  type AdminProductFeedback,
   type CustomerSummary,
   type CommercialSettings,
   type Category,
@@ -62,6 +65,7 @@ import {
   type InventoryRecord,
   type Order,
   type OrderSummary,
+  type PersonalizationConfig,
   type StaffProfile,
   type StaffRecord,
 } from '@knitprint/api-client'
@@ -215,6 +219,7 @@ function AdminShell({ profile }: Readonly<{ profile: StaffProfile }>) {
     ...(profile.capabilities.includes('catalog.read')
       ? [
           { id: 'products', label: 'Products', icon: Package },
+          { id: 'feedback', label: 'Feedback validation', icon: MessageSquareText },
           { id: 'shipping-packages', label: 'Shipping packages', icon: Boxes },
         ]
       : []),
@@ -317,6 +322,8 @@ function AdminShell({ profile }: Readonly<{ profile: StaffProfile }>) {
                   ? 'Product catalog.'
                   : page === 'shipping-packages'
                     ? 'Shipping packages.'
+                  : page === 'feedback'
+                    ? 'Feedback validation.'
                   : page === 'inventory'
                     ? 'Inventory control.'
                     : page === 'customers'
@@ -351,6 +358,12 @@ function AdminShell({ profile }: Readonly<{ profile: StaffProfile }>) {
           profile.capabilities.includes('catalog.read') && (
             <ShippingPackageManagement
               canWrite={profile.capabilities.includes('catalog.write')}
+            />
+          )}
+        {page === 'feedback' &&
+          profile.capabilities.includes('catalog.read') && (
+            <FeedbackManagement
+              canModerate={profile.capabilities.includes('catalog.write')}
             />
           )}
         {page === 'inventory' &&
@@ -1170,6 +1183,32 @@ function countryList(value: FormDataEntryValue | null) {
     .filter(Boolean)
 }
 
+function taxAutomationLabel(state: string) {
+  switch (state) {
+    case 'approaching_threshold': return 'Approaching the Article 53 threshold'
+    case 'next_year_transition_pending': return 'VAT scheduled for 1 January'
+    case 'standard_automatic': return 'VAT active automatically'
+    case 'standard_manual': return 'VAT active manually'
+    default: return 'Article 53 exemption active'
+  }
+}
+
+function taxAutomationMessage(settings: CommercialSettings) {
+  const status = settings.tax_automation
+  switch (status.state) {
+    case 'approaching_threshold':
+      return `${formatMoney(status.remaining_to_standard_minor, settings.currency)} remains before the annual EUR 15,000 threshold.`
+    case 'next_year_transition_pending':
+      return 'Turnover is above EUR 15,000. VAT will start automatically on 1 January of the following year unless the immediate threshold is reached first.'
+    case 'standard_automatic':
+      return status.activation_reason ?? 'The automatic turnover rule activated VAT.'
+    case 'standard_manual':
+      return 'Destination tax calculation was enabled manually.'
+    default:
+      return `An alert appears at ${formatMoney(status.warning_threshold_minor, settings.currency)}. The immediate transition occurs only above ${formatMoney(status.immediate_threshold_minor, settings.currency)}.`
+  }
+}
+
 function SettingsManagement() {
   const client = useQueryClient()
   const settings = useQuery({ queryKey: settingsKey, queryFn: api.settings })
@@ -1317,7 +1356,8 @@ function SettingsManagement() {
               <label>Store name<input name="store-name" defaultValue={settings.data.store_name} minLength={2} maxLength={100} required /></label>
               <label>Support email<input name="support-email" type="email" defaultValue={settings.data.support_email} required /></label>
               <label>Store currency<input name="store-currency" defaultValue={settings.data.currency} pattern="[A-Za-z]{3}" required /></label>
-              <label className="check-row"><input name="tax-enabled" type="checkbox" defaultChecked={settings.data.tax_enabled} /> Enable destination tax calculation</label>
+              <label className="check-row"><input name="tax-enabled" type="checkbox" defaultChecked={settings.data.tax_enabled} /> Manual VAT override</label>
+              <p className="settings-note">Leave this off while Article 53 automation manages the transition. Turning it on applies the configured destination tax rules immediately.</p>
               <label>Audit reason<textarea name="settings-reason" minLength={3} maxLength={500} defaultValue="Update store identity and pricing behavior" required /></label>
               <button className="primary-button" disabled={updateSettings.isPending}>Save store settings</button>
             </form>
@@ -1357,15 +1397,42 @@ function SettingsManagement() {
           </div>
 
           <div className="settings-column">
+            <div className={`settings-card vat-automation-card vat-automation-card--${settings.data.tax_automation.state}`}>
+              <div className="vat-automation-heading">
+                <div>
+                  <small>Portuguese Article 53</small>
+                  <h3>{taxAutomationLabel(settings.data.tax_automation.state)}</h3>
+                </div>
+                <strong>{formatMoney(settings.data.tax_automation.turnover_minor, settings.data.currency)}</strong>
+              </div>
+              <p>{taxAutomationMessage(settings.data)}</p>
+              <div
+                className="vat-progress"
+                role="progressbar"
+                aria-label={`Annual turnover: ${formatMoney(settings.data.tax_automation.turnover_minor, settings.data.currency)}`}
+                aria-valuemin={0}
+                aria-valuemax={settings.data.tax_automation.immediate_threshold_minor}
+                aria-valuenow={Math.min(settings.data.tax_automation.turnover_minor, settings.data.tax_automation.immediate_threshold_minor)}
+              >
+                <span style={{ width: `${Math.min(100, settings.data.tax_automation.turnover_minor / settings.data.tax_automation.immediate_threshold_minor * 100)}%` }} />
+              </div>
+              <div className="vat-thresholds">
+                <span>Annual threshold · {formatMoney(settings.data.tax_automation.standard_threshold_minor, settings.data.currency)}</span>
+                <span>Immediate · {formatMoney(settings.data.tax_automation.immediate_threshold_minor, settings.data.currency)}</span>
+              </div>
+              {settings.data.tax_automation.activated_at && <small>Activated {orderDate(settings.data.tax_automation.activated_at)}</small>}
+            </div>
+
             <div className="settings-card">
               <h3>Tax rules</h3>
-              <p className="settings-note">Rates are exclusive and apply to discounted merchandise plus shipping. Configure them only after confirming the store’s tax obligations.</p>
+              <p className="settings-note">Rates are exclusive and apply to discounted products. Packlink shipping is displayed at the exact quoted total and is not increased by this calculation.</p>
               {settings.data.tax_rules.length === 0 && <p className="panel-message">No destination tax rules configured.</p>}
               {settings.data.tax_rules.map((rule, index) => (
                 <article className="settings-record" key={rule.id}>
                   <div><strong>{rule.name}</strong><span>{rule.rate_basis_points / 100}%</span></div>
                   <small>{rule.country_codes.length ? rule.country_codes.join(', ') : 'Worldwide fallback'}</small>
-                  <button type="button" disabled={updateSettings.isPending} onClick={() => removeTaxRule(index, rule.name)}>Remove rule</button>
+                  {rule.active && rule.rate_basis_points === 2300 && rule.country_codes.includes('PT') && <small>Required by the Portuguese VAT automation.</small>}
+                  <button type="button" disabled={updateSettings.isPending || (rule.active && rule.rate_basis_points === 2300 && rule.country_codes.includes('PT'))} onClick={() => removeTaxRule(index, rule.name)}>Remove rule</button>
                 </article>
               ))}
               <form className="settings-inline-form" onSubmit={addTaxRule}>
@@ -1376,6 +1443,7 @@ function SettingsManagement() {
                 <label>Audit reason<textarea name="tax-reason" minLength={3} maxLength={500} defaultValue="Add a confirmed destination tax rate" required /></label>
                 <button disabled={updateSettings.isPending}>Add tax rule</button>
               </form>
+              <p className="settings-note">Before enabling sales to another country, add and confirm its destination tax rule with your accountant.</p>
             </div>
 
             <div className="settings-card">
@@ -1703,6 +1771,14 @@ function Dashboard({ profile }: Readonly<{ profile: StaffProfile }>) {
                 <article><span>Net revenue</span><strong>{formatMoney(data.metrics.net_revenue_minor ?? 0, data.currency)}</strong><small>{formatMoney(data.metrics.gross_revenue_minor ?? 0, data.currency)} captured · {formatMoney(data.metrics.refunds_minor ?? 0, data.currency)} refunded</small><a href="#orders">Review payments</a></article>
                 <article><span>Awaiting fulfillment</span><strong>{metric(data.metrics.paid_awaiting_fulfillment)}</strong><small>{definition('paid_awaiting_fulfillment')}</small><a href="#orders">Open queue</a></article>
                 <article><span>Failed payments</span><strong>{metric(data.metrics.failed_payments)}</strong><small>{definition('failed_payments')}</small><a href="#orders">Inspect failures</a></article>
+                {data.access.settings && data.tax_automation && (
+                  <article className={`dashboard-vat dashboard-vat--${data.tax_automation.state}`}>
+                    <span>Article 53 · {data.tax_automation.year}</span>
+                    <strong>{formatMoney(data.tax_automation.turnover_minor, data.currency)}</strong>
+                    <small>{taxAutomationLabel(data.tax_automation.state)}</small>
+                    <a href="#settings">Review VAT automation</a>
+                  </article>
+                )}
               </>
             )}
             {data.access.inventory && (
@@ -1998,6 +2074,35 @@ type ArticleReference = PrintArea & { physicalWidthCm: number; physicalHeightCm:
 type PersonalizationView = { id: string; label: string; mediaId?: string; articleReference?: ArticleReference; printAreas: NamedPrintArea[] }
 const DEFAULT_PRINT_AREA: NamedPrintArea = { id: 'area-1', label: 'Área 1', x: 25, y: 25, width: 50, height: 50, physicalWidthCm: 20, physicalHeightCm: 20 }
 const DEFAULT_PERSONALIZATION_VIEW: PersonalizationView = { id: 'view-front', label: 'Frente', printAreas: [{ ...DEFAULT_PRINT_AREA }] }
+const PENDING_MEDIA_PREFIX = 'pending:'
+
+function pendingMediaId(imageId: string) {
+  return `${PENDING_MEDIA_PREFIX}${imageId}`
+}
+
+function persistedMediaId(value: unknown, uploadedMediaIds: Readonly<Record<string, string>> = {}) {
+  if (typeof value !== 'string' || !value) return null
+  if (!value.startsWith(PENDING_MEDIA_PREFIX)) return value
+  return uploadedMediaIds[value.slice(PENDING_MEDIA_PREFIX.length)] ?? null
+}
+
+function resolvePersonalizationMedia(
+  config: PersonalizationConfig,
+  uploadedMediaIds: Readonly<Record<string, string>> = {},
+): PersonalizationConfig {
+  const views = Array.isArray(config.views)
+    ? config.views.map((item) => {
+      if (!item || typeof item !== 'object') return item
+      const view = item as Record<string, unknown>
+      return { ...view, media_id: persistedMediaId(view.media_id, uploadedMediaIds) }
+    })
+    : config.views
+  return {
+    ...config,
+    preview_media_id: persistedMediaId(config.preview_media_id, uploadedMediaIds),
+    views,
+  }
+}
 
 function printAreaFromBasisPoints(values: unknown[], fallback: PrintArea): PrintArea {
   if (values.length !== 4 || values.some((value) => typeof value !== 'number' || !Number.isFinite(value))) return { ...fallback }
@@ -2097,7 +2202,11 @@ function namedPersonalizationViews(value: unknown, fallbackArea: NamedPrintArea,
     const candidate = item as Record<string, unknown>
     const id = typeof candidate.id === 'string' && candidate.id.trim() ? candidate.id.trim() : `view-${index + 1}`
     const label = typeof candidate.label === 'string' && candidate.label.trim() ? candidate.label.trim() : index === 0 ? 'Frente' : `Vista ${index + 1}`
-    const mediaId = typeof candidate.media_id === 'string' && candidate.media_id ? candidate.media_id : undefined
+    const mediaId = typeof candidate.media_id === 'string' && candidate.media_id
+      ? candidate.media_id
+      : index === 0
+        ? fallbackMediaId
+        : undefined
     return [{ id, label, mediaId, articleReference: namedArticleReference(candidate.article_reference), printAreas: namedPrintAreas(candidate.print_areas, fallbackArea) }]
   })
   return views.length ? views.slice(0, 6) : [{ ...DEFAULT_PERSONALIZATION_VIEW, mediaId: fallbackMediaId, printAreas: namedPrintAreas(undefined, fallbackArea) }]
@@ -2143,6 +2252,165 @@ function EditablePrintArea({ area, label, kind = 'print', active, onActivate, on
 }
 
 const shippingPackagesKey = ['shipping-packages'] as const
+
+const feedbackKey = ['product-feedback'] as const
+
+function FeedbackManagement({ canModerate }: Readonly<{ canModerate: boolean }>) {
+  const client = useQueryClient()
+  const [status, setStatus] = useState<'pending' | 'approved' | 'rejected' | 'all'>('pending')
+  const feedback = useQuery({
+    queryKey: [...feedbackKey, status],
+    queryFn: () => api.listAdminFeedback(status),
+    refetchInterval: 30_000,
+  })
+  const moderation = useMutation({
+    mutationFn: ({ id, nextStatus }: { id: string; nextStatus: 'approved' | 'rejected' }) =>
+      api.moderateProductFeedback(id, { status: nextStatus }),
+    onSuccess: () => client.invalidateQueries({ queryKey: feedbackKey }),
+  })
+  const response = useMutation({
+    mutationFn: ({ id, reply }: { id: string; reply: string | null }) =>
+      api.replyToProductFeedback(id, { reply }),
+    onSuccess: () => client.invalidateQueries({ queryKey: feedbackKey }),
+  })
+
+  function saveResponse(event: FormEvent<HTMLFormElement>, id: string) {
+    event.preventDefault()
+    const form = new FormData(event.currentTarget)
+    const reply = String(form.get('store_reply') ?? '').trim()
+    response.mutate({ id, reply: reply || null })
+  }
+
+  return (
+    <section className="feedback-management-section" id="feedback" aria-labelledby="feedback-management-heading">
+      <div className="section-heading">
+        <div>
+          <p>Community · Product reviews</p>
+          <h2 id="feedback-management-heading">Feedback validation</h2>
+        </div>
+        <span>{feedback.data?.length ?? 0} shown</span>
+      </div>
+      <div className="feedback-management-intro">
+        <MessageSquareText aria-hidden="true" />
+        <div>
+          <strong>Keep published reviews helpful and respectful.</strong>
+          <p>Read every submission before publishing it. Pending feedback is never visible on the storefront.</p>
+        </div>
+      </div>
+      <div className="feedback-status-tabs" aria-label="Filter feedback by status">
+        {(['pending', 'approved', 'rejected', 'all'] as const).map((option) => (
+          <button
+            key={option}
+            type="button"
+            aria-pressed={status === option}
+            onClick={() => setStatus(option)}
+          >
+            {option === 'all' ? 'All feedback' : option}
+          </button>
+        ))}
+      </div>
+
+      {feedback.isPending && <p className="panel-message">Loading feedback…</p>}
+      {feedback.isError && <p className="panel-message error" role="alert">Feedback could not be loaded.</p>}
+      {moderation.isError && <p className="panel-message error" role="alert">The feedback status could not be saved. Try again.</p>}
+      {response.isError && <p className="panel-message error" role="alert">The KnitnPrint response could not be saved. Try again.</p>}
+      {feedback.data?.length === 0 && (
+        <div className="feedback-management-empty">
+          <CircleCheck aria-hidden="true" />
+          <strong>No {status === 'all' ? '' : status} feedback to review</strong>
+          <span>New customer comments will appear here automatically.</span>
+        </div>
+      )}
+      <div className="feedback-management-list">
+        {feedback.data?.map((item: AdminProductFeedback) => (
+          <article key={item.id}>
+            <div className="feedback-management-meta">
+              <span className={`feedback-status feedback-status--${item.status}`}>{item.status}</span>
+              <time dateTime={item.created_at}>{orderDate(item.created_at)}</time>
+              <a href={`http://localhost:3000/products/${item.product_slug}`} target="_blank" rel="noreferrer">
+                {item.product_title}
+              </a>
+            </div>
+            <div className="feedback-management-author">
+              <span aria-hidden="true">{item.display_name.trim().charAt(0).toUpperCase()}</span>
+              <div>
+                <strong>{item.display_name}</strong>
+                <span className="feedback-admin-stars" aria-label={`${item.rating} out of 5 stars`}>
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <Star key={star} className={star <= item.rating ? 'filled' : ''} aria-hidden="true" />
+                  ))}
+                </span>
+              </div>
+            </div>
+            <p className="feedback-management-comment">{item.comment}</p>
+            {item.moderated_at && (
+              <small className="feedback-moderated-by">
+                Last moderated by {item.moderated_by_name ?? 'a staff member'} on {orderDate(item.moderated_at)}.
+              </small>
+            )}
+            {canModerate && item.status === 'approved' && (
+              <form
+                className="feedback-response-form"
+                key={`${item.id}-${item.replied_at ?? 'new'}`}
+                onSubmit={(event) => saveResponse(event, item.id)}
+              >
+                <label htmlFor={`feedback-reply-${item.id}`}>Response from KnitnPrint</label>
+                <textarea
+                  id={`feedback-reply-${item.id}`}
+                  name="store_reply"
+                  rows={4}
+                  maxLength={1200}
+                  defaultValue={item.store_reply ?? ''}
+                  placeholder="Write a helpful response that will appear below the customer review."
+                />
+                {item.replied_at && (
+                  <small>
+                    Last answered by {item.replied_by_name ?? 'a staff member'} on {orderDate(item.replied_at)}.
+                  </small>
+                )}
+                <div>
+                  <button type="submit" disabled={response.isPending}>
+                    <Send aria-hidden="true" /> {item.store_reply ? 'Update response' : 'Publish response'}
+                  </button>
+                  {item.store_reply && (
+                    <button
+                      type="button"
+                      className="remove-response"
+                      disabled={response.isPending}
+                      onClick={() => response.mutate({ id: item.id, reply: null })}
+                    >
+                      <Trash2 aria-hidden="true" /> Remove response
+                    </button>
+                  )}
+                </div>
+              </form>
+            )}
+            {canModerate && (
+              <div className="feedback-management-actions">
+                <button
+                  type="button"
+                  className="approve"
+                  disabled={moderation.isPending || item.status === 'approved'}
+                  onClick={() => moderation.mutate({ id: item.id, nextStatus: 'approved' })}
+                >
+                  <CircleCheck aria-hidden="true" /> Approve and publish
+                </button>
+                <button
+                  type="button"
+                  className="reject"
+                  disabled={moderation.isPending || item.status === 'rejected'}
+                  onClick={() => moderation.mutate({ id: item.id, nextStatus: 'rejected' })}
+                >
+                  <UserRoundX aria-hidden="true" /> Reject
+                </button>
+              </div>
+            )}
+          </article>
+        ))}
+      </div>
+    </section>
+  )
+}
 
 function ShippingPackageManagement({ canWrite }: Readonly<{ canWrite: boolean }>) {
   const client = useQueryClient()
@@ -2292,11 +2560,12 @@ type PendingProductImage = {
   previewUrl: string
 }
 
-type ProductImageUpload = Pick<PendingProductImage, 'file' | 'altText'>
+type ProductImageUpload = Pick<PendingProductImage, 'id' | 'file' | 'altText'>
 
 type ProductSaveResult = {
   product: Product
   photosUploaded: boolean
+  uploadedMediaIds: Record<string, string>
 }
 
 function CatalogManagement({
@@ -2310,6 +2579,8 @@ function CatalogManagement({
   const [productSlug, setProductSlug] = useState('')
   const [productSlugEdited, setProductSlugEdited] = useState(false)
   const [productDescription, setProductDescription] = useState('')
+  const [productAdditionalInformation, setProductAdditionalInformation] = useState('')
+  const [productCareInstructions, setProductCareInstructions] = useState('')
   const [productKeywords, setProductKeywords] = useState('')
   const [productSku, setProductSku] = useState('')
   const [productPrice, setProductPrice] = useState('')
@@ -2351,17 +2622,42 @@ function CatalogManagement({
   }
   const activePersonalizationView = personalizationViews.find(({ id }) => id === activePersonalizationViewId) ?? personalizationViews[0] ?? DEFAULT_PERSONALIZATION_VIEW
   const printAreas = activePersonalizationView.printAreas
-  const personalizationPreviewMedia = preview?.media.find(({ id }) => id === activePersonalizationView.mediaId)
+  const personalizationMediaOptions = [
+    ...(preview?.media ?? []).map((media, index) => ({
+      id: media.id,
+      altText: media.alt_text,
+      detailUrl: media.detail_url,
+      thumbnailUrl: media.thumbnail_url || media.card_url,
+      label: index === 0 ? 'Fotografia principal' : `Fotografia ${index + 1}`,
+      badge: index === 0 ? 'Principal' : String(index + 1),
+    })),
+    ...pendingProductImages.map((image, index) => {
+      const number = (preview?.media.length ?? 0) + index + 1
+      return {
+        id: pendingMediaId(image.id),
+        altText: image.altText || defaultProductImageAlt(image.file),
+        detailUrl: image.previewUrl,
+        thumbnailUrl: image.previewUrl,
+        label: number === 1 ? 'Fotografia principal' : `Fotografia ${number}`,
+        badge: number === 1 ? 'Principal' : String(number),
+      }
+    }),
+  ]
+  const personalizationPreviewMedia = personalizationMediaOptions.find(
+    ({ id }) => id === activePersonalizationView.mediaId,
+  ) ?? personalizationMediaOptions[0]
   const activePrintArea = printAreas.find(({ id }) => id === activePrintAreaId) ?? printAreas[0] ?? DEFAULT_PRINT_AREA
   const activePrintAreaPhysical = effectivePrintAreaDimensions(activePersonalizationView, activePrintArea)
   const editorDirty = useMemo(() => {
     if (!preview) {
-      return Boolean(productTitle || productSlug || productDescription || productKeywords || productSku || productPrice || productQuantity !== '0' || shippingWeightGrams !== '500' || shippingPackageProfileId || shippingUnitsPerPackage !== '1' || pendingProductImages.length)
+      return Boolean(productTitle || productSlug || productDescription || productAdditionalInformation || productCareInstructions || productKeywords || productSku || productPrice || productQuantity !== '0' || shippingWeightGrams !== '500' || shippingPackageProfileId || shippingUnitsPerPackage !== '1' || pendingProductImages.length)
     }
     const base = preview.variants[0]
     return productTitle !== preview.title
       || productSlug !== preview.slug
       || productDescription !== preview.description
+      || productAdditionalInformation !== (preview.additional_information ?? '')
+      || productCareInstructions !== (preview.care_instructions ?? '')
       || productKeywords !== preview.search_keywords
       || productSku !== (base?.sku ?? '')
       || Number(productPrice) !== (base?.price_minor ?? 0) / 100
@@ -2370,7 +2666,7 @@ function CatalogManagement({
       || shippingPackageProfileId !== (preview.shipping.package_profile_id ?? '')
       || Number(shippingUnitsPerPackage) !== preview.shipping.units_per_package
       || pendingProductImages.length > 0
-  }, [preview, productTitle, productSlug, productDescription, productKeywords, productSku, productPrice, productQuantity, shippingWeightGrams, shippingPackageProfileId, shippingUnitsPerPackage, pendingProductImages.length])
+  }, [preview, productTitle, productSlug, productDescription, productAdditionalInformation, productCareInstructions, productKeywords, productSku, productPrice, productQuantity, shippingWeightGrams, shippingPackageProfileId, shippingUnitsPerPackage, pendingProductImages.length])
   useEffect(() => {
     pendingProductImagesRef.current = pendingProductImages
   }, [pendingProductImages])
@@ -2418,24 +2714,60 @@ function CatalogManagement({
   }
 
   async function saveQueuedProductImages(product: Product, images: ProductImageUpload[]): Promise<ProductSaveResult> {
-    if (images.length === 0) return { product, photosUploaded: true }
+    if (images.length === 0) return { product, photosUploaded: true, uploadedMediaIds: {} }
     try {
+      const existingMediaIds = new Set(product.media.map(({ id }) => id))
+      const savedProduct = await uploadProductImages(product, images)
+      const uploadedMedia = savedProduct.media.filter(({ id }) => !existingMediaIds.has(id))
       return {
-        product: await uploadProductImages(product, images),
+        product: savedProduct,
         photosUploaded: true,
+        uploadedMediaIds: Object.fromEntries(
+          images.flatMap((image, index) => uploadedMedia[index]
+            ? [[image.id, uploadedMedia[index].id]]
+            : []),
+        ),
       }
     } catch {
-      return { product, photosUploaded: false }
+      return { product, photosUploaded: false, uploadedMediaIds: {} }
     }
   }
 
   const createProduct = useMutation({
     mutationFn: async ({ categoryIds, images, ...input }: Parameters<typeof api.createProduct>[0] & { categoryIds: string[]; images: ProductImageUpload[] }) => {
-      const createdProduct = await api.createProduct(input)
+      const requestedPersonalization = input.personalization
+      const createdProduct = await api.createProduct({
+        ...input,
+        personalization: requestedPersonalization
+          ? resolvePersonalizationMedia(requestedPersonalization)
+          : undefined,
+      })
       const product = categoryIds.length > 0
         ? api.assignProductCategories(createdProduct.id, { category_ids: categoryIds })
         : createdProduct
-      return saveQueuedProductImages(await product, images)
+      const saved = await saveQueuedProductImages(await product, images)
+      const variant = input.variants[0]
+      if (!saved.photosUploaded || !requestedPersonalization || !variant || Object.keys(saved.uploadedMediaIds).length === 0) {
+        return saved
+      }
+      const updatedProduct = await api.updateProduct(saved.product.id, {
+        title: input.title,
+        slug: input.slug,
+        description: input.description,
+        additional_information: input.additional_information,
+        care_instructions: input.care_instructions,
+        search_keywords: input.search_keywords,
+        sku: variant.sku,
+        price_minor: variant.price_minor,
+        currency: variant.currency,
+        available_quantity: variant.available_quantity ?? 0,
+        shipping: input.shipping,
+        personalization: resolvePersonalizationMedia(
+          requestedPersonalization,
+          saved.uploadedMediaIds,
+        ),
+      })
+      return { ...saved, product: updatedProduct }
     },
     onMutate: async () => {
       await client.cancelQueries({ queryKey: productsKey })
@@ -2461,9 +2793,26 @@ function CatalogManagement({
   })
   const updateProduct = useMutation({
     mutationFn: async ({ id, categoryIds, images, ...input }: Parameters<typeof api.updateProduct>[1] & { id: string; categoryIds: string[]; images: ProductImageUpload[] }) => {
-      const updatedProduct = await api.updateProduct(id, input)
+      const requestedPersonalization = input.personalization
+      const updatedProduct = await api.updateProduct(id, {
+        ...input,
+        personalization: requestedPersonalization
+          ? resolvePersonalizationMedia(requestedPersonalization)
+          : undefined,
+      })
       const product = await api.assignProductCategories(updatedProduct.id, { category_ids: categoryIds })
-      return saveQueuedProductImages(product, images)
+      const saved = await saveQueuedProductImages(product, images)
+      if (!saved.photosUploaded || !requestedPersonalization || Object.keys(saved.uploadedMediaIds).length === 0) {
+        return saved
+      }
+      const savedProduct = await api.updateProduct(id, {
+        ...input,
+        personalization: resolvePersonalizationMedia(
+          requestedPersonalization,
+          saved.uploadedMediaIds,
+        ),
+      })
+      return { ...saved, product: savedProduct }
     },
     onSuccess: ({ product, photosUploaded }) => {
       client.invalidateQueries({ queryKey: productsKey })
@@ -2571,7 +2920,7 @@ function CatalogManagement({
       images,
       product,
     }: {
-      images: Array<{ altText: string; file: File }>
+      images: ProductImageUpload[]
       product: Product
     }) => uploadProductImages(product, images),
     onSuccess: (product) => {
@@ -2601,6 +2950,12 @@ function CatalogManagement({
       previewUrl: URL.createObjectURL(file),
     }))
     setPendingProductImages((current) => [...current, ...images])
+    const firstImage = images[0]
+    if (firstImage) {
+      setPersonalizationViews((current) => current.map((view) => view.mediaId
+        ? view
+        : { ...view, mediaId: pendingMediaId(firstImage.id) }))
+    }
     setPhotoUploadMessage(
       acceptedFiles.length === selectedFiles.length
         ? ''
@@ -2615,6 +2970,13 @@ function CatalogManagement({
   }
 
   function removePendingProductImage(id: string) {
+    const removedMediaId = pendingMediaId(id)
+    const remainingPendingImage = pendingProductImages.find((image) => image.id !== id)
+    const fallbackMediaId = preview?.media[0]?.id
+      ?? (remainingPendingImage ? pendingMediaId(remainingPendingImage.id) : undefined)
+    setPersonalizationViews((current) => current.map((view) => view.mediaId === removedMediaId
+      ? { ...view, mediaId: fallbackMediaId }
+      : view))
     setPendingProductImages((current) => {
       const removed = current.find((image) => image.id === id)
       if (removed) URL.revokeObjectURL(removed.previewUrl)
@@ -2637,12 +2999,12 @@ function CatalogManagement({
 
   function selectImages(product: Product, files?: FileList | null) {
     if (!files?.length) return
-    const images: Array<{ altText: string; file: File }> = []
+    const images: ProductImageUpload[] = []
     for (const file of Array.from(files)) {
       const altText = window.prompt(
         `Describe ${file.name}, an image of ${product.title}, for customers using assistive technology.`,
       )
-      if (altText?.trim()) images.push({ altText: altText.trim(), file })
+      if (altText?.trim()) images.push({ id: crypto.randomUUID(), altText: altText.trim(), file })
     }
     if (images.length > 0) uploadImage.mutate({ images, product })
   }
@@ -2745,7 +3107,8 @@ function CatalogManagement({
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const price = Number(productPrice)
-    const images = pendingProductImages.map(({ file, altText }) => ({
+    const images = pendingProductImages.map(({ id, file, altText }) => ({
+      id,
       file,
       altText: altText.trim() || defaultProductImageAlt(file),
     }))
@@ -2757,6 +3120,8 @@ function CatalogManagement({
         title: productTitle,
         slug: productSlug,
         description: productDescription,
+        additional_information: productAdditionalInformation,
+        care_instructions: productCareInstructions,
         search_keywords: productKeywords,
         sku: productSku,
         price_minor: Math.round(price * 100),
@@ -2782,6 +3147,8 @@ function CatalogManagement({
         title: productTitle,
         slug: productSlug,
         description: productDescription,
+        additional_information: productAdditionalInformation,
+        care_instructions: productCareInstructions,
         search_keywords: productKeywords,
         shipping: {
           package_profile_id: selectedShippingPackage?.id ?? null,
@@ -2818,6 +3185,8 @@ function CatalogManagement({
     setProductSlug(product.slug)
     setProductSlugEdited(true)
     setProductDescription(product.description)
+    setProductAdditionalInformation(product.additional_information ?? '')
+    setProductCareInstructions(product.care_instructions ?? '')
     setProductKeywords(product.search_keywords)
     setProductSku(base?.sku ?? '')
     setProductPrice(base ? String(base.price_minor / 100) : '')
@@ -2852,6 +3221,8 @@ function CatalogManagement({
     setProductSlug('')
     setProductSlugEdited(false)
     setProductDescription('')
+    setProductAdditionalInformation('')
+    setProductCareInstructions('')
     setProductKeywords('')
     setProductSku('')
     setProductPrice('')
@@ -3099,6 +3470,30 @@ function CatalogManagement({
               onChange={(event) => setProductDescription(event.target.value)}
             />
             <small className="field-count">{productDescription.length.toLocaleString()} / 50,000</small>
+            <label htmlFor="product-additional-information">Additional information</label>
+            <textarea
+              id="product-additional-information"
+              name="product-additional-information"
+              rows={4}
+              maxLength={20000}
+              value={productAdditionalInformation}
+              onChange={(event) => setProductAdditionalInformation(event.target.value)}
+              placeholder="Materials, dimensions, finishes, or other useful details."
+            />
+            <small className="field-help">This information appears below the product in the shop.</small>
+            <small className="field-count">{productAdditionalInformation.length.toLocaleString()} / 20,000</small>
+            <label htmlFor="product-care-instructions">Care instructions</label>
+            <textarea
+              id="product-care-instructions"
+              name="product-care-instructions"
+              rows={4}
+              maxLength={20000}
+              value={productCareInstructions}
+              onChange={(event) => setProductCareInstructions(event.target.value)}
+              placeholder="Cleaning, washing, storage, or handling guidance."
+            />
+            <small className="field-help">Leave this empty when the product does not require special care.</small>
+            <small className="field-count">{productCareInstructions.length.toLocaleString()} / 20,000</small>
             <section className="admin-product-photos admin-product-photos--inline" aria-labelledby="product-photos-heading">
               <header>
                 <div>
@@ -3303,22 +3698,22 @@ function CatalogManagement({
                       <button type="button" disabled={personalizationViews.length <= 1} onClick={removeActivePersonalizationView}>Remover lado</button>
                     </div>
                   </div>
-                  {preview?.media.length ? <fieldset className="personalization-media-picker">
+                  {personalizationMediaOptions.length ? <fieldset className="personalization-media-picker">
                     <legend>Fotografia de {activePersonalizationView.label || 'esta vista'}</legend>
                     <p>Escolhe a fotografia que representa este lado do produto. Não precisa de ser a fotografia principal.</p>
                     <div>
-                      {preview.media.map((media, index) => {
+                      {personalizationMediaOptions.map((media) => {
                         const selected = media.id === personalizationPreviewMedia?.id
                         return <label key={media.id} className={selected ? 'selected' : ''}>
                           <input type="radio" name={`personalization-preview-media-${activePersonalizationView.id}`} value={media.id} checked={selected} onChange={() => updatePersonalizationView(activePersonalizationView.id, { mediaId: media.id })} />
-                          <span className="personalization-media-thumbnail"><img src={media.thumbnail_url || media.card_url} alt={media.alt_text} /><i>{index === 0 ? 'Principal' : index + 1}</i></span>
-                          <span><strong>{index === 0 ? 'Fotografia principal' : `Fotografia ${index + 1}`}</strong><small>{media.alt_text}</small></span>
+                          <span className="personalization-media-thumbnail"><img src={media.thumbnailUrl} alt={media.altText} /><i>{media.badge}</i></span>
+                          <span><strong>{media.label}</strong><small>{media.altText}</small></span>
                           <CircleCheck aria-hidden="true" />
                         </label>
                       })}
                     </div>
                     <small>A fotografia selecionada aparece abaixo apenas com as áreas deste lado.</small>
-                  </fieldset> : <p className="field-help">Guarda o produto e adiciona fotografias para poderes escolher a vista do editor.</p>}
+                  </fieldset> : <p className="field-help">Adiciona uma fotografia acima para poderes posicionar as áreas antes de guardar o produto.</p>}
                   <section className={`article-reference-settings${activePersonalizationView.articleReference?.configured ? ' confirmed' : ''}`} aria-labelledby="article-reference-title">
                     <header>
                       <span className="article-reference-icon"><Ruler aria-hidden="true" /></span>
@@ -3370,7 +3765,7 @@ function CatalogManagement({
                     {activePersonalizationView.articleReference?.configured && <small className="field-help">Estas medidas são calculadas automaticamente a partir da referência física do artigo.</small>}
                   </div>
                   <div className="print-area-preview">
-                    {personalizationPreviewMedia ? <div className="print-area-canvas"><img src={personalizationPreviewMedia.detail_url} alt={`Pré-visualização das áreas sobre ${personalizationPreviewMedia.alt_text}`} />
+                    {personalizationPreviewMedia ? <div className="print-area-canvas"><img src={personalizationPreviewMedia.detailUrl} alt={`Pré-visualização das áreas sobre ${personalizationPreviewMedia.altText}`} />
                       {activePersonalizationView.articleReference && <EditablePrintArea area={activePersonalizationView.articleReference} kind="reference" label={`Limites físicos de ${activePersonalizationView.label}`} active={editingArticleReference} onActivate={() => setEditingArticleReference(true)} onChange={updateArticleReference} />}
                       {printAreas.map((area) => { const physical = effectivePrintAreaDimensions(activePersonalizationView, area); return <EditablePrintArea key={area.id} area={area} label={`${area.label || 'Área sem nome'} · ${physical.width} × ${physical.height} cm`} active={!editingArticleReference && area.id === activePrintArea.id} onActivate={() => { setEditingArticleReference(false); setActivePrintAreaId(area.id) }} onChange={(change) => updatePrintArea(area.id, change)} /> })}
                     </div> : <span>Escolhe uma fotografia para {activePersonalizationView.label || 'esta vista'} antes de posicionares as áreas.</span>}

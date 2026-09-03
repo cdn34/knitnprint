@@ -11,11 +11,13 @@ import {
 import { useEffect, useState } from 'react'
 import { announceCartUpdate, cartApi, cartMutationKey } from '../cart-api'
 import { ContextualFaqs } from '../components/contextual-faqs'
+import { ProductFeedback } from '../components/product-feedback'
 import { StorefrontAnnouncement, StorefrontFooter, StorefrontHeader } from '../components/storefront-shell'
 import {
   mediaUrl,
   preferredVariant,
   publishedProduct,
+  publishedProductFeedback,
   variantStock,
 } from '../catalog-api'
 import { useI18n } from '../i18n'
@@ -25,19 +27,20 @@ export const Route = createFileRoute('/products/$slug')({
   loader: async ({ params }) => {
     const product = await publishedProduct(params.slug)
     if (!product) throw notFound()
-    return product
+    const feedback = await publishedProductFeedback(params.slug)
+    return { product, feedback }
   },
   head: ({ loaderData }) => ({
     meta: [
-      { title: loaderData ? `${loaderData.title} — KnitnPrint` : 'KnitnPrint' },
-      { name: 'description', content: loaderData?.description ?? '' },
+      { title: loaderData ? `${loaderData.product.title} — KnitnPrint` : 'KnitnPrint' },
+      { name: 'description', content: loaderData?.product.description ?? '' },
     ],
   }),
   component: ProductPage,
 })
 
 function ProductPage() {
-  const product = Route.useLoaderData()
+  const { product, feedback } = Route.useLoaderData()
   const { t } = useI18n()
   const { priceForVariant, stockText } = useLocalizedCatalog()
   const defaultVariant = preferredVariant(product)
@@ -215,6 +218,30 @@ function ProductPage() {
             <span><ShieldCheck /> {t('product.secureCheckout')}</span>
           </div>
         </section>
+        {(product.additional_information || product.care_instructions) && (
+          <section
+            className="product-content-sections"
+            aria-label={t('product.detailsAndCare')}
+          >
+            {product.additional_information && (
+              <article>
+                <h2>{t('product.additionalInformation')}</h2>
+                <p>{product.additional_information}</p>
+              </article>
+            )}
+            {product.care_instructions && (
+              <article>
+                <h2>{t('product.careInstructions')}</h2>
+                <p>{product.care_instructions}</p>
+              </article>
+            )}
+          </section>
+        )}
+        <ProductFeedback
+          productSlug={product.slug}
+          productTitle={product.title}
+          summary={feedback}
+        />
         <ContextualFaqs
           id="product-faqs"
           eyebrow={t('product.faqEyebrow')}

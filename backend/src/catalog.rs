@@ -16,6 +16,7 @@ use crate::{
     AppState,
     auth::{AuthenticatedStaff, require_capability},
     error::ErrorBody,
+    settings::tax_automation_status,
 };
 
 const CATALOG_READ: &str = "catalog.read";
@@ -34,6 +35,10 @@ pub struct Variant {
     pub title: String,
     pub sku: String,
     pub price_minor: i64,
+    #[sqlx(default)]
+    pub display_price_minor: i64,
+    #[sqlx(default)]
+    pub display_tax_rate_basis_points: i32,
     pub currency: String,
     pub option_values: Value,
     pub position: i32,
@@ -47,6 +52,8 @@ pub struct Product {
     pub title: String,
     pub slug: String,
     pub description: String,
+    pub additional_information: String,
+    pub care_instructions: String,
     pub status: String,
     pub search_keywords: String,
     pub shipping: ShippingProfile,
@@ -218,6 +225,8 @@ struct ProductRow {
     title: String,
     slug: String,
     description: String,
+    additional_information: String,
+    care_instructions: String,
     status: String,
     search_keywords: String,
     shipping_weight_grams: i32,
@@ -234,6 +243,10 @@ pub struct CreateProductRequest {
     pub slug: String,
     #[serde(default)]
     pub description: String,
+    #[serde(default)]
+    pub additional_information: String,
+    #[serde(default)]
+    pub care_instructions: String,
     #[serde(default)]
     pub search_keywords: String,
     #[serde(default)]
@@ -261,6 +274,10 @@ pub struct UpdateProductRequest {
     pub slug: String,
     #[serde(default)]
     pub description: String,
+    #[serde(default)]
+    pub additional_information: String,
+    #[serde(default)]
+    pub care_instructions: String,
     #[serde(default)]
     pub search_keywords: String,
     pub sku: String,
@@ -413,18 +430,21 @@ pub async fn create(
     if let Err(error) = sqlx::query(
         r#"
         INSERT INTO products (
-            id, title, slug, description, search_keywords,
+            id, title, slug, description, additional_information, care_instructions,
+            search_keywords,
             shipping_weight_grams, shipping_width_cm, shipping_length_cm,
             shipping_height_cm, shipping_units_per_package, shipping_profile_configured,
             shipping_package_profile_id
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
         "#,
     )
     .bind(product_id)
     .bind(input.title.trim())
     .bind(input.slug.trim())
     .bind(input.description.trim())
+    .bind(input.additional_information.trim())
+    .bind(input.care_instructions.trim())
     .bind(input.search_keywords.trim())
     .bind(input.shipping.weight_grams)
     .bind(
@@ -542,6 +562,8 @@ pub async fn update(
         || input.title.trim().len() > 200
         || !valid_slug(input.slug.trim())
         || input.description.len() > 50_000
+        || input.additional_information.len() > 20_000
+        || input.care_instructions.len() > 20_000
         || input.search_keywords.len() > 2_000
         || !valid_variant_details(&variant)
         || !valid_shipping(&input.shipping)
@@ -573,16 +595,19 @@ pub async fn update(
         return not_found();
     };
     if let Err(error) = sqlx::query(
-        r#"UPDATE products SET title=$2, slug=$3, description=$4, search_keywords=$5,
-        shipping_weight_grams=$6, shipping_width_cm=$7, shipping_length_cm=$8,
-        shipping_height_cm=$9, shipping_units_per_package=$10,
-        shipping_profile_configured=$11, shipping_package_profile_id=$12, updated_at=now()
+        r#"UPDATE products SET title=$2, slug=$3, description=$4,
+        additional_information=$5, care_instructions=$6, search_keywords=$7,
+        shipping_weight_grams=$8, shipping_width_cm=$9, shipping_length_cm=$10,
+        shipping_height_cm=$11, shipping_units_per_package=$12,
+        shipping_profile_configured=$13, shipping_package_profile_id=$14, updated_at=now()
         WHERE id=$1"#,
     )
     .bind(product_id)
     .bind(input.title.trim())
     .bind(input.slug.trim())
     .bind(input.description.trim())
+    .bind(input.additional_information.trim())
+    .bind(input.care_instructions.trim())
     .bind(input.search_keywords.trim())
     .bind(input.shipping.weight_grams)
     .bind(
@@ -1473,7 +1498,8 @@ pub async fn public_detail(State(state): State<AppState>, Path(slug): Path<Strin
     };
     let row = sqlx::query_as::<_, ProductRow>(
         r#"
-        SELECT id, title, slug, description, status, search_keywords,
+        SELECT id, title, slug, description, additional_information, care_instructions,
+               status, search_keywords,
                shipping_weight_grams, shipping_width_cm, shipping_length_cm,
                shipping_height_cm, shipping_units_per_package, shipping_profile_configured
         FROM products
@@ -1502,7 +1528,8 @@ async fn product_rows(
     let category = category.unwrap_or("").trim();
     sqlx::query_as(
         r#"
-        SELECT id, title, slug, description, status, search_keywords,
+        SELECT id, title, slug, description, additional_information, care_instructions,
+               status, search_keywords,
                shipping_weight_grams, shipping_width_cm, shipping_length_cm,
                shipping_height_cm, shipping_units_per_package, shipping_profile_configured
         FROM products
@@ -1552,12 +1579,17 @@ async fn products_response(pool: &PgPool, rows: Vec<ProductRow>) -> Response {
 }
 
 async fn public_products_response(pool: &PgPool, rows: Vec<ProductRow>) -> Response {
+    let display_tax_rate = match public_display_tax_rate(pool).await {
+        Ok(rate) => rate,
+        Err(_) => return unavailable(),
+    };
     let mut products = Vec::with_capacity(rows.len());
     for row in rows {
         match hydrate_product(pool, row).await {
             Ok(mut product) => {
                 product.search_keywords.clear();
                 hide_inventory(&mut product);
+                apply_public_display_prices(&mut product, display_tax_rate);
                 products.push(product);
             }
             Err(_) => return unavailable(),
@@ -1567,14 +1599,47 @@ async fn public_products_response(pool: &PgPool, rows: Vec<ProductRow>) -> Respo
 }
 
 async fn public_product_response(pool: &PgPool, row: ProductRow) -> Response {
+    let display_tax_rate = match public_display_tax_rate(pool).await {
+        Ok(rate) => rate,
+        Err(_) => return unavailable(),
+    };
     match hydrate_product(pool, row).await {
         Ok(mut product) => {
             product.search_keywords.clear();
             hide_inventory(&mut product);
+            apply_public_display_prices(&mut product, display_tax_rate);
             Json(product).into_response()
         }
         Err(_) => unavailable(),
     }
+}
+
+async fn public_display_tax_rate(pool: &PgPool) -> Result<i32, sqlx::Error> {
+    let status = tax_automation_status(pool).await?;
+    if !matches!(
+        status.state.as_str(),
+        "standard_automatic" | "standard_manual"
+    ) {
+        return Ok(0);
+    }
+    sqlx::query_scalar(
+        "SELECT rate_basis_points FROM tax_rules WHERE active AND 'PT'=ANY(country_codes) ORDER BY priority,id LIMIT 1",
+    )
+    .fetch_one(pool)
+    .await
+}
+
+fn apply_public_display_prices(product: &mut Product, rate_basis_points: i32) {
+    for variant in &mut product.variants {
+        variant.display_tax_rate_basis_points = rate_basis_points;
+        variant.display_price_minor =
+            price_with_exclusive_tax(variant.price_minor, rate_basis_points);
+    }
+}
+
+fn price_with_exclusive_tax(price_minor: i64, rate_basis_points: i32) -> i64 {
+    let tax = (i128::from(price_minor) * i128::from(rate_basis_points) + 5_000) / 10_000;
+    i64::try_from(i128::from(price_minor) + tax).unwrap_or(i64::MAX)
 }
 
 fn hide_inventory(product: &mut Product) {
@@ -1586,7 +1651,8 @@ fn hide_inventory(product: &mut Product) {
 
 async fn product_by_id(pool: &PgPool, id: Uuid) -> Response {
     match sqlx::query_as::<_, ProductRow>(
-        r#"SELECT id, title, slug, description, status, search_keywords,
+        r#"SELECT id, title, slug, description, additional_information, care_instructions,
+        status, search_keywords,
         shipping_weight_grams, shipping_width_cm, shipping_length_cm,
         shipping_height_cm, shipping_units_per_package, shipping_profile_configured
         FROM products WHERE id = $1"#,
@@ -1620,7 +1686,7 @@ async fn hydrate_product(pool: &PgPool, row: ProductRow) -> Result<Product, sqlx
     .bind(row.id)
     .fetch_optional(pool)
     .await?;
-    let variants = sqlx::query_as::<_, Variant>(
+    let mut variants = sqlx::query_as::<_, Variant>(
         r#"
         SELECT
             variant.id,
@@ -1641,6 +1707,10 @@ async fn hydrate_product(pool: &PgPool, row: ProductRow) -> Result<Product, sqlx
     .bind(row.id)
     .fetch_all(pool)
     .await?;
+    for variant in &mut variants {
+        variant.display_price_minor = variant.price_minor;
+        variant.display_tax_rate_basis_points = 0;
+    }
     let media = sqlx::query_as::<_, ProductMedia>(
         r#"
         SELECT
@@ -1694,6 +1764,8 @@ async fn hydrate_product(pool: &PgPool, row: ProductRow) -> Result<Product, sqlx
         title: row.title,
         slug: row.slug,
         description: row.description,
+        additional_information: row.additional_information,
+        care_instructions: row.care_instructions,
         status: row.status,
         search_keywords: row.search_keywords,
         shipping: ShippingProfile {
@@ -1741,6 +1813,8 @@ fn valid_product(input: &CreateProductRequest) -> bool {
         && input.title.trim().len() <= 200
         && valid_slug(slug)
         && input.description.len() <= 50_000
+        && input.additional_information.len() <= 20_000
+        && input.care_instructions.len() <= 20_000
         && input.search_keywords.len() <= 2_000
         && valid_shipping(&input.shipping)
         && currency_and_variants_valid
@@ -2194,7 +2268,13 @@ fn unavailable() -> Response {
 
 #[cfg(test)]
 mod personalization_calibration_tests {
-    use super::valid_personalization_views;
+    use super::{price_with_exclusive_tax, valid_personalization_views};
+
+    #[test]
+    fn storefront_price_adds_portuguese_vat_to_the_net_product_price() {
+        assert_eq!(price_with_exclusive_tax(1_000, 2_300), 1_230);
+        assert_eq!(price_with_exclusive_tax(999, 2_300), 1_229);
+    }
 
     #[test]
     fn calibrated_article_reference_must_contain_areas_and_share_the_same_scale() {
