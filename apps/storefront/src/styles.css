@@ -2040,6 +2040,16 @@ html[lang='pt'] .home-section-title--categories h2 {
   font-size: 0.7rem;
   line-height: 1.6;
 }
+.cart-summary-pending {
+  color: var(--ink-muted);
+}
+.cart-summary .cart-shipping-address-note {
+  margin: 1rem 0 0;
+  padding: 0.8rem 0.9rem;
+  border-left: 3px solid var(--knit);
+  color: var(--ink-muted);
+  background: rgb(138 104 119 / 7%);
+}
 .cart-summary .button {
   width: 100%;
   border: 0;

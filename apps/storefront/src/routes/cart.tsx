@@ -445,15 +445,21 @@ function CartPage() {
                   <strong>−{formatCurrency(cart.discount_minor, currency)}</strong>
                 </div>
               )}
-              {cart.shipping ? (
-                <div><span>{t('cart.shipping')} · {shippingDetails(cart.shipping)}</span><strong>{formatCurrency(cart.shipping_minor, currency)}</strong></div>
-              ) : (
-                <div><span>{t('cart.shipping')}</span><span>{t('cart.addDelivery')}</span></div>
+              {cart.delivery && (
+                cart.shipping ? (
+                  <div><span>{t('cart.shipping')} · {shippingDetails(cart.shipping)}</span><strong>{formatCurrency(cart.shipping_minor, currency)}</strong></div>
+                ) : shippingBusy ? (
+                  <div className="cart-summary-pending" role="status">
+                    <span>{t('cart.shipping')}</span>
+                    <span>{t('cart.calculatingShipping')}</span>
+                  </div>
+                ) : null
               )}
-              {cart.tax && (
+              {cart.tax && cart.tax_minor > 0 && (
                 <div><span>{t('cart.tax')} · {cart.tax.rate_basis_points / 100}%</span><strong>{formatCurrency(cart.tax_minor, currency)}</strong></div>
               )}
               <div className="cart-total"><span>{t('cart.total')}</span><strong>{formatCurrency(cart.total_minor, currency)}</strong></div>
+              <p className="cart-shipping-address-note">{t('cart.shippingAddressNote')}</p>
               {cart.shipping_methods.length > 1 && cart.shipping && (
                 <label className="cart-shipping-select">
                   {t('cart.shippingMethod')}

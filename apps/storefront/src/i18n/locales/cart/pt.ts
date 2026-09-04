@@ -35,6 +35,8 @@ export const cartPt = {
   'cart.subtotal': 'Subtotal',
   'cart.shipping': 'Envio',
   'cart.addDelivery': 'Adiciona os dados de entrega',
+  'cart.calculatingShipping': 'A calcular portes…',
+  'cart.shippingAddressNote': 'Os portes são calculados de acordo com a morada de entrega.',
   'cart.tax': 'Imposto',
   'cart.total': 'Total',
   'cart.shippingMethod': 'Método de envio',

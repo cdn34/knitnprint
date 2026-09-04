@@ -35,6 +35,8 @@ export const cartEn = {
   'cart.subtotal': 'Subtotal',
   'cart.shipping': 'Shipping',
   'cart.addDelivery': 'Add delivery details',
+  'cart.calculatingShipping': 'Calculating shipping…',
+  'cart.shippingAddressNote': 'Shipping is calculated according to the delivery address.',
   'cart.tax': 'Tax',
   'cart.total': 'Total',
   'cart.shippingMethod': 'Shipping method',
