@@ -20,7 +20,8 @@ ENV NODE_ENV=production \
 
 WORKDIR /app
 
-RUN addgroup --system --gid 10001 knitnprint \
+RUN apk upgrade --no-cache \
+    && addgroup --system --gid 10001 knitnprint \
     && adduser --system --uid 10001 --ingroup knitnprint --disabled-password knitnprint
 
 COPY --from=build --chown=knitnprint:knitnprint /app/apps/storefront/.output ./.output
