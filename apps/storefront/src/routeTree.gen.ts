@@ -25,6 +25,7 @@ import { Route as OurProcessRouteImport } from './routes/our-process'
 import { Route as PersonalizedGiftsRouteImport } from './routes/personalized-gifts'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as ReturnsRouteImport } from './routes/returns'
+import { Route as RobotsDottxtRouteImport } from './routes/robots[.]txt'
 import { Route as TermsRouteImport } from './routes/terms'
 import { Route as CollectionsIndexRouteImport } from './routes/collections.index'
 import { Route as CollectionsSlugRouteImport } from './routes/collections.$slug'
@@ -97,6 +98,11 @@ const ReturnsRoute = ReturnsRouteImport.update({
   path: '/returns',
   getParentRoute: () => rootRouteImport,
 } as any)
+const RobotsDottxtRoute = RobotsDottxtRouteImport.update({
+  id: '/robots.txt',
+  path: '/robots.txt',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const TermsRoute = TermsRouteImport.update({
   id: '/terms',
   path: '/terms',
@@ -140,6 +146,7 @@ export interface FileRoutesByFullPath {
   '/personalized-gifts': typeof PersonalizedGiftsRoute
   '/privacy': typeof PrivacyRoute
   '/returns': typeof ReturnsRoute
+  '/robots.txt': typeof RobotsDottxtRoute
   '/terms': typeof TermsRoute
   '/collections/$slug': typeof CollectionsSlugRoute
   '/products/$slug': typeof ProductsSlugRoute
@@ -163,6 +170,7 @@ export interface FileRoutesByTo {
   '/personalized-gifts': typeof PersonalizedGiftsRoute
   '/privacy': typeof PrivacyRoute
   '/returns': typeof ReturnsRoute
+  '/robots.txt': typeof RobotsDottxtRoute
   '/terms': typeof TermsRoute
   '/collections/$slug': typeof CollectionsSlugRoute
   '/products/$slug': typeof ProductsSlugRoute
@@ -187,6 +195,7 @@ export interface FileRoutesById {
   '/personalized-gifts': typeof PersonalizedGiftsRoute
   '/privacy': typeof PrivacyRoute
   '/returns': typeof ReturnsRoute
+  '/robots.txt': typeof RobotsDottxtRoute
   '/terms': typeof TermsRoute
   '/collections/$slug': typeof CollectionsSlugRoute
   '/products/$slug': typeof ProductsSlugRoute
@@ -212,6 +221,7 @@ export interface FileRouteTypes {
     | '/personalized-gifts'
     | '/privacy'
     | '/returns'
+    | '/robots.txt'
     | '/terms'
     | '/collections/$slug'
     | '/products/$slug'
@@ -235,6 +245,7 @@ export interface FileRouteTypes {
     | '/personalized-gifts'
     | '/privacy'
     | '/returns'
+    | '/robots.txt'
     | '/terms'
     | '/collections/$slug'
     | '/products/$slug'
@@ -258,6 +269,7 @@ export interface FileRouteTypes {
     | '/personalized-gifts'
     | '/privacy'
     | '/returns'
+    | '/robots.txt'
     | '/terms'
     | '/collections/$slug'
     | '/products/$slug'
@@ -282,6 +294,7 @@ export interface RootRouteChildren {
   PersonalizedGiftsRoute: typeof PersonalizedGiftsRoute
   PrivacyRoute: typeof PrivacyRoute
   ReturnsRoute: typeof ReturnsRoute
+  RobotsDottxtRoute: typeof RobotsDottxtRoute
   TermsRoute: typeof TermsRoute
   CollectionsSlugRoute: typeof CollectionsSlugRoute
   ProductsSlugRoute: typeof ProductsSlugRoute
@@ -383,6 +396,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ReturnsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/robots.txt': {
+      id: '/robots.txt'
+      path: '/robots.txt'
+      fullPath: '/robots.txt'
+      preLoaderRoute: typeof RobotsDottxtRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/terms': {
       id: '/terms'
       path: '/terms'
@@ -438,6 +458,7 @@ const rootRouteChildren: RootRouteChildren = {
   PersonalizedGiftsRoute: PersonalizedGiftsRoute,
   PrivacyRoute: PrivacyRoute,
   ReturnsRoute: ReturnsRoute,
+  RobotsDottxtRoute: RobotsDottxtRoute,
   TermsRoute: TermsRoute,
   CollectionsSlugRoute: CollectionsSlugRoute,
   ProductsSlugRoute: ProductsSlugRoute,
@@ -449,10 +470,11 @@ export const routeTree = rootRouteImport
   ._addFileTypes<FileRouteTypes>()
 
 import type { getRouter } from './router.tsx'
-import type { createStart } from '@tanstack/react-start'
+import type { startInstance } from './start.ts'
 declare module '@tanstack/react-start' {
   interface Register {
     ssr: true
     router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
   }
 }
