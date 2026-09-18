@@ -57,6 +57,8 @@ import {
 import './styles.css'
 
 const api = createApiClient()
+const storefrontUrl =
+  import.meta.env.VITE_STOREFRONT_URL ?? 'http://localhost:3000'
 const profileKey = ['staff-profile'] as const
 const categoriesKey = ['categories'] as const
 const queryClient = new QueryClient({
@@ -312,7 +314,7 @@ function AdminShell({ profile }: Readonly<{ profile: StaffProfile }>) {
                           : 'Staff access.'}
             </h1>
           </div>
-          <a className="storefront-link" href="http://localhost:3000">
+          <a className="storefront-link" href={storefrontUrl}>
             View storefront
           </a>
         </header>
