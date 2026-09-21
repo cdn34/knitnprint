@@ -72,3 +72,9 @@ bootstrap and SQLx migration; only the bootstrap execution role can inject the
 RDS master credential. The scripts under `scripts/staging/` populate database
 and Stripe secret values through standard input so they never enter Terraform
 state, shell history, command arguments, or files.
+
+The notification-worker slice adds a small one-shot Fargate task using the same
+reviewed API image and runtime database secret. EventBridge Scheduler launches
+it every five minutes to drain queued order-confirmation and fulfillment emails.
+The task reuses the API workload role for SES access and the application
+security group for private RDS connectivity; it does not run continuously.

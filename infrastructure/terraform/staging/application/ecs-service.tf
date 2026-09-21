@@ -1,5 +1,9 @@
 locals {
-  clamav_image = "clamav/clamav@sha256:83b0541c2e69bc40b7721b340b97478f790e6126fc13e7b224584c8789d8ef51"
+  clamav_image                  = "clamav/clamav@sha256:83b0541c2e69bc40b7721b340b97478f790e6126fc13e7b224584c8789d8ef51"
+  staging_email_from            = "no-reply@staging.knitnprint.com"
+  staging_email_allowlist       = "danycar.place@gmail.com"
+  staging_ses_configuration_set = "knitnprint-staging-transactional"
+  staging_storefront_base_url   = "https://staging.knitnprint.com"
 }
 
 resource "aws_ecs_task_definition" "application" {
@@ -80,10 +84,10 @@ resource "aws_ecs_task_definition" "application" {
         { name = "MEDIA_SCANNER_ADDRESS", value = "127.0.0.1:3310" },
         { name = "MEDIA_SCAN_TIMEOUT_SECONDS", value = "30" },
         { name = "EMAIL_DELIVERY", value = "ses" },
-        { name = "EMAIL_FROM", value = "no-reply@staging.knitnprint.com" },
-        { name = "EMAIL_RECIPIENT_ALLOWLIST", value = "danycar.place@gmail.com" },
-        { name = "SES_CONFIGURATION_SET", value = "knitnprint-staging-transactional" },
-        { name = "STOREFRONT_BASE_URL", value = "https://staging.knitnprint.com" },
+        { name = "EMAIL_FROM", value = local.staging_email_from },
+        { name = "EMAIL_RECIPIENT_ALLOWLIST", value = local.staging_email_allowlist },
+        { name = "SES_CONFIGURATION_SET", value = local.staging_ses_configuration_set },
+        { name = "STOREFRONT_BASE_URL", value = local.staging_storefront_base_url },
         { name = "RUST_LOG", value = "knitnprint_api=info,tower_http=info" },
       ]
       secrets = [

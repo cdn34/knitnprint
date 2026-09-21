@@ -3,6 +3,7 @@ locals {
     "api",
     "clamav",
     "database-bootstrap",
+    "notification-worker",
     "storefront",
   ])
 

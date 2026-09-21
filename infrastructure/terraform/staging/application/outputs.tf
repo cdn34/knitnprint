@@ -119,12 +119,22 @@ output "ecs_log_groups" {
 }
 
 output "ecs_task_definitions" {
-  description = "Task-definition ARNs for the stopped service and reviewed one-off database operations."
+  description = "Task-definition ARNs for the application, scheduled worker, and reviewed one-off database operations."
   value = {
-    application        = aws_ecs_task_definition.application.arn
-    database_bootstrap = aws_ecs_task_definition.database_bootstrap.arn
-    database_migration = aws_ecs_task_definition.database_migration.arn
-    owner_bootstrap    = aws_ecs_task_definition.owner_bootstrap.arn
+    application         = aws_ecs_task_definition.application.arn
+    database_bootstrap  = aws_ecs_task_definition.database_bootstrap.arn
+    database_migration  = aws_ecs_task_definition.database_migration.arn
+    notification_worker = aws_ecs_task_definition.notification_worker.arn
+    owner_bootstrap     = aws_ecs_task_definition.owner_bootstrap.arn
+  }
+}
+
+output "notification_worker_schedule" {
+  description = "Schedule that drains the staging transactional-email outbox."
+  value = {
+    name                = aws_scheduler_schedule.notification_worker.name
+    schedule_expression = aws_scheduler_schedule.notification_worker.schedule_expression
+    state               = aws_scheduler_schedule.notification_worker.state
   }
 }
 
