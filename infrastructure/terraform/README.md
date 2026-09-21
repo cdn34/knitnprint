@@ -6,7 +6,9 @@ state operation cannot accidentally mix staging and production.
 ```text
 terraform/
 |-- staging/
-|   `-- bootstrap/
+|   |-- bootstrap/
+|   |-- dns/
+|   `-- application/
 `-- production/
 ```
 
@@ -27,9 +29,11 @@ Examples:
 | Terraform state | `knitnprint-staging-terraform-state-<account-id>` | `knitnprint-production-terraform-state-<account-id>` |
 
 The `Environment` tag must match the name. Staging and production have separate
-Terraform roots, backend buckets, state keys, deployer permissions, workload
-roles, media buckets, admin-assets buckets, databases, secrets, logs, and
-application resources. Do not use workspaces to combine these environments.
+Terraform roots, backend buckets, state keys, workload roles, media buckets,
+admin-assets buckets, databases, secrets, logs, and application resources.
+Human operators use temporary Identity Center administrator sessions; workload
+and automated release permissions remain environment-specific. Do not use
+workspaces to combine these environments.
 
 The application also validates `S3_BUCKET`: staging accepts only
 `knitnprint-staging-*`, while production accepts only
