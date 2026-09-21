@@ -12,6 +12,11 @@ Related documents:
 - [Terraform installation on WSL Ubuntu](./terraform-wsl-installation.md) — detailed installation and repair notes.
 - [Production launch infrastructure](./launch-infrastructure.md) — broader production requirements and cost assumptions.
 - [cURL study notes](../tools/curl-study-notes.md) — HTTP diagnostics used throughout deployment work.
+- [Scheduled workers](./staging-scheduled-workers.md) — add and verify periodic one-shot Fargate jobs.
+- [Storefront releases](./staging-storefront-deployment.md) — build, publish, roll out, and verify the storefront image.
+- [Admin releases](./staging-admin-deployment.md) — publish the static admin build through private S3 and CloudFront.
+- [Backend releases](./staging-backend-deployment.md) — publish and roll out the Rust API image.
+- [Database operations](./staging-database-operations.md) — migrations, operational checks, bounded queries, and customer-data cleanup.
 
 ## Current checkpoint
 
