@@ -128,9 +128,8 @@ impl PaymentService {
         webhook_secret: Option<&str>,
         storefront_base_url: Option<&str>,
     ) -> Result<Self, PaymentConfigError> {
-        let any_present =
-            secret_key.is_some() || webhook_secret.is_some() || storefront_base_url.is_some();
-        if !any_present {
+        let stripe_present = secret_key.is_some() || webhook_secret.is_some();
+        if !stripe_present {
             return if environment.is_deployed() {
                 Err(PaymentConfigError::MissingDeploymentConfiguration)
             } else {
@@ -1242,6 +1241,31 @@ mod tests {
 
     use super::{PaymentConfigError, PaymentService, verify_signature};
     use crate::config::Environment;
+
+    #[test]
+    fn development_allows_storefront_url_without_stripe_configuration() {
+        let service = PaymentService::from_values(
+            Environment::Development,
+            None,
+            None,
+            Some("http://127.0.0.1:3000"),
+        )
+        .ok()
+        .unwrap();
+
+        assert!(!service.enabled());
+        assert_eq!(
+            PaymentService::from_values(
+                Environment::Development,
+                Some("sk_test_example"),
+                None,
+                Some("http://127.0.0.1:3000"),
+            )
+            .err()
+            .unwrap(),
+            PaymentConfigError::Incomplete
+        );
+    }
 
     #[test]
     fn production_requires_live_https_stripe_configuration() {

@@ -28,6 +28,16 @@ OWNER_PASSWORD=local-development-passphrase \
 npm run admin:create-owner
 ```
 
+If this checkout reuses a Docker volume created before the `KnitNPrint` rename,
+or one containing migrations from another branch, recreate the disposable local
+database and MinIO volumes before running the setup commands above:
+
+```bash
+# Deletes local development data only. It does not affect AWS staging.
+docker compose down --volumes
+docker compose up -d
+```
+
 Install the browser used by Playwright once:
 
 ```bash
@@ -196,6 +206,27 @@ Register `SES_TEST_EMAIL` at http://127.0.0.1:3000/account to send a real
 verification message. If SES is still in sandbox mode, the recipient must also
 be verified in SES. The development-mailbox endpoint is unavailable in SES
 mode.
+
+## Deliver queued order emails
+
+Account verification and password-reset messages are sent immediately by the
+API. Order-confirmation and fulfillment messages use the PostgreSQL outbox and
+require the one-shot delivery worker:
+
+```bash
+set -a
+source backend/.env
+set +a
+export DATABASE_URL=postgres://knitnprint:knitnprint@localhost:5432/knitnprint
+
+npm run admin:deliver-notifications
+```
+
+Run it after an order or fulfillment event, or invoke it once per minute while
+testing. For a real inbox delivery, run it with the SES variables from the
+previous section. In development-mailbox mode the worker uses its own temporary
+in-memory mailbox, so its messages are not visible through the separately
+running API's development-email endpoint.
 
 ## Database shell
 
