@@ -90,7 +90,6 @@ data "aws_iam_policy_document" "terraform_state" {
       values = [
         "arn:${local.partition}:iam::${local.account_id}:root",
         "arn:${local.partition}:iam::${local.account_id}:role/aws-reserved/sso.amazonaws.com/AWSReservedSSO_AdministratorAccess_*",
-        "arn:${local.partition}:iam::${local.account_id}:role/aws-reserved/sso.amazonaws.com/AWSReservedSSO_${var.deployer_permission_set_name}_*",
       ]
     }
   }
