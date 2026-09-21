@@ -1,6 +1,6 @@
 use std::{env, str::FromStr};
 
-use knitprint_api::inventory::{
+use knitnprint_api::inventory::{
     InventoryOperationError, commit, get_availability, release, reserve,
 };
 use sqlx::{

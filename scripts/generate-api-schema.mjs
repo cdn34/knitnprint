@@ -1,6 +1,6 @@
 import { readFile, writeFile } from 'node:fs/promises'
 
-const input = new URL('../openapi/knitprint.json', import.meta.url)
+const input = new URL('../openapi/knitnprint.json', import.meta.url)
 const output = new URL('../packages/api-client/src/schema.ts', import.meta.url)
 const document = JSON.parse(await readFile(input, 'utf8'))
 const schemas = document.components?.schemas ?? {}

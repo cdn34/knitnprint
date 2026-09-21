@@ -1,8 +1,8 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "KnitPrint API",
-    "description": "Authoritative API for the KnitPrint storefront and admin.",
+    "title": "KnitNPrint API",
+    "description": "Authoritative API for the KnitNPrint storefront and admin.",
     "license": {
       "name": ""
     },

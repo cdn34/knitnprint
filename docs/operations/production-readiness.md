@@ -1,6 +1,6 @@
 # Production security and operations runbook
 
-This runbook is the deployment gate for KnitPrint. Application controls are
+This runbook is the deployment gate for KnitNPrint. Application controls are
 verified in CI, but the infrastructure checks below must also pass in the real
 production account before accepting payments or uploads.
 

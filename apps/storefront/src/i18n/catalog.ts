@@ -1,4 +1,4 @@
-import type { Product, Variant } from '@knitprint/api-client'
+import type { Product, Variant } from '@knitnprint/api-client'
 import { preferredVariant, type StockPresentation } from '../catalog-api'
 import { useI18n } from '.'
 

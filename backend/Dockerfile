@@ -1,16 +1,33 @@
-FROM rust:1-bookworm@sha256:0e2bcaef56d041a486784e54104a81aebe0da44bd03019bd70bc0401e42e4a97 AS build
+FROM rust:1-bookworm@sha256:82150a52ec202c1b14d7817e14516c392bb7f5cfebd88f1ed531cb37ebd39922 AS build
 WORKDIR /build
 COPY Cargo.toml Cargo.lock ./
 COPY backend ./backend
 COPY migrations ./migrations
-RUN cargo build --locked --release -p knitprint-api --bin knitprint-api
+RUN cargo build --locked --release -p knitnprint-api \
+    --bin knitnprint-api \
+    --bin migrate \
+    --bin create_owner \
+    --bin deliver_notifications \
+    --bin cleanup_sessions \
+    --bin cleanup_customers \
+    --bin cleanup_carts \
+    --bin cleanup_media \
+    --bin cleanup_payments \
+    --bin check_operations
 
-FROM debian:bookworm-slim@sha256:abd67ffcfa541b485a3dff59865ab629aa048a6c613e639d36e7456b0b229241
-RUN apt-get update \
-    && apt-get install --yes --no-install-recommends ca-certificates \
-    && rm -rf /var/lib/apt/lists/* \
-    && useradd --system --uid 10001 --no-create-home knitprint
-COPY --from=build /build/target/release/knitprint-api /usr/local/bin/knitprint-api
-USER 10001:10001
+FROM gcr.io/distroless/cc-debian12:nonroot@sha256:9dac0a79194e45a7da0158a9c6da57b217585af0786db3845d1f0ec1a0dd182f
+COPY --from=build --chown=65532:65532 \
+    /build/target/release/knitnprint-api \
+    /build/target/release/migrate \
+    /build/target/release/create_owner \
+    /build/target/release/deliver_notifications \
+    /build/target/release/cleanup_sessions \
+    /build/target/release/cleanup_customers \
+    /build/target/release/cleanup_carts \
+    /build/target/release/cleanup_media \
+    /build/target/release/cleanup_payments \
+    /build/target/release/check_operations \
+    /usr/local/bin/
+USER 65532:65532
 EXPOSE 8080
-ENTRYPOINT ["/usr/local/bin/knitprint-api"]
+CMD ["/usr/local/bin/knitnprint-api"]

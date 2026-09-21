@@ -1,6 +1,6 @@
-# KnitPrint
+# KnitNPrint
 
-KnitPrint is a craft-led ecommerce platform with a server-rendered public
+KnitNPrint is a craft-led ecommerce platform with a server-rendered public
 storefront, a private admin SPA, and a Rust API.
 
 ## Requirements
@@ -25,8 +25,8 @@ npm run db:migrate
 npm run db:seed
 npm run dev:storefront
 npm run dev:admin
-DATABASE_URL=postgres://knitprint:knitprint@localhost:5432/knitprint \
-cargo run -p knitprint-api
+DATABASE_URL=postgres://knitnprint:knitnprint@localhost:5432/knitnprint \
+cargo run -p knitnprint-api
 ```
 
 Create the first staff owner after migrating:
@@ -35,7 +35,7 @@ Create the first staff owner after migrating:
 OWNER_EMAIL=owner@example.com \
 OWNER_NAME="Store owner" \
 OWNER_PASSWORD="use-a-long-development-password" \
-DATABASE_URL=postgres://knitprint:knitprint@localhost:5432/knitprint \
+DATABASE_URL=postgres://knitnprint:knitnprint@localhost:5432/knitnprint \
 npm run admin:create-owner
 ```
 
@@ -53,15 +53,64 @@ healthy while `/api/ready` reports `503` until a database connection is ready.
 Production startup requires `DATABASE_URL` and does not run migrations. Apply
 them first with the separate migration credential in `MIGRATION_DATABASE_URL`.
 
-Local product images use the private `knitprint-media` bucket in MinIO.
-`docker compose up -d` creates the bucket automatically. The API defaults to
-the local MinIO credentials in development; production requires all five
-`S3_*` values shown in `backend/.env.example`.
+The backend container defaults to `/usr/local/bin/knitnprint-api` and also
+contains the operational binaries `migrate`, `create_owner`,
+`deliver_notifications`, `cleanup_sessions`, `cleanup_customers`,
+`cleanup_carts`, `cleanup_media`, `cleanup_payments`, and `check_operations`.
+Because the image uses `CMD` rather than a fixed entrypoint, an ECS task can
+select one by overriding its command with the absolute binary path. The
+development `seed` utility is intentionally excluded from the runtime image.
+Run `migrate` separately before any other one-off command. Cleanup and owner
+commands never apply migrations and are intended to work with restricted
+runtime/job database credentials. In staging and production, `cleanup_media`
+requires explicit `S3_REGION` and `S3_BUCKET` values and uses the standard AWS
+credential chain supplied by its task role. Deployed environments reject
+`S3_ENDPOINT`, `S3_ACCESS_KEY_ID`, and `S3_SECRET_ACCESS_KEY` so they cannot
+silently use MinIO or long-lived keys.
+
+There are two separate object-storage concerns:
+
+- The admin SPA is served by Vite during development. Its staging and
+  production builds are uploaded to a dedicated private AWS S3 bucket and
+  served through CloudFront. MinIO does not replace Vite's development server,
+  because doing so would remove the normal module reload and proxy workflow.
+- Business media uploaded through the admin API—including product images and
+  future category or customer-customization assets—uses a shared object-storage
+  interface. Development and test select the private `knitnprint-media` MinIO
+  bucket; staging and production select private AWS S3 using workload-role
+  credentials. Those environments use separate buckets:
+  `knitnprint-staging-media-<account-id>` and
+  `knitnprint-production-media-<account-id>`. Startup rejects a bucket whose
+  environment prefix does not match `APP_ENV`.
+
+`docker compose up -d` creates the local media bucket automatically. Browser
+uploads use five-minute presigned PUT URLs in both MinIO and AWS S3. The shared
+storage API also supports short-lived presigned GET URLs for future private,
+authorization-checked assets. Published catalog images keep stable same-origin
+`/api/media/...` URLs so pages and CDNs can cache them; expiring S3 query strings
+are not embedded in public product or category pages.
 
 The admin starts on a session-aware login screen and proxies `/api` requests to
 the local Rust API. Both processes must be running. After signing in, refreshing
 the browser preserves the server-side session; use the sign-out button beside
 the staff profile to revoke it.
+
+The production admin build is a static SPA intended for a private S3 origin
+behind CloudFront. Configure the distribution's default behavior to serve
+`index.html`, and map origin `403` and `404` responses to `/index.html` with a
+`200` response so client-side routes remain loadable. A higher-priority
+`/api/*` behavior must forward all required HTTP methods, cookies, query
+strings, and the `Origin` and CSRF headers to the API without caching mutable
+responses. Attach a response-headers policy that adds:
+
+```text
+X-Robots-Tag: noindex, nofollow
+```
+
+The build also contains a matching robots meta tag and a `robots.txt` that
+disallows all crawlers. These are defense in depth; the CloudFront header is
+the authoritative indexing policy. Keep the admin S3 bucket private and grant
+read access only through CloudFront Origin Access Control.
 
 The storefront also proxies `/api` to the local Rust API and provides optional
 registered customer accounts at http://localhost:3000/account. Customers can
@@ -69,6 +118,31 @@ register, sign in, preserve their session across reloads, view their contact
 details and owned delivery addresses, add an address, and sign out. Customer
 sessions and staff sessions are separate, and guest checkout data remains
 independent of registered accounts.
+
+For a production storefront build, set `API_BASE_URL` at runtime to the API's
+internal origin, including its scheme and port but no `/api` suffix. It is used
+only by server-side rendering; browser requests and media URLs remain
+same-origin under `/api`. Build and run the Node output directly with:
+
+```bash
+npm run build --workspace=@knitnprint/storefront
+API_BASE_URL=http://127.0.0.1:8080 \
+npm run start --workspace=@knitnprint/storefront
+```
+
+The production server listens on `HOST` and `PORT` (defaults in the container
+are `0.0.0.0:3000`) and exposes an unauthenticated `GET /health` endpoint. The
+same output is packaged as a non-root container with:
+
+```bash
+docker build -f apps/storefront/Dockerfile -t knitnprint-storefront .
+docker run --rm -p 3000:3000 \
+  -e API_BASE_URL=http://host.docker.internal:8080 \
+  knitnprint-storefront
+```
+
+Do not pass secrets as Docker build arguments. `API_BASE_URL` is runtime
+configuration and should resolve only from the storefront container or task.
 
 The storefront cart at http://localhost:3000/cart persists for 30 days. Its
 opaque browser token is stored only as a SHA-256 hash, every mutation requires
@@ -155,14 +229,30 @@ EMAIL_DELIVERY=ses
 STOREFRONT_BASE_URL=http://127.0.0.1:3000
 EMAIL_FROM=accounts@example.com
 AWS_REGION=eu-west-1
-AWS_PROFILE=knitprint-development
-# Optional: SES_CONFIGURATION_SET=knitprint-transactional
+AWS_PROFILE=knitnprint-development
+# Optional: SES_CONFIGURATION_SET=knitnprint-transactional
 ```
 
 `AWS_PROFILE` is intended for local development and may be omitted when the
 standard AWS credential chain already resolves a workload role or environment
-credentials. Production uses SES by default and rejects
-`EMAIL_DELIVERY=development`; its minimum email configuration is:
+credentials. Staging and production use SES by default and reject
+`EMAIL_DELIVERY=development`. Staging additionally requires an exact recipient
+allowlist and Stripe test credentials; its minimum email configuration is:
+
+```bash
+APP_ENV=staging
+STOREFRONT_BASE_URL=https://staging.knitnprint.com
+EMAIL_DELIVERY=ses
+EMAIL_FROM=no-reply@staging.knitnprint.com
+EMAIL_RECIPIENT_ALLOWLIST=owner@example.com,tester@example.com
+AWS_REGION=eu-west-1
+# Optional: SES_CONFIGURATION_SET=knitnprint-staging-transactional
+```
+
+Addresses are trimmed, normalized to lowercase, deduplicated, and matched
+exactly. Account, order, and fulfilment email outside the staging allowlist is
+rejected before an SES request is made. Production's minimum email
+configuration is:
 
 ```bash
 APP_ENV=production
@@ -170,7 +260,7 @@ STOREFRONT_BASE_URL=https://shop.example.com
 EMAIL_DELIVERY=ses
 EMAIL_FROM=accounts@example.com
 AWS_REGION=eu-west-1
-# Optional: SES_CONFIGURATION_SET=knitprint-transactional
+# Optional: SES_CONFIGURATION_SET=knitnprint-transactional
 ```
 
 Use the standard AWS SDK credential chain (prefer an instance/task/runtime
@@ -198,9 +288,10 @@ account/IP/global abuse limits in addition to the login limiter.
 Uploaded media remains quarantined until its object metadata, declared type,
 file signature, decode limits, and malware scan pass. Production requires a
 ClamAV-compatible TCP INSTREAM service in `MEDIA_SCANNER_ADDRESS`; scanner
-failure or timeout fails closed and cannot publish the object. When custom
-local `S3_ACCESS_KEY_ID`/`S3_SECRET_ACCESS_KEY` values are absent, production S3
-uses the standard AWS SDK credential chain so a workload role can be used.
+failure or timeout fails closed and cannot publish the object. Development may
+provide the local MinIO `S3_ACCESS_KEY_ID`/`S3_SECRET_ACCESS_KEY` pair. Staging
+and production reject both variables and use the standard AWS SDK credential
+chain, ensuring that AWS S3 access comes from the ECS workload role.
 
 Staff and customer sign-ins share a PostgreSQL-backed limiter with independent
 scopes. Each account allows five failed attempts in 15 minutes, each client IP
@@ -210,18 +301,21 @@ boundary exact under concurrent requests; short transactions serialize only
 the IP/global counter updates. Bucket identifiers are stored only as SHA-256
 hashes.
 
-By default client IP limits use the direct TCP peer. If a trusted ingress
-overwrites `X-Forwarded-For` and the API cannot be reached around that ingress,
-set `TRUST_PROXY_HEADERS=true` to use its first forwarded address. Never enable
-this when clients can supply or preserve that header themselves. An edge or
-ingress request limit is still recommended to reject abusive traffic before it
-consumes application or database resources.
+By default client IP limits use the direct TCP peer. If the API is reachable
+only through trusted ingress hops, set `TRUST_PROXY_HEADERS=true` and
+`TRUSTED_PROXY_HOPS` to their exact count (between 1 and 10). Resolution walks
+`X-Forwarded-For` from right to left, so one AWS ALB hop uses the rightmost
+address that the load balancer observed and appended; caller-supplied values to
+its left cannot spoof the rate-limit identity. Never enable this while clients
+can reach the API around the trusted ingress. An edge or ingress request limit
+is still recommended to reject abusive traffic before it consumes application
+or database resources.
 
 Run authentication cleanup from a scheduler (daily is appropriate for most
 installations):
 
 ```bash
-DATABASE_URL=postgres://knitprint:knitprint@localhost:5432/knitprint \
+DATABASE_URL=postgres://knitnprint:knitnprint@localhost:5432/knitnprint \
 npm run admin:cleanup-sessions
 ```
 
@@ -234,7 +328,7 @@ Clean abandoned product-image uploads from PostgreSQL and MinIO on the same
 daily schedule:
 
 ```bash
-DATABASE_URL=postgres://knitprint:knitprint@localhost:5432/knitprint \
+DATABASE_URL=postgres://knitnprint:knitnprint@localhost:5432/knitnprint \
 npm run admin:cleanup-media
 ```
 
@@ -246,7 +340,7 @@ and retains an immutable system audit entry.
 Run customer-retention cleanup from a daily scheduler as well:
 
 ```bash
-DATABASE_URL=postgres://knitprint:knitprint@localhost:5432/knitprint \
+DATABASE_URL=postgres://knitnprint:knitnprint@localhost:5432/knitnprint \
 npm run admin:cleanup-customers
 ```
 
@@ -262,7 +356,7 @@ runs if the expired backlog can exceed the configured batch size.
 Remove expired disposable carts on the same daily schedule:
 
 ```bash
-DATABASE_URL=postgres://knitprint:knitprint@localhost:5432/knitprint \
+DATABASE_URL=postgres://knitnprint:knitnprint@localhost:5432/knitnprint \
 npm run admin:cleanup-carts
 ```
 
@@ -274,7 +368,7 @@ address retention remains governed independently by customer cleanup.
 Run abandoned-payment cleanup frequently (for example, every five minutes):
 
 ```bash
-DATABASE_URL=postgres://knitprint:knitprint@localhost:5432/knitprint \
+DATABASE_URL=postgres://knitnprint:knitnprint@localhost:5432/knitnprint \
 npm run admin:cleanup-payments
 ```
 
@@ -288,7 +382,7 @@ Fulfillment and order emails use a durable PostgreSQL outbox. Run its delivery
 worker continuously or once per minute:
 
 ```bash
-DATABASE_URL=postgres://knitprint:knitprint@localhost:5432/knitprint \
+DATABASE_URL=postgres://knitnprint:knitnprint@localhost:5432/knitnprint \
 npm run admin:deliver-notifications
 ```
 
@@ -304,7 +398,7 @@ always uses the configured SES sender.
 Run the operational backlog check from monitoring at least every five minutes:
 
 ```bash
-DATABASE_URL=postgres://knitprint-runtime@localhost:5432/knitprint \
+DATABASE_URL=postgres://knitnprint-runtime@localhost:5432/knitnprint \
 npm run admin:check-operations
 ```
 
@@ -324,7 +418,7 @@ the checked-in contract and shared TypeScript types after changing an endpoint:
 npm run api:generate
 ```
 
-The OpenAPI document is written to `openapi/knitprint.json`, while the generated
+The OpenAPI document is written to `openapi/knitnprint.json`, while the generated
 schema types and reusable fetch client live in `packages/api-client`. A running
 API also serves the contract from `/api/openapi.json`.
 
@@ -335,7 +429,7 @@ npm run typecheck
 npm run build
 npm run api:check
 npm run test:e2e
-DATABASE_URL=postgres://knitprint:knitprint@localhost:5432/knitprint \
+DATABASE_URL=postgres://knitnprint:knitnprint@localhost:5432/knitnprint \
 npm run test:e2e:admin
 cargo fmt --check
 cargo clippy --workspace --all-targets -- -D warnings
@@ -353,9 +447,9 @@ PostgreSQL and a database-connected API. Keep the API command from the local
 setup section running, then use:
 
 ```bash
-DATABASE_URL=postgres://knitprint:knitprint@localhost:5432/knitprint \
+DATABASE_URL=postgres://knitnprint:knitnprint@localhost:5432/knitnprint \
 cargo test --test customer_account_lifecycle
-DATABASE_URL=postgres://knitprint:knitprint@localhost:5432/knitprint \
+DATABASE_URL=postgres://knitnprint:knitnprint@localhost:5432/knitnprint \
 npx playwright test tests/e2e/account.spec.ts
 ```
 

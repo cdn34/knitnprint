@@ -1,6 +1,6 @@
 use std::{env, process::ExitCode};
 
-use knitprint_api::media::MediaStorage;
+use knitnprint_api::{config::Environment, object_storage::ObjectStorage};
 use sqlx::postgres::PgPoolOptions;
 use uuid::Uuid;
 
@@ -25,18 +25,13 @@ async fn main() -> ExitCode {
 async fn cleanup() -> Result<(u64, u64), String> {
     let database_url = env::var("DATABASE_URL").map_err(|_| "DATABASE_URL is required")?;
     let max_age_hours = parse_max_age(env::var("MEDIA_PENDING_MAX_HOURS").ok())?;
+    let environment = Environment::from_env().map_err(|error| error.to_string())?;
     let pool = PgPoolOptions::new()
         .max_connections(3)
         .connect(&database_url)
         .await
         .map_err(|error| format!("database connection failed: {error}"))?;
-    sqlx::migrate!("../migrations")
-        .run(&pool)
-        .await
-        .map_err(|error| format!("database migration failed: {error}"))?;
-    let storage = MediaStorage::from_env(false)
-        .await?
-        .ok_or("media storage is required")?;
+    let storage = ObjectStorage::from_env(environment).await?;
 
     let claimed = sqlx::query_as::<_, (Uuid, String)>(
         r#"
@@ -72,15 +67,7 @@ async fn cleanup() -> Result<(u64, u64), String> {
         ];
         let mut storage_failed = false;
         for key in keys {
-            if storage
-                .client
-                .delete_object()
-                .bucket(&storage.bucket)
-                .key(key)
-                .send()
-                .await
-                .is_err()
-            {
+            if storage.delete(&key).await.is_err() {
                 storage_failed = true;
             }
         }

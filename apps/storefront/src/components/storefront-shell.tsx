@@ -34,8 +34,8 @@ export function StorefrontHeader() {
     <header className="site-header">
       <a className="brand" href="/" aria-label={t('shell.homeLabel')}>
         <img
-          src="/knitprint-wordmark.webp"
-          alt="KnitnPrint"
+          src="/knitnprint-wordmark.webp"
+          alt="KnitNPrint"
           width="750"
           height="195"
         />
@@ -133,7 +133,7 @@ export function StorefrontFooter() {
         </div>
       </div>
       <div className="footer-bottom">
-        <span>© 2026 KnitnPrint</span>
+        <span>© 2026 KnitNPrint</span>
         <span>{t('shell.madeInPortugal')}</span>
       </div>
     </footer>

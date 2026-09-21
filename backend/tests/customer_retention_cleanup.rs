@@ -1,6 +1,6 @@
 use std::{env, str::FromStr};
 
-use knitprint_api::customer_retention::{CleanupSummary, cleanup_expired_customer_data};
+use knitnprint_api::customer_retention::{CleanupSummary, cleanup_expired_customer_data};
 use sqlx::{
     PgPool,
     postgres::{PgConnectOptions, PgPoolOptions},
@@ -167,7 +167,7 @@ async fn expired_customer_cleanup_is_bounded_irreversible_and_repeat_safe() {
     .expect("anonymized customers should remain as non-personal commercial identities");
     assert_eq!(anonymized.len(), 2);
     for (_, email, first_name, last_name, phone, marked) in anonymized {
-        assert_eq!(email, "anonymized@knitprint.invalid");
+        assert_eq!(email, "anonymized@knitnprint.invalid");
         assert_eq!(first_name, "Anonymized");
         assert_eq!(last_name, "Customer");
         assert!(phone.is_empty());

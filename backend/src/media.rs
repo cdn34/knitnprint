@@ -1,8 +1,5 @@
-use std::{env, io::Cursor, time::Duration};
+use std::{io::Cursor, time::Duration};
 
-use aws_config::BehaviorVersion;
-use aws_credential_types::Credentials;
-use aws_sdk_s3::{Client, config::Region, presigning::PresigningConfig, primitives::ByteStream};
 use axum::{
     Json,
     body::Body,
@@ -23,65 +20,6 @@ use crate::{
 
 const MAX_PRODUCT_IMAGE_BYTES: i64 = 10 * 1024 * 1024;
 const MEDIA_UPLOAD: &str = "media.upload";
-
-#[derive(Clone)]
-pub struct MediaStorage {
-    pub client: Client,
-    pub bucket: String,
-}
-
-impl MediaStorage {
-    pub async fn from_env(production: bool) -> Result<Option<Self>, String> {
-        let endpoint = env::var("S3_ENDPOINT").ok();
-        let region = env::var("S3_REGION")
-            .ok()
-            .or_else(|| (!production).then(|| "eu-west-1".into()));
-        let bucket = env::var("S3_BUCKET")
-            .ok()
-            .or_else(|| (!production).then(|| "knitprint-media".into()));
-        let access_key = env::var("S3_ACCESS_KEY_ID").ok();
-        let secret_key = env::var("S3_SECRET_ACCESS_KEY").ok();
-        let (Some(region), Some(bucket)) = (region, bucket) else {
-            return Err("S3_REGION and S3_BUCKET are required in production".into());
-        };
-        if access_key.is_some() != secret_key.is_some() {
-            return Err(
-                "S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY must be configured together".into(),
-            );
-        }
-        let mut loader =
-            aws_config::defaults(BehaviorVersion::latest()).region(Region::new(region));
-        if let (Some(access_key), Some(secret_key)) = (access_key, secret_key) {
-            loader = loader.credentials_provider(Credentials::new(
-                access_key,
-                secret_key,
-                None,
-                None,
-                "knitprint-config",
-            ));
-        } else if !production {
-            loader = loader.credentials_provider(Credentials::new(
-                "knitprint",
-                "knitprint-local",
-                None,
-                None,
-                "knitprint-development",
-            ));
-        }
-        let shared = loader.load().await;
-        let mut builder = aws_sdk_s3::config::Builder::from(&shared);
-        if let Some(endpoint) =
-            endpoint.or_else(|| (!production).then(|| "http://127.0.0.1:9100".into()))
-        {
-            builder = builder.endpoint_url(endpoint).force_path_style(true);
-        }
-        let config = builder.build();
-        Ok(Some(Self {
-            client: Client::from_conf(config),
-            bucket,
-        }))
-    }
-}
 
 #[derive(Deserialize, ToSchema)]
 pub struct InitiateUploadRequest {
@@ -150,15 +88,11 @@ pub async fn initiate(
     let extension = extension_for(&input.content_type);
     let object_key = format!("uploads-quarantine/{id}/original.{extension}");
     let presigned = storage
-        .client
-        .put_object()
-        .bucket(&storage.bucket)
-        .key(&object_key)
-        .content_type(&input.content_type)
-        .content_length(input.byte_size)
-        .presigned(
-            PresigningConfig::expires_in(Duration::from_secs(300))
-                .expect("five minutes is a valid presigning duration"),
+        .presign_upload(
+            &object_key,
+            &input.content_type,
+            input.byte_size,
+            Duration::from_secs(300),
         )
         .await;
     let Ok(presigned) = presigned else {
@@ -187,7 +121,7 @@ pub async fn initiate(
         StatusCode::CREATED,
         Json(InitiateUploadResponse {
             id,
-            upload_url: presigned.uri().to_string(),
+            upload_url: presigned,
             method: "PUT".into(),
             expires_in_seconds: 300,
         }),
@@ -237,35 +171,19 @@ pub async fn complete(
         Ok(None) => return not_found(),
         Err(_) => return unavailable(),
     };
-    let head = storage
-        .client
-        .head_object()
-        .bucket(&storage.bucket)
-        .key(&object_key)
-        .send()
-        .await;
+    let head = storage.head(&object_key).await;
     let Ok(head) = head else {
         return upload_incomplete();
     };
-    if head.content_length() != Some(byte_size)
+    if head.content_length != Some(byte_size)
         || head
-            .content_type()
+            .content_type
             .is_some_and(|actual| actual != content_type)
     {
         return upload_mismatch();
     }
-    let source = storage
-        .client
-        .get_object()
-        .bucket(&storage.bucket)
-        .key(&object_key)
-        .send()
-        .await;
-    let source = match source {
-        Ok(source) => match source.body.collect().await {
-            Ok(body) => body.into_bytes().to_vec(),
-            Err(_) => return upload_incomplete(),
-        },
+    let source = match storage.get(&object_key).await {
+        Ok(source) => source.bytes,
         Err(_) => return upload_incomplete(),
     };
     match state.media_scanner.scan(&source).await {
@@ -287,13 +205,11 @@ pub async fn complete(
     };
     for variant in &variants {
         if storage
-            .client
-            .put_object()
-            .bucket(&storage.bucket)
-            .key(variant_key(media_id, variant.kind))
-            .content_type("image/webp")
-            .body(ByteStream::from(variant.bytes.clone()))
-            .send()
+            .put(
+                &variant_key(media_id, variant.kind),
+                "image/webp",
+                variant.bytes.clone(),
+            )
             .await
             .is_err()
         {
@@ -416,25 +332,16 @@ pub async fn public_asset(
         Ok(None) => return not_found(),
         Err(_) => return unavailable(),
     };
-    let object = storage
-        .client
-        .get_object()
-        .bucket(&storage.bucket)
-        .key(object_key)
-        .send()
-        .await;
+    let object = storage.get(&object_key).await;
     let Ok(object) = object else {
         return not_found();
     };
-    let etag = object.e_tag().map(ToOwned::to_owned);
-    let body = match object.body.collect().await {
-        Ok(body) => body.into_bytes(),
-        Err(_) => return unavailable(),
-    };
-    let mut response = Response::new(Body::from(body));
+    let mut response = Response::new(Body::from(object.bytes));
     response.headers_mut().insert(
         header::CONTENT_TYPE,
-        content_type
+        object
+            .content_type
+            .unwrap_or(content_type)
             .parse()
             .unwrap_or_else(|_| header::HeaderValue::from_static("application/octet-stream")),
     );
@@ -442,7 +349,7 @@ pub async fn public_asset(
         header::CACHE_CONTROL,
         header::HeaderValue::from_static("public, max-age=31536000, immutable"),
     );
-    if let Some(etag) = etag
+    if let Some(etag) = object.etag
         && let Ok(etag) = etag.parse()
     {
         response.headers_mut().insert(header::ETAG, etag);

@@ -5,4 +5,9 @@ node_modules
 target
 test-results
 playwright-report
+apps/*/dist
+apps/*/.output
+**/.env
+**/.env.*
+!**/.env.example
 commands.md

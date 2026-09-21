@@ -16,8 +16,8 @@ export const Route = createFileRoute('/collections/$slug')({
     meta: [
       {
         title: loaderData
-          ? `${loaderData.category?.name} collection — KnitnPrint`
-          : 'KnitnPrint',
+          ? `${loaderData.category?.name} collection — KnitNPrint`
+          : 'KnitNPrint',
       },
       {
         name: 'description',

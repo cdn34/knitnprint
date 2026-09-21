@@ -4,8 +4,8 @@ fn main() {
     let path = env::args()
         .nth(1)
         .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("openapi/knitprint.json"));
-    let document = knitprint_api::openapi::document()
+        .unwrap_or_else(|| PathBuf::from("openapi/knitnprint.json"));
+    let document = knitnprint_api::openapi::document()
         .to_pretty_json()
         .expect("OpenAPI document should serialize");
 

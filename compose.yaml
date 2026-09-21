@@ -2,11 +2,11 @@ services:
   postgres:
     image: postgres:17-alpine
     environment:
-      POSTGRES_DB: knitprint
-      POSTGRES_USER: knitprint
-      POSTGRES_PASSWORD: knitprint
+      POSTGRES_DB: knitnprint
+      POSTGRES_USER: knitnprint
+      POSTGRES_PASSWORD: knitnprint
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U knitprint -d knitprint"]
+      test: ["CMD-SHELL", "pg_isready -U knitnprint -d knitnprint"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -19,8 +19,8 @@ services:
     image: minio/minio:latest
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: knitprint
-      MINIO_ROOT_PASSWORD: knitprint-local
+      MINIO_ROOT_USER: knitnprint
+      MINIO_ROOT_PASSWORD: knitnprint-local
       MINIO_API_CORS_ALLOW_ORIGIN: http://127.0.0.1:3001,http://localhost:3001
     ports:
       - "9100:9000"
@@ -41,8 +41,8 @@ services:
     entrypoint: ["/bin/sh", "-c"]
     command:
       - >
-        mc alias set local http://minio:9000 knitprint knitprint-local &&
-        mc mb --ignore-existing local/knitprint-media
+        mc alias set local http://minio:9000 knitnprint knitnprint-local &&
+        mc mb --ignore-existing local/knitnprint-media
 
 volumes:
   postgres_data:

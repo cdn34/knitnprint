@@ -6,23 +6,37 @@ import {
   createRootRoute,
   useRouterState,
 } from '@tanstack/react-router'
+import { createServerFn } from '@tanstack/react-start'
 import '../styles.css'
 import { I18nProvider, useI18n } from '../i18n'
 import type { TranslationKey } from '../i18n/locales/en'
 
+const getDeploymentMetadata = createServerFn({ method: 'GET' }).handler(() => ({
+  preventIndexing: process.env.APP_ENV === 'staging',
+}))
+
 export const Route = createRootRoute({
-  head: () => ({
+  loader: () => getDeploymentMetadata(),
+  head: ({ loaderData }) => ({
     meta: [
       { charSet: 'utf-8' },
       { name: 'viewport', content: 'width=device-width, initial-scale=1' },
       {
         name: 'description',
         content:
-          'KnitnPrint creates thoughtful objects where soft craft meets precise 3D printing.',
+          'KnitNPrint creates thoughtful objects where soft craft meets precise 3D printing.',
       },
-      { title: 'KnitnPrint — Made between yarn and form' },
+      ...(loaderData?.preventIndexing
+        ? [
+            {
+              name: 'robots',
+              content: 'noindex, nofollow, noarchive, nosnippet',
+            },
+          ]
+        : []),
+      { title: 'KnitNPrint — Made between yarn and form' },
     ],
-    links: [{ rel: 'icon', type: 'image/webp', href: '/knitprint-mark.webp' }],
+    links: [{ rel: 'icon', type: 'image/webp', href: '/knitnprint-mark.webp' }],
   }),
   component: Root,
   notFoundComponent: NotFoundPage,
@@ -70,12 +84,12 @@ function LocalizedMetadata() {
   useEffect(() => {
     const metadata = metadataByPath[pathname]
     if (pathname === '/our-process') {
-      document.title = `${t('process.title1')} ${t('process.title2')} — KnitnPrint`
+      document.title = `${t('process.title1')} ${t('process.title2')} — KnitNPrint`
       updateMetaDescription(t('process.intro'))
       return
     }
     if (!metadata) return
-    document.title = `${t(metadata.title)} — KnitnPrint`
+    document.title = `${t(metadata.title)} — KnitNPrint`
     updateMetaDescription(t(metadata.description))
   }, [pathname, t])
 

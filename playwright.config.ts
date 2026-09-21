@@ -23,7 +23,7 @@ export default defineConfig({
   webServer: [
     {
       name: 'api',
-      command: 'cargo run -p knitprint-api --bin knitprint-api',
+      command: 'cargo run -p knitnprint-api --bin knitnprint-api',
       url: 'http://127.0.0.1:8080/api/ready',
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,
@@ -33,7 +33,7 @@ export default defineConfig({
     {
       name: 'storefront',
       command:
-        'npm run dev --workspace=@knitprint/storefront -- --host 127.0.0.1',
+        'npm run dev --workspace=@knitnprint/storefront -- --host 127.0.0.1',
       url: 'http://127.0.0.1:3000',
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,

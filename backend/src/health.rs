@@ -24,7 +24,7 @@ pub struct Health {
 pub async fn health() -> Json<Health> {
     Json(Health {
         status: "ok",
-        service: "knitprint-api",
+        service: "knitnprint-api",
     })
 }
 
@@ -55,7 +55,7 @@ pub async fn ready(State(state): State<AppState>) -> Response {
     {
         Ok(_) => Json(Health {
             status: "ready",
-            service: "knitprint-api",
+            service: "knitnprint-api",
         })
         .into_response(),
         Err(_) => (

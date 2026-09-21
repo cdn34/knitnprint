@@ -22,7 +22,7 @@ use crate::{
     login_rate_limit::{AccountLoginGuard, AuthScope, ClientIp, LoginLimitError},
 };
 
-pub const SESSION_COOKIE: &str = "knitprint_admin";
+pub const SESSION_COOKIE: &str = "knitnprint_admin";
 const SESSION_HOURS: i64 = 12;
 
 #[derive(Deserialize, ToSchema)]

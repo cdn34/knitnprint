@@ -2,7 +2,7 @@ import {
   ApiError,
   createApiClient,
   type CustomerAccountProfile,
-} from "@knitprint/api-client";
+} from "@knitnprint/api-client";
 import { createFileRoute } from "@tanstack/react-router";
 import {
   ArrowLeft,
@@ -25,10 +25,10 @@ export const Route = createFileRoute("/account")({
   component: AccountPage,
   head: () => ({
     meta: [
-      { title: "Your account — KnitnPrint" },
+      { title: "Your account — KnitNPrint" },
       {
         name: "description",
-        content: "Manage your KnitnPrint profile and delivery addresses.",
+        content: "Manage your KnitNPrint profile and delivery addresses.",
       },
     ],
   }),

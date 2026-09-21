@@ -17,6 +17,7 @@ pub mod login_rate_limit;
 pub mod media;
 pub mod media_scanner;
 pub mod notifications;
+pub mod object_storage;
 pub mod openapi;
 pub mod orders;
 pub mod payments;
@@ -43,11 +44,11 @@ use tower_http::{
 #[derive(Clone, Default)]
 pub struct AppState {
     pub database: Option<PgPool>,
-    pub media_storage: Option<media::MediaStorage>,
+    pub media_storage: Option<object_storage::ObjectStorage>,
     pub media_scanner: media_scanner::MediaScanner,
     pub email: email::EmailService,
     pub payments: payments::PaymentService,
-    pub trust_proxy_headers: bool,
+    pub trusted_proxy_hops: usize,
     pub secure_cookies: bool,
     pub manual_payments_enabled: bool,
     pub security: security::SecurityPolicy,
@@ -281,7 +282,7 @@ mod tests {
         let body = to_bytes(response.into_body(), 1024).await.unwrap();
         let json: Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(json["status"], "ok");
-        assert_eq!(json["service"], "knitprint-api");
+        assert_eq!(json["service"], "knitnprint-api");
     }
 
     #[tokio::test]
@@ -335,7 +336,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         let body = to_bytes(response.into_body(), 128 * 1024).await.unwrap();
         let json: Value = serde_json::from_slice(&body).unwrap();
-        assert_eq!(json["info"]["title"], "KnitPrint API");
+        assert_eq!(json["info"]["title"], "KnitNPrint API");
         assert!(json["paths"]["/api/health"].is_object());
     }
 
@@ -408,9 +409,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn production_responses_require_transport_security() {
+    async fn deployed_responses_require_transport_security() {
         let mut state = AppState::default();
-        state.security.production = true;
+        state.security.deployed = true;
         let response = app(state)
             .oneshot(
                 Request::builder()

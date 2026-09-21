@@ -7,10 +7,10 @@ import { useI18n } from '../i18n'
 export const Route = createFileRoute('/discounts')({
   head: () => ({
     meta: [
-      { title: '10% welcome discount — KnitnPrint' },
+      { title: '10% welcome discount — KnitNPrint' },
       {
         name: 'description',
-        content: 'Join the KnitnPrint newsletter and receive 10% off your first eligible order.',
+        content: 'Join the KnitNPrint newsletter and receive 10% off your first eligible order.',
       },
     ],
   }),

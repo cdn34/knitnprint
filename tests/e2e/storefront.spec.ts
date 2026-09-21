@@ -4,18 +4,18 @@ import { expect, test } from '@playwright/test'
 test('renders the branded storefront shell', async ({ page }) => {
   await page.goto('/')
 
-  await expect(page).toHaveTitle(/KnitPrint/)
+  await expect(page).toHaveTitle(/KnitNPrint/)
   await expect(
     page.getByRole('heading', {
       level: 1,
       name: 'Soft ideas, shaped into lasting objects.',
     }),
   ).toBeVisible()
-  await expect(page.getByRole('link', { name: 'KnitPrint home' })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'KnitNPrint home' })).toBeVisible()
   await expect(
-    page.getByRole('heading', { name: 'Objects with a softer edge' }),
+    page.getByRole('heading', { name: 'Find your kind of piece' }),
   ).toBeVisible()
-  await expect(page.locator('.product-grid')).toBeVisible()
+  await expect(page.locator('#shop .product-grid')).toBeVisible()
   expect(
     (await page.locator('.product-card').count()) +
       (await page.locator('.storefront-empty').count()),
@@ -27,7 +27,7 @@ test('filters published products when the catalog is available', async ({
 }) => {
   await page.goto('/')
   await page.waitForLoadState('networkidle')
-  const cards = page.locator('.product-card')
+  const cards = page.locator('.product-card:not(.product-card--placeholder)')
   if ((await cards.count()) === 0) return
 
   const title = await cards.first().getByRole('heading').textContent()
@@ -37,7 +37,7 @@ test('filters published products when the catalog is available', async ({
 
 test('opens a published product detail page when available', async ({ page }) => {
   await page.goto('/')
-  const card = page.locator('.product-card').first()
+  const card = page.locator('.product-card:not(.product-card--placeholder)').first()
   if ((await card.count()) === 0) return
 
   const title = await card.getByRole('heading').textContent()
@@ -89,6 +89,17 @@ test('has no detectable WCAG A or AA violations', async ({ page }) => {
   expect(results.violations).toEqual([])
 })
 
+test('responds to storefront health checks', async ({ request }) => {
+  const response = await request.get('/health')
+
+  expect(response.status()).toBe(200)
+  expect(response.headers()['cache-control']).toBe('no-store')
+  await expect(response.json()).resolves.toEqual({
+    status: 'ok',
+    service: 'knitnprint-storefront',
+  })
+})
+
 test('supports keyboard navigation to main content', async ({ page }) => {
   await page.goto('/')
   await page.keyboard.press('Tab')
@@ -129,7 +140,7 @@ test('adds an available product, captures delivery, and creates an order', async
   page,
 }) => {
   await page.goto('/')
-  const card = page.locator('.product-card').first()
+  const card = page.locator('.product-card:not(.product-card--placeholder)').first()
   if ((await card.count()) === 0) return
   await card.locator('.product-visual').click()
 

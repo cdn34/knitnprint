@@ -1,6 +1,6 @@
 use std::env;
 
-use knitprint_api::{config::Environment, email::EmailService, notifications::deliver_due};
+use knitnprint_api::{config::Environment, email::EmailService, notifications::deliver_due};
 use sqlx::postgres::PgPoolOptions;
 
 #[tokio::main]
@@ -18,11 +18,10 @@ async fn main() {
             std::process::exit(2);
         })
         .unwrap_or(25);
-    let environment = match env::var("APP_ENV").as_deref() {
-        Ok("production") => Environment::Production,
-        Ok("test") => Environment::Test,
-        _ => Environment::Development,
-    };
+    let environment = Environment::from_env().unwrap_or_else(|error| {
+        eprintln!("invalid configuration: {error}");
+        std::process::exit(2);
+    });
     let email = EmailService::from_env(environment)
         .await
         .unwrap_or_else(|error| {

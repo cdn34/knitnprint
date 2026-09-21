@@ -1,0 +1,6 @@
+# Staging bootstrap values. Copy this file to terraform.tfvars and replace the placeholder. The copied
+# file is ignored by Git because the notification address is personal data.
+budget_notification_email = "replace-with-your-email@example.com"
+
+# Keep the reviewed staging limit unless the deployment plan changes.
+monthly_budget_usd = 120

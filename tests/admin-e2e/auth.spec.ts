@@ -1,7 +1,7 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test } from '@playwright/test'
 
-const email = process.env.E2E_OWNER_EMAIL ?? 'owner@knitprint.local'
+const email = process.env.E2E_OWNER_EMAIL ?? 'owner@knitnprint.local'
 const password =
   process.env.E2E_OWNER_PASSWORD ?? 'local-development-passphrase'
 

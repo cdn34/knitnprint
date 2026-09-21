@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-const ownerEmail = process.env.E2E_OWNER_EMAIL ?? 'owner@knitprint.local'
+const ownerEmail = process.env.E2E_OWNER_EMAIL ?? 'owner@knitnprint.local'
 const ownerPassword =
   process.env.E2E_OWNER_PASSWORD ?? 'local-development-passphrase'
 
@@ -9,7 +9,7 @@ test('lets an owner create and disable a least-privilege staff account', async (
 }) => {
   const unique = `${Date.now()}-${test.info().retry}`
   const displayName = `Order Viewer ${unique}`
-  const staffEmail = `order-viewer-${unique}@knitprint.test`
+  const staffEmail = `order-viewer-${unique}@knitnprint.test`
 
   await page.goto('/')
   await page.getByLabel('Email address').fill(ownerEmail)

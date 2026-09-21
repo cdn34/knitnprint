@@ -22,7 +22,7 @@ export const faqGroupsPt: FaqGroup[] = [
   { id: 'orders', title: 'Encomendas e pagamentos', questions: [
     { question: 'Como faço uma encomenda?', answer: 'Escolha o produto, selecione as opções disponíveis, acrescente os dados de personalização e reveja tudo cuidadosamente antes do checkout.' },
     { question: 'Que métodos de pagamento aceitam?', answer: 'Os métodos disponíveis para a sua encomenda e localização são apresentados de forma segura durante o checkout.' },
-    { question: 'O pagamento é seguro?', answer: 'Os pagamentos são tratados por prestadores especializados. A KnitnPrint não guarda os dados completos do seu cartão.' },
+    { question: 'O pagamento é seguro?', answer: 'Os pagamentos são tratados por prestadores especializados. A KnitNPrint não guarda os dados completos do seu cartão.' },
     { question: 'Posso utilizar mais do que um código de desconto?', answer: 'Salvo indicação em contrário, os códigos de desconto não são acumuláveis. Introduza o código no checkout para confirmar se é aplicável.' },
     { question: 'Onde encontro a confirmação da encomenda?', answer: 'Enviamo-la para o email utilizado no checkout. Se não estiver na caixa de entrada, verifique o spam antes de nos contactar.' },
   ] },
@@ -75,7 +75,7 @@ export const faqGroupsEs: FaqGroup[] = [
   { id: 'orders', title: 'Pedidos y pagos', questions: [
     { question: '¿Cómo hago un pedido?', answer: 'Elige el producto, selecciona las opciones disponibles, añade los datos de personalización y revisa todo cuidadosamente antes de pagar.' },
     { question: '¿Qué métodos de pago aceptáis?', answer: 'Los métodos disponibles para tu pedido y ubicación se muestran de forma segura durante el pago.' },
-    { question: '¿El pago es seguro?', answer: 'Los pagos los gestionan proveedores especializados. KnitnPrint no guarda los datos completos de tu tarjeta.' },
+    { question: '¿El pago es seguro?', answer: 'Los pagos los gestionan proveedores especializados. KnitNPrint no guarda los datos completos de tu tarjeta.' },
     { question: '¿Puedo utilizar más de un código de descuento?', answer: 'Salvo que la promoción indique lo contrario, los códigos no se pueden combinar. Introduce el código al pagar para confirmar si se aplica.' },
     { question: '¿Dónde encuentro la confirmación del pedido?', answer: 'La enviamos al correo utilizado al pagar. Si no aparece en tu bandeja de entrada, revisa la carpeta de spam antes de contactarnos.' },
   ] },

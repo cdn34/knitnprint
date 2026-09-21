@@ -4,7 +4,7 @@ use axum::{
     body::{Body, to_bytes},
     http::{Request, StatusCode, header},
 };
-use knitprint_api::{AppState, app, email::EmailService};
+use knitnprint_api::{AppState, app, email::EmailService};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use sqlx::{
@@ -14,7 +14,7 @@ use sqlx::{
 use tower::ServiceExt;
 use uuid::Uuid;
 
-const CUSTOMER_COOKIE: &str = "knitprint_customer";
+const CUSTOMER_COOKIE: &str = "knitnprint_customer";
 const OLD_PASSWORD: &str = "old-customer-passphrase";
 const NEW_PASSWORD: &str = "new-customer-passphrase";
 
@@ -66,7 +66,10 @@ async fn verification_and_password_recovery_tokens_are_private_single_use_and_se
     let customer_id = Uuid::parse_str(profile["id"].as_str().unwrap()).unwrap();
 
     let verification_email = latest_email(&router, email, "email_verification").await;
-    assert_eq!(verification_email["subject"], "Verify your KnitPrint email");
+    assert_eq!(
+        verification_email["subject"],
+        "Verify your KnitNPrint email"
+    );
     let verification_token = action_token(&verification_email, "verify");
     assert_token_is_only_hashed(&pool, &verification_token, "email_verification").await;
 
@@ -164,7 +167,7 @@ async fn verification_and_password_recovery_tokens_are_private_single_use_and_se
     .await;
     assert_eq!(forgot.status(), StatusCode::NO_CONTENT);
     let reset_email = latest_email(&router, email, "password_reset").await;
-    assert_eq!(reset_email["subject"], "Reset your KnitPrint password");
+    assert_eq!(reset_email["subject"], "Reset your KnitNPrint password");
     let reset_token = action_token(&reset_email, "reset");
     assert_token_is_only_hashed(&pool, &reset_token, "password_reset").await;
     let repeated_forgot = request(

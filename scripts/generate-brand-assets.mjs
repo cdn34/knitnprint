@@ -46,27 +46,27 @@ await render({
   crop: { x: 18, y: 335, width: 1500, height: 390 },
   height: 195,
   quality: 0.84,
-  output: '../apps/storefront/public/knitprint-wordmark.webp',
+  output: '../apps/storefront/public/knitnprint-wordmark.webp',
 })
 await render({
   crop: { x: 18, y: 335, width: 1500, height: 390 },
   height: 195,
   quality: 0.84,
-  output: '../apps/admin/public/knitprint-wordmark.webp',
+  output: '../apps/admin/public/knitnprint-wordmark.webp',
 })
 await render({
   crop: { x: 15, y: 345, width: 285, height: 300 },
   height: 256,
   quality: 0.86,
   square: true,
-  output: '../apps/storefront/public/knitprint-mark.webp',
+  output: '../apps/storefront/public/knitnprint-mark.webp',
 })
 await render({
   crop: { x: 15, y: 345, width: 285, height: 300 },
   height: 256,
   quality: 0.86,
   square: true,
-  output: '../apps/admin/public/knitprint-mark.webp',
+  output: '../apps/admin/public/knitnprint-mark.webp',
 })
 
 await browser.close()

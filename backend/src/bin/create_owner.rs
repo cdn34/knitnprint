@@ -1,6 +1,6 @@
 use std::{env, process::ExitCode};
 
-use knitprint_api::auth::hash_password;
+use knitnprint_api::auth::hash_password;
 use sqlx::postgres::PgPoolOptions;
 use uuid::Uuid;
 
@@ -31,10 +31,6 @@ async fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    if let Err(error) = sqlx::migrate!("../migrations").run(&pool).await {
-        eprintln!("failed to run migrations: {error}");
-        return ExitCode::FAILURE;
-    }
     let password_hash = match hash_password(&password) {
         Ok(hash) => hash,
         Err(error) => {

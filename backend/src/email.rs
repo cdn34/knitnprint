@@ -1,4 +1,4 @@
-use std::{env, sync::Arc};
+use std::{collections::HashSet, env, sync::Arc};
 
 use aws_sdk_sesv2::{
     Client,
@@ -40,8 +40,8 @@ impl OrderEmailKind {
 
     const fn subject(self) -> &'static str {
         match self {
-            Self::Confirmation => "Your KnitPrint order is confirmed",
-            Self::Fulfillment => "Your KnitPrint order is on its way",
+            Self::Confirmation => "Your KnitNPrint order is confirmed",
+            Self::Fulfillment => "Your KnitNPrint order is on its way",
         }
     }
 }
@@ -74,8 +74,8 @@ impl AccountEmailKind {
 
     fn subject(self) -> &'static str {
         match self {
-            Self::Verification => "Verify your KnitPrint email",
-            Self::PasswordReset => "Reset your KnitPrint password",
+            Self::Verification => "Verify your KnitNPrint email",
+            Self::PasswordReset => "Reset your KnitNPrint password",
         }
     }
 
@@ -117,6 +117,7 @@ enum Delivery {
 pub struct EmailService {
     delivery: Delivery,
     storefront_base_url: String,
+    recipient_allowlist: Option<Arc<HashSet<String>>>,
 }
 
 impl Default for EmailService {
@@ -124,6 +125,7 @@ impl Default for EmailService {
         Self {
             delivery: Delivery::Disabled,
             storefront_base_url: "http://127.0.0.1:3000".into(),
+            recipient_allowlist: None,
         }
     }
 }
@@ -140,13 +142,21 @@ impl EmailService {
     pub async fn from_env(environment: Environment) -> Result<Self, String> {
         let base_url =
             env::var("STOREFRONT_BASE_URL").unwrap_or_else(|_| "http://127.0.0.1:3000".into());
-        validate_base_url(&base_url, environment == Environment::Production)?;
+        validate_base_url(&base_url, environment.is_deployed())?;
         let storefront_base_url = base_url.trim_end_matches('/').to_owned();
+        let recipient_allowlist = parse_recipient_allowlist(
+            environment,
+            env::var("EMAIL_RECIPIENT_ALLOWLIST").ok().as_deref(),
+        )?;
 
         if delivery_mode(environment, env::var("EMAIL_DELIVERY").ok().as_deref())?
             == EmailDeliveryMode::Development
         {
-            return Ok(Self::development(storefront_base_url));
+            return Ok(Self {
+                delivery: Delivery::Development(Arc::new(RwLock::new(Vec::new()))),
+                storefront_base_url,
+                recipient_allowlist,
+            });
         }
 
         let from =
@@ -162,6 +172,7 @@ impl EmailService {
                 configuration_set: env::var("SES_CONFIGURATION_SET").ok(),
             },
             storefront_base_url,
+            recipient_allowlist,
         })
     }
 
@@ -169,6 +180,7 @@ impl EmailService {
         Self {
             delivery: Delivery::Development(Arc::new(RwLock::new(Vec::new()))),
             storefront_base_url: base_url.into().trim_end_matches('/').to_owned(),
+            recipient_allowlist: None,
         }
     }
 
@@ -179,6 +191,7 @@ impl EmailService {
         kind: AccountEmailKind,
         token: &str,
     ) -> Result<(), String> {
+        self.ensure_recipient_allowed(to)?;
         let action_url = format!(
             "{}/account?{}={token}",
             self.storefront_base_url,
@@ -252,6 +265,7 @@ impl EmailService {
     }
 
     pub async fn send_order_notification(&self, email: OrderEmail<'_>) -> Result<(), String> {
+        self.ensure_recipient_allowed(email.to)?;
         let order_url = format!("{}/cart", self.storefront_base_url);
         let action_url = if email.tracking_url.is_empty() {
             order_url
@@ -279,11 +293,11 @@ impl EmailService {
                 let (text, html) = match email.kind {
                     OrderEmailKind::Confirmation => (
                         format!(
-                            "Hello {},\n\nYour KnitPrint order {} is confirmed. Total: {}.\n\nWe will email you again when it ships.\n",
+                            "Hello {},\n\nYour KnitNPrint order {} is confirmed. Total: {}.\n\nWe will email you again when it ships.\n",
                             email.first_name, email.order_number, email.total
                         ),
                         format!(
-                            "<p>Hello {safe_name},</p><p>Your KnitPrint order <strong>{safe_order}</strong> is confirmed.</p><p>Total: {safe_total}</p><p>We will email you again when it ships.</p>"
+                            "<p>Hello {safe_name},</p><p>Your KnitNPrint order <strong>{safe_order}</strong> is confirmed.</p><p>Total: {safe_total}</p><p>We will email you again when it ships.</p>"
                         ),
                     ),
                     OrderEmailKind::Fulfillment => {
@@ -307,11 +321,11 @@ impl EmailService {
                         };
                         (
                             format!(
-                                "Hello {},\n\nYour KnitPrint order {} has shipped.{}\n",
+                                "Hello {},\n\nYour KnitNPrint order {} has shipped.{}\n",
                                 email.first_name, email.order_number, tracking_text
                             ),
                             format!(
-                                "<p>Hello {safe_name},</p><p>Your KnitPrint order <strong>{safe_order}</strong> has shipped.</p>{tracking_html}"
+                                "<p>Hello {safe_name},</p><p>Your KnitNPrint order <strong>{safe_order}</strong> has shipped.</p>{tracking_html}"
                             ),
                         )
                     }
@@ -342,6 +356,18 @@ impl EmailService {
             .rev()
             .find(|email| email.to.eq_ignore_ascii_case(to) && email.kind == kind)
             .cloned()
+    }
+
+    fn ensure_recipient_allowed(&self, recipient: &str) -> Result<(), String> {
+        let Some(allowlist) = &self.recipient_allowlist else {
+            return Ok(());
+        };
+        let normalized = recipient.trim().to_ascii_lowercase();
+        if allowlist.contains(&normalized) {
+            Ok(())
+        } else {
+            Err("email recipient is not allowed in this environment".into())
+        }
     }
 }
 
@@ -428,9 +454,11 @@ fn delivery_mode(
     configured: Option<&str>,
 ) -> Result<EmailDeliveryMode, String> {
     match (environment, configured) {
-        (Environment::Production, None | Some("ses")) => Ok(EmailDeliveryMode::Ses),
-        (Environment::Production, Some("development")) => {
-            Err("EMAIL_DELIVERY=development is not allowed in production".into())
+        (Environment::Staging | Environment::Production, None | Some("ses")) => {
+            Ok(EmailDeliveryMode::Ses)
+        }
+        (Environment::Staging | Environment::Production, Some("development")) => {
+            Err("EMAIL_DELIVERY=development is not allowed in staging or production".into())
         }
         (Environment::Development | Environment::Test, None | Some("development")) => {
             Ok(EmailDeliveryMode::Development)
@@ -440,7 +468,36 @@ fn delivery_mode(
     }
 }
 
-fn validate_base_url(value: &str, production: bool) -> Result<(), String> {
+fn parse_recipient_allowlist(
+    environment: Environment,
+    configured: Option<&str>,
+) -> Result<Option<Arc<HashSet<String>>>, String> {
+    let Some(configured) = configured else {
+        return if environment == Environment::Staging {
+            Err("EMAIL_RECIPIENT_ALLOWLIST is required in staging".into())
+        } else {
+            Ok(None)
+        };
+    };
+
+    let mut recipients = HashSet::new();
+    for recipient in configured.split(',') {
+        let recipient = recipient.trim();
+        if !valid_email(recipient) {
+            return Err(
+                "EMAIL_RECIPIENT_ALLOWLIST must contain valid comma-separated email addresses"
+                    .into(),
+            );
+        }
+        recipients.insert(recipient.to_ascii_lowercase());
+    }
+    if recipients.is_empty() {
+        return Err("EMAIL_RECIPIENT_ALLOWLIST must contain at least one email address".into());
+    }
+    Ok(Some(Arc::new(recipients)))
+}
+
+fn validate_base_url(value: &str, deployed: bool) -> Result<(), String> {
     let value = value.trim();
     let valid_scheme = value.starts_with("http://") || value.starts_with("https://");
     if value.is_empty()
@@ -450,8 +507,8 @@ fn validate_base_url(value: &str, production: bool) -> Result<(), String> {
     {
         return Err("STOREFRONT_BASE_URL must be an absolute HTTP(S) URL".into());
     }
-    if production && !value.starts_with("https://") {
-        return Err("STOREFRONT_BASE_URL must use HTTPS in production".into());
+    if deployed && !value.starts_with("https://") {
+        return Err("STOREFRONT_BASE_URL must use HTTPS in staging and production".into());
     }
     Ok(())
 }
@@ -468,7 +525,8 @@ fn escape_html(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        AccountEmailKind, EmailDeliveryMode, EmailService, delivery_mode, validate_base_url,
+        AccountEmailKind, EmailDeliveryMode, EmailService, OrderEmail, OrderEmailKind,
+        delivery_mode, parse_recipient_allowlist, validate_base_url,
     };
     use crate::config::Environment;
 
@@ -501,7 +559,89 @@ mod tests {
     }
 
     #[test]
-    fn production_action_urls_require_https() {
+    fn staging_requires_a_valid_recipient_allowlist() {
+        assert!(parse_recipient_allowlist(Environment::Staging, None).is_err());
+        assert!(parse_recipient_allowlist(Environment::Staging, Some("")).is_err());
+        assert!(parse_recipient_allowlist(Environment::Staging, Some("not-an-email")).is_err());
+        assert!(
+            parse_recipient_allowlist(Environment::Production, None)
+                .unwrap()
+                .is_none()
+        );
+
+        let allowlist = parse_recipient_allowlist(
+            Environment::Staging,
+            Some(" Owner@Example.com,owner@example.com, tester@example.com "),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(allowlist.len(), 2);
+        assert!(allowlist.contains("owner@example.com"));
+        assert!(allowlist.contains("tester@example.com"));
+    }
+
+    #[tokio::test]
+    async fn recipient_allowlist_blocks_account_and_order_email_before_delivery() {
+        let mut service = EmailService::development("https://shop.example.com");
+        service.recipient_allowlist =
+            parse_recipient_allowlist(Environment::Staging, Some("allowed@example.com")).unwrap();
+
+        service
+            .send_account_action(
+                "ALLOWED@example.com",
+                "Allowed",
+                AccountEmailKind::Verification,
+                "secret-token",
+            )
+            .await
+            .unwrap();
+        let account_error = service
+            .send_account_action(
+                "blocked@example.com",
+                "Blocked",
+                AccountEmailKind::PasswordReset,
+                "secret-token",
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(
+            account_error,
+            "email recipient is not allowed in this environment"
+        );
+
+        let order_error = service
+            .send_order_notification(OrderEmail {
+                to: "blocked@example.com",
+                first_name: "Blocked",
+                kind: OrderEmailKind::Confirmation,
+                order_number: "KNP-TEST",
+                total: "EUR 10.00",
+                carrier: "",
+                tracking_number: "",
+                tracking_url: "",
+            })
+            .await
+            .unwrap_err();
+        assert_eq!(
+            order_error,
+            "email recipient is not allowed in this environment"
+        );
+        assert!(
+            service
+                .latest_development_email("blocked@example.com", "password_reset")
+                .await
+                .is_none()
+        );
+        assert!(
+            service
+                .latest_development_email("blocked@example.com", "order_confirmation")
+                .await
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn deployed_action_urls_require_https() {
         assert!(validate_base_url("https://shop.example.com", true).is_ok());
         assert!(validate_base_url("http://shop.example.com", true).is_err());
         assert!(validate_base_url("shop.example.com", false).is_err());
@@ -535,6 +675,23 @@ mod tests {
         );
         assert!(
             delivery_mode(Environment::Production, Some("development"))
+                .unwrap_err()
+                .contains("not allowed")
+        );
+    }
+
+    #[test]
+    fn staging_defaults_to_ses_and_rejects_development_mailbox() {
+        assert_eq!(
+            delivery_mode(Environment::Staging, None).unwrap(),
+            EmailDeliveryMode::Ses
+        );
+        assert_eq!(
+            delivery_mode(Environment::Staging, Some("ses")).unwrap(),
+            EmailDeliveryMode::Ses
+        );
+        assert!(
+            delivery_mode(Environment::Staging, Some("development"))
                 .unwrap_err()
                 .contains("not allowed")
         );

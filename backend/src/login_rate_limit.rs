@@ -127,7 +127,7 @@ impl FromRequestParts<AppState> for ClientIp {
         Ok(Self(resolve_client_ip(
             connect,
             &parts.headers,
-            state.trust_proxy_headers,
+            state.trusted_proxy_hops,
         )))
     }
 }
@@ -318,21 +318,28 @@ fn bucket_hash(scope: AuthScope, dimension: &str, value: &str) -> [u8; 32] {
 pub fn resolve_client_ip(
     connect: Option<ConnectInfo<SocketAddr>>,
     headers: &HeaderMap,
-    trust_proxy_headers: bool,
+    trusted_proxy_hops: usize,
 ) -> IpAddr {
-    if trust_proxy_headers
+    if trusted_proxy_hops > 0
         && let Some(forwarded) = headers
             .get("x-forwarded-for")
             .and_then(|value| value.to_str().ok())
-            .and_then(|value| value.split(',').next())
+            .and_then(|value| value.split(',').rev().nth(trusted_proxy_hops - 1))
             .map(str::trim)
-            .and_then(|value| value.parse().ok())
+            .and_then(parse_forwarded_ip)
     {
         return forwarded;
     }
     connect
         .map(|ConnectInfo(address)| address.ip())
         .unwrap_or(IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED))
+}
+
+fn parse_forwarded_ip(value: &str) -> Option<IpAddr> {
+    value
+        .parse::<IpAddr>()
+        .ok()
+        .or_else(|| value.parse::<SocketAddr>().ok().map(|address| address.ip()))
 }
 
 #[cfg(test)]
@@ -346,14 +353,80 @@ mod tests {
     #[test]
     fn forwarded_addresses_are_used_only_when_explicitly_trusted() {
         let mut headers = HeaderMap::new();
-        headers.insert("x-forwarded-for", "203.0.113.8, 10.0.0.4".parse().unwrap());
+        headers.insert(
+            "x-forwarded-for",
+            "203.0.113.8, 198.51.100.20".parse().unwrap(),
+        );
         let peer = Some(ConnectInfo(SocketAddr::from_str("10.0.0.4:443").unwrap()));
+        assert_eq!(resolve_client_ip(peer, &headers, 0).to_string(), "10.0.0.4");
         assert_eq!(
-            resolve_client_ip(peer, &headers, false).to_string(),
-            "10.0.0.4"
+            resolve_client_ip(peer, &headers, 1).to_string(),
+            "198.51.100.20"
+        );
+    }
+
+    #[test]
+    fn caller_supplied_forwarded_address_cannot_spoof_alb_rate_limit_identity() {
+        let peer = Some(ConnectInfo(SocketAddr::from_str("10.0.1.20:443").unwrap()));
+        let mut first = HeaderMap::new();
+        first.insert(
+            "x-forwarded-for",
+            "198.51.100.10, 203.0.113.8".parse().unwrap(),
+        );
+        let mut second = HeaderMap::new();
+        second.insert(
+            "x-forwarded-for",
+            "192.0.2.99, 203.0.113.8".parse().unwrap(),
+        );
+
+        assert_eq!(
+            resolve_client_ip(peer, &first, 1),
+            resolve_client_ip(peer, &second, 1)
         );
         assert_eq!(
-            resolve_client_ip(peer, &headers, true).to_string(),
+            resolve_client_ip(peer, &first, 1).to_string(),
+            "203.0.113.8"
+        );
+    }
+
+    #[test]
+    fn multiple_trusted_hops_are_counted_from_the_right() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "x-forwarded-for",
+            "192.0.2.99, 203.0.113.8, 10.0.0.4".parse().unwrap(),
+        );
+        let peer = Some(ConnectInfo(SocketAddr::from_str("10.0.1.20:443").unwrap()));
+
+        assert_eq!(
+            resolve_client_ip(peer, &headers, 2).to_string(),
+            "203.0.113.8"
+        );
+    }
+
+    #[test]
+    fn invalid_or_incomplete_forwarded_chains_fall_back_to_the_peer() {
+        let mut headers = HeaderMap::new();
+        headers.insert("x-forwarded-for", "not-an-ip".parse().unwrap());
+        let peer = Some(ConnectInfo(SocketAddr::from_str("10.0.1.20:443").unwrap()));
+
+        assert_eq!(
+            resolve_client_ip(peer, &headers, 1).to_string(),
+            "10.0.1.20"
+        );
+        assert_eq!(
+            resolve_client_ip(peer, &headers, 2).to_string(),
+            "10.0.1.20"
+        );
+    }
+
+    #[test]
+    fn forwarded_addresses_may_include_an_alb_preserved_client_port() {
+        let mut headers = HeaderMap::new();
+        headers.insert("x-forwarded-for", "203.0.113.8:49152".parse().unwrap());
+
+        assert_eq!(
+            resolve_client_ip(None, &headers, 1).to_string(),
             "203.0.113.8"
         );
     }

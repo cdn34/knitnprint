@@ -5,7 +5,7 @@ use axum::{
     http::{Request, StatusCode, header},
 };
 use hmac::{Hmac, Mac};
-use knitprint_api::{
+use knitnprint_api::{
     AppState, app,
     auth::hash_password,
     email::EmailService,
@@ -96,7 +96,7 @@ async fn checkout_snapshots_reserves_and_manual_payment_are_idempotent() {
         "/api/admin/settings",
         Some(&owner_cookie),
         Some(json!({
-            "store_name": "KnitPrint Test Studio",
+            "store_name": "KnitNPrint Test Studio",
             "support_email": "support@example.com",
             "currency": "eur",
             "tax_enabled": true,
@@ -294,7 +294,7 @@ async fn checkout_snapshots_reserves_and_manual_payment_are_idempotent() {
         "/api/admin/settings",
         Some(&owner_cookie),
         Some(json!({
-            "store_name": "KnitPrint Test Studio",
+            "store_name": "KnitNPrint Test Studio",
             "support_email": "support@example.com",
             "currency": "EUR",
             "tax_enabled": false,
@@ -595,7 +595,7 @@ async fn checkout_snapshots_reserves_and_manual_payment_are_idempotent() {
     assert_eq!(fulfillment_email.status(), StatusCode::OK);
     assert_eq!(
         response_json(fulfillment_email).await["subject"],
-        "Your KnitPrint order is on its way"
+        "Your KnitNPrint order is on its way"
     );
 
     let completed = request(
@@ -1144,13 +1144,13 @@ async fn stripe_webhooks_are_signed_idempotent_and_drive_inventory() {
     .await
     .unwrap();
     assert_eq!(
-        knitprint_api::payments::cleanup_abandoned(&pool, 100)
+        knitnprint_api::payments::cleanup_abandoned(&pool, 100)
             .await
             .unwrap(),
         1
     );
     assert_eq!(
-        knitprint_api::payments::cleanup_abandoned(&pool, 100)
+        knitnprint_api::payments::cleanup_abandoned(&pool, 100)
             .await
             .unwrap(),
         0

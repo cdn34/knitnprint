@@ -4,7 +4,7 @@ Last updated: 2026-08-15
 
 ## Goal
 
-Build KnitPrint as a deliberately simple ecommerce platform with:
+Build KnitNPrint as a deliberately simple ecommerce platform with:
 
 - a server-rendered public storefront;
 - a private admin SPA;
@@ -22,7 +22,7 @@ Phase 0 has started and the runnable application foundation is present:
 apps/storefront/  TanStack Start SSR storefront
 apps/admin/       React/Vite admin SPA
 backend/          Rust/Axum API
-images/           original KnitPrint source logo
+images/           original KnitNPrint source logo
 compose.yaml      PostgreSQL and MinIO for local development
 ```
 
@@ -81,7 +81,7 @@ cargo test --workspace
 
 Runtime smoke checks also verified:
 
-- `/` returns meaningful server-rendered HTML and KnitPrint metadata;
+- `/` returns meaningful server-rendered HTML and KnitNPrint metadata;
 - `/api/health` returns `200` and a JSON health payload;
 - `/api/ready` returns a structured `503` when `DATABASE_URL` is absent.
 - PostgreSQL 17 accepts the migration and idempotent seed;
@@ -460,7 +460,7 @@ Stripe payments are implemented:
 - server-created 35-minute hosted Checkout sessions using authoritative order
   totals, currency, contact email, and internal order/attempt metadata;
 - opaque cart-token ownership checks for payment initiation and customer order
-  retrieval, with no card data entering KnitPrint;
+  retrieval, with no card data entering KnitNPrint;
 - raw-body HMAC-SHA256 webhook verification, five-minute replay tolerance,
   duplicate-event suppression, and safe terminal-state handling;
 - payment attempts and append-only provider status history exposed in typed

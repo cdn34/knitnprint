@@ -12,8 +12,8 @@ import { useI18n } from '../i18n'
 export const Route = createFileRoute('/our-process')({
   head: () => ({
     meta: [
-      { title: 'Our process — KnitnPrint' },
-      { name: 'description', content: 'Discover how a KnitnPrint idea becomes a personalised piece, made with care from first detail to final delivery.' },
+      { title: 'Our process — KnitNPrint' },
+      { name: 'description', content: 'Discover how a KnitNPrint idea becomes a personalised piece, made with care from first detail to final delivery.' },
     ],
   }),
   component: ProcessPage,

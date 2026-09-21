@@ -17,10 +17,12 @@ import { Route as CartRouteImport } from './routes/cart'
 import { Route as CookiesRouteImport } from './routes/cookies'
 import { Route as DiscountsRouteImport } from './routes/discounts'
 import { Route as FaqRouteImport } from './routes/faq'
+import { Route as HealthRouteImport } from './routes/health'
 import { Route as OurProcessRouteImport } from './routes/our-process'
 import { Route as PersonalizedGiftsRouteImport } from './routes/personalized-gifts'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as ReturnsRouteImport } from './routes/returns'
+import { Route as RobotsDottxtRouteImport } from './routes/robots[.]txt'
 import { Route as TermsRouteImport } from './routes/terms'
 import { Route as CollectionsIndexRouteImport } from './routes/collections.index'
 import { Route as CollectionsSlugRouteImport } from './routes/collections.$slug'
@@ -67,6 +69,11 @@ const FaqRoute = FaqRouteImport.update({
   path: '/faq',
   getParentRoute: () => rootRouteImport,
 } as any)
+const HealthRoute = HealthRouteImport.update({
+  id: '/health',
+  path: '/health',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const OurProcessRoute = OurProcessRouteImport.update({
   id: '/our-process',
   path: '/our-process',
@@ -85,6 +92,11 @@ const PrivacyRoute = PrivacyRouteImport.update({
 const ReturnsRoute = ReturnsRouteImport.update({
   id: '/returns',
   path: '/returns',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RobotsDottxtRoute = RobotsDottxtRouteImport.update({
+  id: '/robots.txt',
+  path: '/robots.txt',
   getParentRoute: () => rootRouteImport,
 } as any)
 const TermsRoute = TermsRouteImport.update({
@@ -122,10 +134,12 @@ export interface FileRoutesByFullPath {
   '/cookies': typeof CookiesRoute
   '/discounts': typeof DiscountsRoute
   '/faq': typeof FaqRoute
+  '/health': typeof HealthRoute
   '/our-process': typeof OurProcessRoute
   '/personalized-gifts': typeof PersonalizedGiftsRoute
   '/privacy': typeof PrivacyRoute
   '/returns': typeof ReturnsRoute
+  '/robots.txt': typeof RobotsDottxtRoute
   '/terms': typeof TermsRoute
   '/collections/$slug': typeof CollectionsSlugRoute
   '/products/$slug': typeof ProductsSlugRoute
@@ -141,10 +155,12 @@ export interface FileRoutesByTo {
   '/cookies': typeof CookiesRoute
   '/discounts': typeof DiscountsRoute
   '/faq': typeof FaqRoute
+  '/health': typeof HealthRoute
   '/our-process': typeof OurProcessRoute
   '/personalized-gifts': typeof PersonalizedGiftsRoute
   '/privacy': typeof PrivacyRoute
   '/returns': typeof ReturnsRoute
+  '/robots.txt': typeof RobotsDottxtRoute
   '/terms': typeof TermsRoute
   '/collections/$slug': typeof CollectionsSlugRoute
   '/products/$slug': typeof ProductsSlugRoute
@@ -161,10 +177,12 @@ export interface FileRoutesById {
   '/cookies': typeof CookiesRoute
   '/discounts': typeof DiscountsRoute
   '/faq': typeof FaqRoute
+  '/health': typeof HealthRoute
   '/our-process': typeof OurProcessRoute
   '/personalized-gifts': typeof PersonalizedGiftsRoute
   '/privacy': typeof PrivacyRoute
   '/returns': typeof ReturnsRoute
+  '/robots.txt': typeof RobotsDottxtRoute
   '/terms': typeof TermsRoute
   '/collections/$slug': typeof CollectionsSlugRoute
   '/products/$slug': typeof ProductsSlugRoute
@@ -182,10 +200,12 @@ export interface FileRouteTypes {
     | '/cookies'
     | '/discounts'
     | '/faq'
+    | '/health'
     | '/our-process'
     | '/personalized-gifts'
     | '/privacy'
     | '/returns'
+    | '/robots.txt'
     | '/terms'
     | '/collections/$slug'
     | '/products/$slug'
@@ -201,10 +221,12 @@ export interface FileRouteTypes {
     | '/cookies'
     | '/discounts'
     | '/faq'
+    | '/health'
     | '/our-process'
     | '/personalized-gifts'
     | '/privacy'
     | '/returns'
+    | '/robots.txt'
     | '/terms'
     | '/collections/$slug'
     | '/products/$slug'
@@ -220,10 +242,12 @@ export interface FileRouteTypes {
     | '/cookies'
     | '/discounts'
     | '/faq'
+    | '/health'
     | '/our-process'
     | '/personalized-gifts'
     | '/privacy'
     | '/returns'
+    | '/robots.txt'
     | '/terms'
     | '/collections/$slug'
     | '/products/$slug'
@@ -240,10 +264,12 @@ export interface RootRouteChildren {
   CookiesRoute: typeof CookiesRoute
   DiscountsRoute: typeof DiscountsRoute
   FaqRoute: typeof FaqRoute
+  HealthRoute: typeof HealthRoute
   OurProcessRoute: typeof OurProcessRoute
   PersonalizedGiftsRoute: typeof PersonalizedGiftsRoute
   PrivacyRoute: typeof PrivacyRoute
   ReturnsRoute: typeof ReturnsRoute
+  RobotsDottxtRoute: typeof RobotsDottxtRoute
   TermsRoute: typeof TermsRoute
   CollectionsSlugRoute: typeof CollectionsSlugRoute
   ProductsSlugRoute: typeof ProductsSlugRoute
@@ -309,6 +335,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof FaqRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/health': {
+      id: '/health'
+      path: '/health'
+      fullPath: '/health'
+      preLoaderRoute: typeof HealthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/our-process': {
       id: '/our-process'
       path: '/our-process'
@@ -335,6 +368,13 @@ declare module '@tanstack/react-router' {
       path: '/returns'
       fullPath: '/returns'
       preLoaderRoute: typeof ReturnsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/robots.txt': {
+      id: '/robots.txt'
+      path: '/robots.txt'
+      fullPath: '/robots.txt'
+      preLoaderRoute: typeof RobotsDottxtRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/terms': {
@@ -384,10 +424,12 @@ const rootRouteChildren: RootRouteChildren = {
   CookiesRoute: CookiesRoute,
   DiscountsRoute: DiscountsRoute,
   FaqRoute: FaqRoute,
+  HealthRoute: HealthRoute,
   OurProcessRoute: OurProcessRoute,
   PersonalizedGiftsRoute: PersonalizedGiftsRoute,
   PrivacyRoute: PrivacyRoute,
   ReturnsRoute: ReturnsRoute,
+  RobotsDottxtRoute: RobotsDottxtRoute,
   TermsRoute: TermsRoute,
   CollectionsSlugRoute: CollectionsSlugRoute,
   ProductsSlugRoute: ProductsSlugRoute,
@@ -399,10 +441,11 @@ export const routeTree = rootRouteImport
   ._addFileTypes<FileRouteTypes>()
 
 import type { getRouter } from './router.tsx'
-import type { createStart } from '@tanstack/react-start'
+import type { startInstance } from './start.ts'
 declare module '@tanstack/react-start' {
   interface Register {
     ssr: true
     router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
   }
 }

@@ -8,7 +8,7 @@ Build a deliberately simple ecommerce store with:
 
 - a public customer storefront;
 - a secure operational admin area;
-- a warm, craft-led visual identity based on the supplied KnitPrint logo;
+- a warm, craft-led visual identity based on the supplied KnitNPrint logo;
 - a Rust backend;
 - low and predictable server resource usage;
 - features delivered as independent vertical slices;
@@ -20,7 +20,7 @@ the repository only as historical work until a separate cleanup is approved.
 
 ### 1.1 Brand and storefront direction
 
-The store name is **KnitPrint**. The supplied source logo is
+The store name is **KnitNPrint**. The supplied source logo is
 `images/logo.png`. Its yarn, knitted lettering, printed cube, and extruder
 combine handmade craft with digital fabrication; the storefront should feel
 warm, tactile, and contemporary rather than generically technical.
@@ -303,7 +303,7 @@ Build:
 - environment validation;
 - forward SQL migrations and seed commands;
 - admin and storefront layouts;
-- the KnitPrint design tokens, responsive branded header, footer, and storefront
+- the KnitNPrint design tokens, responsive branded header, footer, and storefront
   shell;
 - optimized full and compact logo assets derived from `images/logo.png`;
 - representative responsive homepage sections using seeded placeholder content;

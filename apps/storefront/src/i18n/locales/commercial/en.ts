@@ -1,6 +1,6 @@
 export const commercialEn = {
   'b2b.title': 'Tailored solutions for your business',
-  'b2b.intro': 'Turn your identity into a recognisable brand. At KnitnPrint, we personalise clothing and corporate gifts that strengthen team spirit, elevate events and make an impression on clients and partners.',
+  'b2b.intro': 'Turn your identity into a recognisable brand. At KnitNPrint, we personalise clothing and corporate gifts that strengthen team spirit, elevate events and make an impression on clients and partners.',
   'b2b.minimum': '*Corporate projects are subject to minimum order quantities. Contact us for more information.',
   'b2b.heroEyebrow': 'Made to represent you',
   'b2b.hero1': 'Your brand',
@@ -8,7 +8,7 @@ export const commercialEn = {
   'b2b.hero3': 'detail.',
   'b2b.hero4': '',
   'b2b.partner': 'A trusted partner',
-  'b2b.why': 'Why KnitnPrint?',
+  'b2b.why': 'Why KnitNPrint?',
   'b2b.benefit1Title': 'Dedicated guidance',
   'b2b.benefit1Body': 'A close point of contact to help you choose the right products, finishes and personalisation for your goals.',
   'b2b.benefit2Title': 'Flexibility',

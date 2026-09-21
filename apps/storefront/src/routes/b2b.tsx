@@ -7,7 +7,7 @@ import { useI18n } from '../i18n'
 export const Route = createFileRoute('/b2b')({
   head: () => ({
     meta: [
-      { title: 'B2B — KnitnPrint' },
+      { title: 'B2B — KnitNPrint' },
       { name: 'description', content: 'Personalised clothing and corporate gifts for businesses, associations, teams and events.' },
     ],
   }),

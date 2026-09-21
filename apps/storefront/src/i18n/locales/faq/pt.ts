@@ -1,7 +1,7 @@
 export const faqPt = {
   'faq.eyebrow': 'Estamos aqui para ajudar',
   'faq.title': 'Perguntas frequentes',
-  'faq.intro': 'Tudo o que precisa de saber sobre personalização, encomendas, entregas e cuidados com as suas peças KnitnPrint.',
+  'faq.intro': 'Tudo o que precisa de saber sobre personalização, encomendas, entregas e cuidados com as suas peças KnitNPrint.',
   'faq.findLabel': 'Encontrar uma resposta',
   'faq.searchLabel': 'Como podemos ajudar?',
   'faq.searchPlaceholder': 'Pesquisar perguntas e respostas',

@@ -7,8 +7,8 @@ import { useI18n } from '../i18n'
 export const Route = createFileRoute('/faq')({
   head: () => ({
     meta: [
-      { title: 'Frequently asked questions — KnitnPrint' },
-      { name: 'description', content: 'Answers about KnitnPrint personalisation, products, orders, delivery, returns and B2B projects.' },
+      { title: 'Frequently asked questions — KnitNPrint' },
+      { name: 'description', content: 'Answers about KnitNPrint personalisation, products, orders, delivery, returns and B2B projects.' },
     ],
   }),
   component: FaqPage,
@@ -43,7 +43,7 @@ const faqGroups = [
     questions: [
       { question: 'How do I place an order?', answer: 'Choose your product, select the available options, add your personalisation details and review everything carefully before checkout.' },
       { question: 'Which payment methods do you accept?', answer: 'The payment methods currently available for your order and location are shown securely during checkout.' },
-      { question: 'Is my payment secure?', answer: 'Payments are handled by specialist payment providers. KnitnPrint does not store your complete card details.' },
+      { question: 'Is my payment secure?', answer: 'Payments are handled by specialist payment providers. KnitNPrint does not store your complete card details.' },
       { question: 'Can I use more than one discount code?', answer: 'Unless a promotion states otherwise, discount codes cannot be combined. Enter your code during checkout to confirm whether it applies.' },
       { question: 'Where can I find my order confirmation?', answer: 'We send it to the email address used at checkout. If it is not in your inbox, please check your spam folder before contacting us.' },
     ],

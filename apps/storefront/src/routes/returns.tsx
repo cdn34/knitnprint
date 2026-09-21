@@ -8,10 +8,10 @@ import { returnsEs, returnsPt } from '../i18n/returns-content'
 export const Route = createFileRoute('/returns')({
   head: () => ({
     meta: [
-      { title: 'Exchanges, Returns and Refunds Policy — KnitnPrint' },
+      { title: 'Exchanges, Returns and Refunds Policy — KnitNPrint' },
       {
         name: 'description',
-        content: 'Read the KnitnPrint policy for exchanges, returns and refunds, including the conditions for personalised products.',
+        content: 'Read the KnitNPrint policy for exchanges, returns and refunds, including the conditions for personalised products.',
       },
     ],
   }),
@@ -35,7 +35,7 @@ function ReturnsPage() {
 
           {locale === 'en' ? <>
           <PolicySection number="01" title="Scope">
-            <p>This Exchanges, Returns and Refunds Policy applies to all purchases made from KnitnPrint and sets out the conditions under which customers may request the return or exchange of a product, as well as the corresponding refund.</p>
+            <p>This Exchanges, Returns and Refunds Policy applies to all purchases made from KnitNPrint and sets out the conditions under which customers may request the return or exchange of a product, as well as the corresponding refund.</p>
           </PolicySection>
 
           <PolicySection number="02" title="Non-personalised products">
@@ -51,7 +51,7 @@ function ReturnsPage() {
             </ul>
 
             <h3>2.3 Return costs</h3>
-            <p>The costs associated with returning the product are the responsibility of the customer, except where the return results from an error attributable to KnitnPrint or from a product defect.</p>
+            <p>The costs associated with returning the product are the responsibility of the customer, except where the return results from an error attributable to KnitNPrint or from a product defect.</p>
 
             <h3>2.4 Refund</h3>
             <p>Once the returned product has been received and inspected, the refund will be processed within a maximum of 14 days.</p>
@@ -64,16 +64,16 @@ function ReturnsPage() {
             <p>This exclusion does not affect the customer’s rights where the product has a defect, error or lack of conformity.</p>
 
             <h3>3.2 Eligible circumstances</h3>
-            <p>KnitnPrint will accept complaints concerning personalised products in the following circumstances:</p>
+            <p>KnitNPrint will accept complaints concerning personalised products in the following circumstances:</p>
             <ul>
               <li>Manufacturing defect;</li>
-              <li>A personalisation error attributable to KnitnPrint, including differences from the approved design;</li>
+              <li>A personalisation error attributable to KnitNPrint, including differences from the approved design;</li>
               <li>Damage occurring during transport.</li>
             </ul>
 
             <h3>3.3 Procedure</h3>
             <p>The customer must report the issue within a maximum of five business days after receiving the order, providing photographs of the product and a detailed description of the problem.</p>
-            <p>After reviewing the request, KnitnPrint may propose one of the following solutions, depending on the circumstances:</p>
+            <p>After reviewing the request, KnitNPrint may propose one of the following solutions, depending on the circumstances:</p>
             <ul>
               <li>Replacement of the product;</li>
               <li>A partial or full refund;</li>
@@ -82,20 +82,20 @@ function ReturnsPage() {
           </PolicySection>
 
           <PolicySection number="04" title="Damaged or incorrect products">
-            <p>If the customer receives a damaged product or a product that is different from the one ordered, they must contact KnitnPrint within a maximum of five business days after receiving it.</p>
+            <p>If the customer receives a damaged product or a product that is different from the one ordered, they must contact KnitNPrint within a maximum of five business days after receiving it.</p>
             <p>The request must include:</p>
             <ul>
               <li>Photographs of the product received;</li>
               <li>The order number;</li>
               <li>A detailed description of the problem.</li>
             </ul>
-            <p>Where damage, an error or a lack of conformity attributable to KnitnPrint is confirmed, KnitnPrint will cover the return costs and, as applicable, replace the product or issue the corresponding refund.</p>
+            <p>Where damage, an error or a lack of conformity attributable to KnitNPrint is confirmed, KnitNPrint will cover the return costs and, as applicable, replace the product or issue the corresponding refund.</p>
           </PolicySection>
 
           <PolicySection number="05" title="How to request a return">
             <p>To begin the return process, the customer must:</p>
             <ol>
-              <li>Contact KnitnPrint at <a href="mailto:support@knitnprint.com">support@knitnprint.com</a>;</li>
+              <li>Contact KnitNPrint at <a href="mailto:support@knitnprint.com">support@knitnprint.com</a>;</li>
               <li>Provide the order number and reason for the return;</li>
               <li>Wait for the necessary instructions before sending the product.</li>
             </ol>
@@ -104,11 +104,11 @@ function ReturnsPage() {
 
           <PolicySection number="06" title="Contact us">
             <p>For any questions about exchanges, returns or refunds, please contact:</p>
-            <p>KnitnPrint<br />Email: <a href="mailto:support@knitnprint.com">support@knitnprint.com</a></p>
+            <p>KnitNPrint<br />Email: <a href="mailto:support@knitnprint.com">support@knitnprint.com</a></p>
           </PolicySection>
 
           <PolicySection number="07" title="Changes to this Policy">
-            <p>KnitnPrint reserves the right to update or amend this Policy at any time. Any changes will be published on the website and will take effect from their date of publication.</p>
+            <p>KnitNPrint reserves the right to update or amend this Policy at any time. Any changes will be published on the website and will take effect from their date of publication.</p>
           </PolicySection>
           </> : <LocalizedReturns sections={localized.sections} />}
         </article>
@@ -121,7 +121,7 @@ function ReturnsPage() {
           { question: 'Can I return a personalised product?', answer: 'Personalised products cannot be returned under the right of withdrawal, but this does not affect your rights when an item is faulty, damaged or not as agreed.' },
           { question: 'What should I do if my order arrives damaged?', answer: 'Contact us within five business days with your order number, a description of the issue and clear photographs of the product and packaging.' },
           { question: 'How do I start a return?', answer: 'Email support@knitnprint.com with your order number and reason for the return, then wait for our instructions before sending the product.' },
-          { question: 'Who pays the return shipping costs?', answer: 'Return costs are normally paid by the customer, except when the return results from a KnitnPrint error or a confirmed product defect.' },
+          { question: 'Who pays the return shipping costs?', answer: 'Return costs are normally paid by the customer, except when the return results from a KnitNPrint error or a confirmed product defect.' },
           { question: 'When will I receive my refund?', answer: 'Once an eligible return has been received and inspected, the refund will be processed within a maximum of 14 days.' },
         ] : localized.faqs}
         className="contextual-faqs--policy"

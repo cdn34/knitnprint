@@ -2,13 +2,13 @@ import { execFileSync } from 'node:child_process'
 import { readFile } from 'node:fs/promises'
 
 const schema = new URL('../packages/api-client/src/schema.ts', import.meta.url)
-const openapi = new URL('../openapi/knitprint.json', import.meta.url)
+const openapi = new URL('../openapi/knitnprint.json', import.meta.url)
 const schemaBefore = await readFile(schema, 'utf8')
 const openapiBefore = await readFile(openapi, 'utf8')
 
 execFileSync(
   'cargo',
-  ['run', '-q', '-p', 'knitprint-api', '--bin', 'export_openapi', '--', 'openapi/knitprint.json'],
+  ['run', '-q', '-p', 'knitnprint-api', '--bin', 'export_openapi', '--', 'openapi/knitnprint.json'],
   { stdio: 'inherit' },
 )
 execFileSync('node', ['scripts/generate-api-schema.mjs'], { stdio: 'inherit' })

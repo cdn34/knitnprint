@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
-import type { Product } from '@knitprint/api-client'
+import type { Product } from '@knitnprint/api-client'
 import { useMemo, useState } from 'react'
 import {
   ArrowRight,
@@ -309,7 +309,7 @@ function HomePage() {
 
         <section className="story" id="story">
           <div className="story-mark" aria-hidden="true">
-            <img src="/knitprint-yarn-story-v6.png" alt="" />
+            <img src="/knitnprint-yarn-story-v6.png" alt="" />
           </div>
           <div className="story-copy">
             <p className="eyebrow">{t('home.storyEyebrow')}</p>

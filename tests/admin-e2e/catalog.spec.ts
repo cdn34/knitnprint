@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-const ownerEmail = process.env.E2E_OWNER_EMAIL ?? 'owner@knitprint.local'
+const ownerEmail = process.env.E2E_OWNER_EMAIL ?? 'owner@knitnprint.local'
 const ownerPassword =
   process.env.E2E_OWNER_PASSWORD ?? 'local-development-passphrase'
 
@@ -22,8 +22,8 @@ test('lets an owner manage commercial settings and complete an order journey', a
   await expect(page.getByRole('link', { name: 'Settings' })).toBeVisible()
   const resetSettings = await page.request.post('/api/admin/settings', {
     data: {
-      store_name: 'KnitPrint',
-      support_email: 'hello@knitprint.local',
+      store_name: 'KnitNPrint',
+      support_email: 'hello@knitnprint.local',
       currency: 'EUR',
       tax_enabled: false,
       shipping_zones: [{

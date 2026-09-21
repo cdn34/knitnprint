@@ -25,7 +25,7 @@ use crate::{
     notifications::enqueue_order_confirmation,
 };
 
-const CART_COOKIE: &str = "knitprint_cart";
+const CART_COOKIE: &str = "knitnprint_cart";
 const WEBHOOK_TOLERANCE_SECONDS: i64 = 300;
 const CHECKOUT_LIFETIME_SECONDS: i64 = 35 * 60;
 const ABANDONED_GRACE_SECONDS: i64 = 60 * 60;
@@ -106,8 +106,10 @@ pub enum PaymentConfigError {
     InvalidStorefrontUrl,
     #[error("production Stripe configuration requires HTTPS and a live secret key")]
     UnsafeProductionConfiguration,
-    #[error("Stripe configuration is required in production")]
-    MissingProductionConfiguration,
+    #[error("staging Stripe configuration requires HTTPS and a test secret key")]
+    UnsafeStagingConfiguration,
+    #[error("Stripe configuration is required in staging and production")]
+    MissingDeploymentConfiguration,
 }
 
 impl PaymentService {
@@ -126,10 +128,10 @@ impl PaymentService {
         webhook_secret: Option<&str>,
         storefront_base_url: Option<&str>,
     ) -> Result<Self, PaymentConfigError> {
-        let any_present = secret_key.is_some() || webhook_secret.is_some();
-        if !any_present {
-            return if environment == Environment::Production {
-                Err(PaymentConfigError::MissingProductionConfiguration)
+        let stripe_present = secret_key.is_some() || webhook_secret.is_some();
+        if !stripe_present {
+            return if environment.is_deployed() {
+                Err(PaymentConfigError::MissingDeploymentConfiguration)
             } else {
                 Ok(Self::default())
             };
@@ -158,10 +160,20 @@ impl PaymentService {
         {
             return Err(PaymentConfigError::InvalidStorefrontUrl);
         }
-        if environment == Environment::Production
-            && (!secret_key.starts_with("sk_live_") || !storefront_base_url.starts_with("https://"))
-        {
-            return Err(PaymentConfigError::UnsafeProductionConfiguration);
+        match environment {
+            Environment::Staging
+                if !secret_key.starts_with("sk_test_")
+                    || !storefront_base_url.starts_with("https://") =>
+            {
+                return Err(PaymentConfigError::UnsafeStagingConfiguration);
+            }
+            Environment::Production
+                if !secret_key.starts_with("sk_live_")
+                    || !storefront_base_url.starts_with("https://") =>
+            {
+                return Err(PaymentConfigError::UnsafeProductionConfiguration);
+            }
+            _ => {}
         }
         Ok(Self {
             provider: Some(Arc::new(StripeProvider {
@@ -230,7 +242,7 @@ impl PaymentProvider for StripeProvider {
             let attempt_id = request.attempt_id.to_string();
             let amount = request.amount_minor.to_string();
             let currency = request.currency.to_ascii_lowercase();
-            let description = format!("KnitPrint order {}", request.order_number);
+            let description = format!("KnitNPrint order {}", request.order_number);
             let form = [
                 ("mode", "payment".to_owned()),
                 ("success_url", success_url),
@@ -257,7 +269,7 @@ impl PaymentProvider for StripeProvider {
                 .header("Stripe-Version", STRIPE_API_VERSION)
                 .header(
                     "Idempotency-Key",
-                    format!("knitprint-checkout-{}", request.attempt_id),
+                    format!("knitnprint-checkout-{}", request.attempt_id),
                 )
                 .form(&form)
                 .send()
@@ -320,7 +332,7 @@ impl PaymentProvider for StripeProvider {
                 .header("Stripe-Version", STRIPE_API_VERSION)
                 .header(
                     "Idempotency-Key",
-                    format!("knitprint-refund-{}", request.refund_id),
+                    format!("knitnprint-refund-{}", request.refund_id),
                 )
                 .form(&form)
                 .send()
@@ -1231,12 +1243,37 @@ mod tests {
     use crate::config::Environment;
 
     #[test]
+    fn development_allows_storefront_url_without_stripe_configuration() {
+        let service = PaymentService::from_values(
+            Environment::Development,
+            None,
+            None,
+            Some("http://127.0.0.1:3000"),
+        )
+        .ok()
+        .unwrap();
+
+        assert!(!service.enabled());
+        assert_eq!(
+            PaymentService::from_values(
+                Environment::Development,
+                Some("sk_test_example"),
+                None,
+                Some("http://127.0.0.1:3000"),
+            )
+            .err()
+            .unwrap(),
+            PaymentConfigError::Incomplete
+        );
+    }
+
+    #[test]
     fn production_requires_live_https_stripe_configuration() {
         assert_eq!(
             PaymentService::from_values(Environment::Production, None, None, None)
                 .err()
                 .unwrap(),
-            PaymentConfigError::MissingProductionConfiguration
+            PaymentConfigError::MissingDeploymentConfiguration
         );
         assert_eq!(
             PaymentService::from_values(
@@ -1248,6 +1285,47 @@ mod tests {
             .err()
             .unwrap(),
             PaymentConfigError::UnsafeProductionConfiguration
+        );
+    }
+
+    #[test]
+    fn staging_requires_test_https_stripe_configuration() {
+        assert_eq!(
+            PaymentService::from_values(Environment::Staging, None, None, None)
+                .err()
+                .unwrap(),
+            PaymentConfigError::MissingDeploymentConfiguration
+        );
+        assert_eq!(
+            PaymentService::from_values(
+                Environment::Staging,
+                Some("sk_live_example"),
+                Some("whsec_example"),
+                Some("https://shop.example.com"),
+            )
+            .err()
+            .unwrap(),
+            PaymentConfigError::UnsafeStagingConfiguration
+        );
+        assert_eq!(
+            PaymentService::from_values(
+                Environment::Staging,
+                Some("sk_test_example"),
+                Some("whsec_example"),
+                Some("http://shop.example.com"),
+            )
+            .err()
+            .unwrap(),
+            PaymentConfigError::UnsafeStagingConfiguration
+        );
+        assert!(
+            PaymentService::from_values(
+                Environment::Staging,
+                Some("sk_test_example"),
+                Some("whsec_example"),
+                Some("https://shop.example.com"),
+            )
+            .is_ok()
         );
     }
 
