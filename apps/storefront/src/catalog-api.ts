@@ -6,18 +6,11 @@ import {
 } from '@knitnprint/api-client'
 import { createIsomorphicFn } from '@tanstack/react-start'
 
-<<<<<<< HEAD
-const configuredApiBaseUrl = process.env.API_BASE_URL
-const api = createApiClient({
-  baseUrl: configuredApiBaseUrl ?? 'http://127.0.0.1:8080',
-})
-=======
 const apiBaseUrl = createIsomorphicFn()
   .server(() => process.env.API_BASE_URL ?? 'http://127.0.0.1:8080')
   .client(() => '')
 
 const api = createApiClient({ baseUrl: apiBaseUrl() })
->>>>>>> 9dbcd49 (feat: add deployable storefront runtime)
 
 export async function publishedProducts(): Promise<Product[]> {
   try {
@@ -119,11 +112,5 @@ export function productStock(product: Product) {
 }
 
 export function mediaUrl(path: string) {
-<<<<<<< HEAD
-  if (/^https?:\/\//.test(path)) return path
-  if (!configuredApiBaseUrl) return path
-  return `${configuredApiBaseUrl.replace(/\/$/, '')}${path}`
-=======
   return path.startsWith('/') ? path : `/${path}`
->>>>>>> 9dbcd49 (feat: add deployable storefront runtime)
 }

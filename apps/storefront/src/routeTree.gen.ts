@@ -15,12 +15,9 @@ import { Route as AccountRouteImport } from './routes/account'
 import { Route as B2bRouteImport } from './routes/b2b'
 import { Route as CartRouteImport } from './routes/cart'
 import { Route as CookiesRouteImport } from './routes/cookies'
-<<<<<<< HEAD
 import { Route as DiscountsRouteImport } from './routes/discounts'
 import { Route as FaqRouteImport } from './routes/faq'
-=======
 import { Route as HealthRouteImport } from './routes/health'
->>>>>>> 9dbcd49 (feat: add deployable storefront runtime)
 import { Route as OurProcessRouteImport } from './routes/our-process'
 import { Route as PersonalizedGiftsRouteImport } from './routes/personalized-gifts'
 import { Route as PrivacyRouteImport } from './routes/privacy'
@@ -62,7 +59,6 @@ const CookiesRoute = CookiesRouteImport.update({
   path: '/cookies',
   getParentRoute: () => rootRouteImport,
 } as any)
-<<<<<<< HEAD
 const DiscountsRoute = DiscountsRouteImport.update({
   id: '/discounts',
   path: '/discounts',
@@ -71,11 +67,11 @@ const DiscountsRoute = DiscountsRouteImport.update({
 const FaqRoute = FaqRouteImport.update({
   id: '/faq',
   path: '/faq',
-=======
+  getParentRoute: () => rootRouteImport,
+} as any)
 const HealthRoute = HealthRouteImport.update({
   id: '/health',
   path: '/health',
->>>>>>> 9dbcd49 (feat: add deployable storefront runtime)
   getParentRoute: () => rootRouteImport,
 } as any)
 const OurProcessRoute = OurProcessRouteImport.update({
@@ -136,12 +132,9 @@ export interface FileRoutesByFullPath {
   '/b2b': typeof B2bRoute
   '/cart': typeof CartRoute
   '/cookies': typeof CookiesRoute
-<<<<<<< HEAD
   '/discounts': typeof DiscountsRoute
   '/faq': typeof FaqRoute
-=======
   '/health': typeof HealthRoute
->>>>>>> 9dbcd49 (feat: add deployable storefront runtime)
   '/our-process': typeof OurProcessRoute
   '/personalized-gifts': typeof PersonalizedGiftsRoute
   '/privacy': typeof PrivacyRoute
@@ -160,12 +153,9 @@ export interface FileRoutesByTo {
   '/b2b': typeof B2bRoute
   '/cart': typeof CartRoute
   '/cookies': typeof CookiesRoute
-<<<<<<< HEAD
   '/discounts': typeof DiscountsRoute
   '/faq': typeof FaqRoute
-=======
   '/health': typeof HealthRoute
->>>>>>> 9dbcd49 (feat: add deployable storefront runtime)
   '/our-process': typeof OurProcessRoute
   '/personalized-gifts': typeof PersonalizedGiftsRoute
   '/privacy': typeof PrivacyRoute
@@ -185,12 +175,9 @@ export interface FileRoutesById {
   '/b2b': typeof B2bRoute
   '/cart': typeof CartRoute
   '/cookies': typeof CookiesRoute
-<<<<<<< HEAD
   '/discounts': typeof DiscountsRoute
   '/faq': typeof FaqRoute
-=======
   '/health': typeof HealthRoute
->>>>>>> 9dbcd49 (feat: add deployable storefront runtime)
   '/our-process': typeof OurProcessRoute
   '/personalized-gifts': typeof PersonalizedGiftsRoute
   '/privacy': typeof PrivacyRoute
@@ -211,12 +198,9 @@ export interface FileRouteTypes {
     | '/b2b'
     | '/cart'
     | '/cookies'
-<<<<<<< HEAD
     | '/discounts'
     | '/faq'
-=======
     | '/health'
->>>>>>> 9dbcd49 (feat: add deployable storefront runtime)
     | '/our-process'
     | '/personalized-gifts'
     | '/privacy'
@@ -235,12 +219,9 @@ export interface FileRouteTypes {
     | '/b2b'
     | '/cart'
     | '/cookies'
-<<<<<<< HEAD
     | '/discounts'
     | '/faq'
-=======
     | '/health'
->>>>>>> 9dbcd49 (feat: add deployable storefront runtime)
     | '/our-process'
     | '/personalized-gifts'
     | '/privacy'
@@ -259,12 +240,9 @@ export interface FileRouteTypes {
     | '/b2b'
     | '/cart'
     | '/cookies'
-<<<<<<< HEAD
     | '/discounts'
     | '/faq'
-=======
     | '/health'
->>>>>>> 9dbcd49 (feat: add deployable storefront runtime)
     | '/our-process'
     | '/personalized-gifts'
     | '/privacy'
@@ -284,12 +262,9 @@ export interface RootRouteChildren {
   B2bRoute: typeof B2bRoute
   CartRoute: typeof CartRoute
   CookiesRoute: typeof CookiesRoute
-<<<<<<< HEAD
   DiscountsRoute: typeof DiscountsRoute
   FaqRoute: typeof FaqRoute
-=======
   HealthRoute: typeof HealthRoute
->>>>>>> 9dbcd49 (feat: add deployable storefront runtime)
   OurProcessRoute: typeof OurProcessRoute
   PersonalizedGiftsRoute: typeof PersonalizedGiftsRoute
   PrivacyRoute: typeof PrivacyRoute
@@ -346,7 +321,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CookiesRouteImport
       parentRoute: typeof rootRouteImport
     }
-<<<<<<< HEAD
     '/discounts': {
       id: '/discounts'
       path: '/discounts'
@@ -359,13 +333,13 @@ declare module '@tanstack/react-router' {
       path: '/faq'
       fullPath: '/faq'
       preLoaderRoute: typeof FaqRouteImport
-=======
+      parentRoute: typeof rootRouteImport
+    }
     '/health': {
       id: '/health'
       path: '/health'
       fullPath: '/health'
       preLoaderRoute: typeof HealthRouteImport
->>>>>>> 9dbcd49 (feat: add deployable storefront runtime)
       parentRoute: typeof rootRouteImport
     }
     '/our-process': {
@@ -448,12 +422,9 @@ const rootRouteChildren: RootRouteChildren = {
   B2bRoute: B2bRoute,
   CartRoute: CartRoute,
   CookiesRoute: CookiesRoute,
-<<<<<<< HEAD
   DiscountsRoute: DiscountsRoute,
   FaqRoute: FaqRoute,
-=======
   HealthRoute: HealthRoute,
->>>>>>> 9dbcd49 (feat: add deployable storefront runtime)
   OurProcessRoute: OurProcessRoute,
   PersonalizedGiftsRoute: PersonalizedGiftsRoute,
   PrivacyRoute: PrivacyRoute,

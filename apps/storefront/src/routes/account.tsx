@@ -2,7 +2,7 @@ import {
   ApiError,
   createApiClient,
   type CustomerAccountProfile,
-} from "@knitprint/api-client";
+} from "@knitnprint/api-client";
 import { createFileRoute } from "@tanstack/react-router";
 import {
   ArrowLeft,

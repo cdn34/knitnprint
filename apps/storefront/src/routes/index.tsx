@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
-import type { Product } from '@knitprint/api-client'
+import type { Product } from '@knitnprint/api-client'
 import { useMemo, useState } from 'react'
 import {
   ArrowRight,
