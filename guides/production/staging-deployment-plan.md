@@ -1,5 +1,9 @@
 # On-demand staging deployment for `staging.knitnprint.com`
 
+Execution record: [staging deployment runbook](./staging-deployment-runbook.md). It documents every completed application-preparation and workstation step through the verified Terraform installation.
+
+Identity and credential model: [AWS identities and staging credentials](./aws-identity-and-staging-credentials.md).
+
 ## Summary
 
 Deploy a complete but start/stop-capable staging environment in the existing AWS account:
@@ -33,8 +37,9 @@ Fixed decisions:
 - Region: `eu-west-1`, except the CloudFront ACM certificate in `us-east-1`.
 - DNS remains with the external provider.
 - Infrastructure is defined with Terraform.
-- You execute every Terraform, AWS, Docker, database, DNS-verification, and test command yourself.
-- Commands are presented individually with intent, expected result, and recovery guidance.
+- Codex runs routine read-only AWS audits and local repository checks.
+- You execute reviewed AWS and Terraform commands that create, update, or delete infrastructure.
+- Infrastructure-changing commands are presented with intent, expected result, and recovery guidance.
 - First deployment is performed locally with temporary AWS credentials, not automatically by GitHub Actions.
 - Staging is started and stopped on demand.
 - Database: Single-AZ standard RDS PostgreSQL with explicit start/stop.
@@ -80,6 +85,14 @@ Before provisioning AWS:
   - Serve the Vite SPA from private S3 through CloudFront.
   - Return `index.html` for client-side routes.
   - Add `X-Robots-Tag: noindex, nofollow` and a restrictive `robots.txt`.
+- Add a shared object-storage strategy:
+  - Keep the Vite development server for the admin SPA; upload staging and production admin builds to their private AWS S3 asset buckets.
+  - Use MinIO for uploaded business media in development and test.
+  - Require AWS S3 with task-role credentials in staging and production; reject custom endpoints and static access keys there.
+  - Keep one storage API for presigned upload/download, metadata, read, write, and delete operations.
+  - Route product images, category images, and future customer-customization objects through that API.
+  - Use short-lived presigned PUT URLs for browser uploads.
+  - Use presigned GET URLs only for private assets after authorization; keep published catalog URLs stable for caching.
 - Make the backend image usable for one-off jobs:
   - Build and include API, migration, owner, notification, cleanup, and operations binaries.
   - Allow ECS task definitions to select the binary explicitly.
@@ -112,7 +125,7 @@ WEB_ORIGINS=https://staging.knitnprint.com,https://admin.staging.knitnprint.com
 STOREFRONT_BASE_URL=https://staging.knitnprint.com
 
 S3_REGION=eu-west-1
-S3_BUCKET=<staging-media-bucket>
+S3_BUCKET=knitnprint-staging-media-<aws-account-id>
 MEDIA_SCANNER_ADDRESS=<private-clamav-address>:3310
 MEDIA_SCAN_TIMEOUT_SECONDS=10
 
@@ -142,8 +155,12 @@ STRIPE_WEBHOOK_SECRET
 - Verify identity with `aws sts get-caller-identity`.
 - Audit the current account, SES identities, sandbox state, Route 53 zones, IAM access keys, budgets, and active resources.
 - Enable root MFA and confirm that the root user has no access keys.
-- Create a non-root `knitnprint-staging-deployer` role for Terraform and deployment work.
-- Use temporary role credentials; do not create permanent SES or deployment access keys.
+- Use the temporary `knitnprint-administrator` SSO profile for all manually
+  reviewed Terraform plans and applies. Do not create permanent SES or
+  deployment access keys or a second human staging profile.
+- Later create a small GitHub OIDC role for routine image publication, ECS
+  rollout, migrations, admin asset upload, and CloudFront invalidation. It must
+  not have general Terraform infrastructure access.
 
 The old `us-east-1` SES setup remains untouched during migration. AWS credentials are not intrinsically tied to an SES Region; permissions determine which regional APIs they can call. Any old long-term IAM access key created solely for SES is removed only after its usage is audited and ECS task-role delivery in Ireland succeeds.
 
@@ -157,7 +174,8 @@ Create a small bootstrap stack locally:
 - TLS-only bucket policy.
 - Native Terraform S3 state locking.
 - Separate state keys for DNS prerequisites and staging.
-- Restrict state access to the staging deployer role.
+- Restrict state access to the account root and the Identity Center
+  `AdministratorAccess` role used by the sole human operator.
 
 After the bootstrap apply, initialize the main stacks against the remote backend and confirm a clean plan.
 
@@ -194,10 +212,10 @@ Provision in two Availability Zones:
 
 Security groups:
 
-- ALB: inbound HTTP/HTTPS from the internet.
-- API/storefront tasks: inbound only from the ALB.
-- ClamAV: TCP 3310 only from the API security group.
-- RDS: PostgreSQL only from API and scheduled-task security groups.
+- Load balancer: inbound HTTP/HTTPS from the internet.
+- Shared application tasks: ports 3000 and 8080 from the load balancer, plus
+  internal API port 8080 and ClamAV port 3310 within the same group.
+- RDS: PostgreSQL only from the shared application-task group.
 - No public RDS address.
 - No direct public API task ingress.
 
@@ -205,8 +223,10 @@ Security groups:
 
 Provision:
 
-- Private staging media bucket with encryption, versioning, Block Public Access, TLS-only policy, quarantine/published prefixes, and restricted upload CORS.
-- Private admin-assets bucket with CloudFront Origin Access Control.
+- Private `knitnprint-staging-media-<account-id>` bucket with encryption, versioning, Block Public Access, TLS-only policy, quarantine/published/private prefixes, and restricted upload CORS. Production uses the entirely separate `knitnprint-production-media-<account-id>` bucket and state.
+- Store product images, category images, and future customer-customization objects in that media bucket through the shared object-storage API.
+- Use short-lived signed PUT requests for direct uploads and signed GET requests for authorized private objects. Serve published catalog variants through stable cacheable URLs rather than expiring signatures.
+- Private `knitnprint-staging-admin-assets-<account-id>` bucket with CloudFront Origin Access Control. Production uses a separate `knitnprint-production-admin-assets-<account-id>` bucket.
 - ECR repositories for API and storefront with immutable commit tags and image scanning.
 - Single-AZ RDS PostgreSQL 17 `db.t4g.micro`, 20 GB gp3, encryption, forced TLS, seven-day PITR, deletion protection, and final-snapshot enforcement.
 - Secrets Manager entries for migration/runtime database credentials and Stripe test credentials.
@@ -394,6 +414,10 @@ Documentation delivered with implementation:
 - One existing AWS account continues to hold staging and eventual production resources.
 - Staging may be publicly reachable when started.
 - The admin host is public but protected by application authentication, rate limiting, WAF, secure cookies, and `noindex`; no VPN/IP allowlist is required.
-- The latest “guided raw commands” preference supersedes automatic GitHub deployment. Existing GitHub Actions remain CI-only during the first deployment.
+- The latest “guided raw commands” preference supersedes automatic GitHub deployment during initial provisioning. Existing GitHub Actions remain CI-only until a small routine-release OIDC role is reviewed.
+- Human staging and production infrastructure changes may use temporary
+  administrator SSO sessions with saved-plan review. Runtime and automated
+  release roles remain least privilege; do not build a huge action-by-action
+  human Terraform policy merely to avoid clearly identified temporary admin use.
 - SES `us-east-1` remains operational until `eu-west-1` sending is proven; nothing is “moved” or deleted in place.
 - SES production access in Ireland is requested only after the public staging site, DKIM, suppression handling, and staging recipient allowlist are working.
