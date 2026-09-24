@@ -194,9 +194,9 @@ struct CartOwnership {
     customer_type: Option<String>,
 }
 
-struct CartSession {
-    id: Uuid,
-    jar: CookieJar,
+pub(crate) struct CartSession {
+    pub(crate) id: Uuid,
+    pub(crate) jar: CookieJar,
 }
 
 enum MutationClaim {
@@ -316,8 +316,17 @@ pub async fn add_item(
         return invalid_customization();
     }
     for media_id in &media_ids {
-        let ready: bool = match sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM media_assets WHERE id=$1 AND status='ready' AND NOT EXISTS (SELECT 1 FROM product_media WHERE media_asset_id=$1))")
-            .bind(media_id).fetch_one(&mut *transaction).await { Ok(value) => value, Err(_) => return unavailable() };
+        let ready: bool = match sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM media_assets WHERE id=$1 AND status='ready' AND personalization_cart_id=$2 AND NOT EXISTS (SELECT 1 FROM product_media WHERE media_asset_id=$1))",
+        )
+        .bind(media_id)
+        .bind(session.id)
+        .fetch_one(&mut *transaction)
+        .await
+        {
+            Ok(value) => value,
+            Err(_) => return unavailable(),
+        };
         if !ready {
             return invalid_customization();
         }
@@ -878,7 +887,7 @@ pub async fn select_shipping_method(
     cart_response(&pool, session).await
 }
 
-async fn resolve_cart(
+pub(crate) async fn resolve_cart(
     pool: &PgPool,
     jar: CookieJar,
     secure: bool,

@@ -181,7 +181,7 @@ function ProductPage() {
               <span><strong>{localizedStock?.label}</strong></span>
             </div>
           )}
-          {product.personalization.mode !== 'none' && stock?.state !== 'sold-out' ? <a className="button button--primary personalization-start-button" href={`/products/${product.slug}/personalize`}>Começa a personalizar</a> : <button
+          {product.personalization.mode !== 'none' && stock?.state !== 'sold-out' ? <a className="button button--primary personalization-start-button" href={`/products/${product.slug}/personalize`}>{t('personalization.start')}</a> : <button
             className="button button--primary"
             type="button"
             disabled={!hydrated || !variant || stock?.state === 'sold-out' || cartState === 'adding'}

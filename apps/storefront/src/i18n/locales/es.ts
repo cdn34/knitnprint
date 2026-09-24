@@ -4,6 +4,7 @@ import { brandEs } from './brand/es'
 import { commercialEs } from './commercial/es'
 import { faqEs } from './faq/es'
 import { legalEs } from './legal/es'
+import { personalizationEs } from '../personalization/es'
 import { cartEs } from './cart/es'
 
 export const es = {
@@ -12,6 +13,7 @@ export const es = {
   ...commercialEs,
   ...faqEs,
   ...legalEs,
+  ...personalizationEs,
   ...cartEs,
   'common.skipToContent': 'Saltar al contenido',
   'common.viewAllFaqs': 'Ver todas las preguntas frecuentes',

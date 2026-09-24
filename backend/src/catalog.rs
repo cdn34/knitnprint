@@ -493,11 +493,24 @@ pub async fn delete(
     let Some(pool) = state.database else {
         return unavailable();
     };
+    let mut tx = match pool.begin().await {
+        Ok(tx) => tx,
+        Err(_) => return unavailable(),
+    };
+    match sqlx::query_scalar::<_, Uuid>("SELECT id FROM products WHERE id=$1 FOR UPDATE")
+        .bind(product_id)
+        .fetch_optional(&mut *tx)
+        .await
+    {
+        Ok(Some(_)) => {}
+        Ok(None) => return not_found(),
+        Err(_) => return unavailable(),
+    }
     let sold = sqlx::query_scalar::<_, bool>(
         "SELECT EXISTS(SELECT 1 FROM order_lines WHERE product_id=$1)",
     )
     .bind(product_id)
-    .fetch_one(&pool)
+    .fetch_one(&mut *tx)
     .await;
     match sold {
         Ok(true) => {
@@ -513,10 +526,6 @@ pub async fn delete(
         Err(_) => return unavailable(),
         _ => {}
     }
-    let mut tx = match pool.begin().await {
-        Ok(tx) => tx,
-        Err(_) => return unavailable(),
-    };
     if audit(&mut tx, actor.id, "product.delete", product_id, None)
         .await
         .is_err()

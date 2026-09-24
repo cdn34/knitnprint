@@ -4,6 +4,7 @@ import { brandEn } from './brand/en'
 import { commercialEn } from './commercial/en'
 import { faqEn } from './faq/en'
 import { legalEn } from './legal/en'
+import { personalizationEn } from '../personalization/en'
 
 export const en = {
   ...accountEn,
@@ -11,6 +12,7 @@ export const en = {
   ...commercialEn,
   ...faqEn,
   ...legalEn,
+  ...personalizationEn,
   ...cartEn,
   'common.skipToContent': 'Skip to content',
   'common.viewAllFaqs': 'View all FAQs',

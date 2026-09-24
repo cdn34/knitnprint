@@ -4,6 +4,7 @@ import { brandPt } from './brand/pt'
 import { commercialPt } from './commercial/pt'
 import { faqPt } from './faq/pt'
 import { legalPt } from './legal/pt'
+import { personalizationPt } from '../personalization/pt'
 import { cartPt } from './cart/pt'
 
 export const pt = {
@@ -12,6 +13,7 @@ export const pt = {
   ...commercialPt,
   ...faqPt,
   ...legalPt,
+  ...personalizationPt,
   ...cartPt,
   'common.skipToContent': 'Saltar para o conteúdo',
   'common.viewAllFaqs': 'Ver todas as perguntas frequentes',

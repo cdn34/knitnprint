@@ -9,4 +9,3 @@ WHERE text_area_x = 2500
   AND text_area_y = 6500
   AND text_area_width = 5000
   AND text_area_height = 2000;
-

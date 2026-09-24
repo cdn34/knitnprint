@@ -33,19 +33,22 @@ export const Route = createFileRoute('/cart')({
   component: CartPage,
 })
 
-function personalizationSummary(value: unknown, mediaIds: string[]) {
-  if (!value || typeof value !== 'object') return 'Personalizado'
+function personalizationSummary(value: unknown, mediaIds: string[], t: ReturnType<typeof useI18n>['t']) {
+  if (!value || typeof value !== 'object') return t('personalization.summary')
   const customization = value as { areas?: Array<{ view_id?: unknown; photo?: unknown; text?: { content?: unknown } }>; photo?: unknown; text?: { content?: unknown } }
   if (Array.isArray(customization.areas)) {
     const textCount = customization.areas.filter((area) => typeof area.text?.content === 'string').length
     const viewCount = new Set(customization.areas.flatMap((area) => typeof area.view_id === 'string' ? [area.view_id] : [])).size
-    const parts = [viewCount > 1 ? `${viewCount} lados` : '', `${customization.areas.length} área${customization.areas.length === 1 ? '' : 's'}`].filter(Boolean)
-    if (mediaIds.length) parts.push(`${mediaIds.length} fotografia${mediaIds.length === 1 ? '' : 's'}`)
-    if (textCount) parts.push(`${textCount} texto${textCount === 1 ? '' : 's'}`)
-    return `Personalizado · ${parts.join(' · ')}`
+    const parts = [
+      viewCount > 1 ? t('personalization.summarySides', { count: viewCount }) : '',
+      t(customization.areas.length === 1 ? 'personalization.summaryArea' : 'personalization.summaryAreas', { count: customization.areas.length }),
+    ].filter(Boolean)
+    if (mediaIds.length) parts.push(t(mediaIds.length === 1 ? 'personalization.summaryPhoto' : 'personalization.summaryPhotos', { count: mediaIds.length }))
+    if (textCount) parts.push(t(textCount === 1 ? 'personalization.summaryText' : 'personalization.summaryTexts', { count: textCount }))
+    return `${t('personalization.summary')} · ${parts.join(' · ')}`
   }
   const text = customization.text?.content
-  return `Personalizado${mediaIds.length || customization.photo ? ' com fotografia' : ''}${typeof text === 'string' ? ` · “${text}”` : ''}`
+  return `${t('personalization.summary')}${mediaIds.length || customization.photo ? t('personalization.summaryWithPhoto') : ''}${typeof text === 'string' ? ` · “${text}”` : ''}`
 }
 
 function CartPage() {
@@ -334,7 +337,7 @@ function CartPage() {
                     <div className="cart-item-copy">
                       <h3><a href={`/products/${item.product_slug}`}>{item.product_title}</a></h3>
                       <p>{item.variant_title} · {t('cart.sku')} {item.sku}</p>
-                      {Boolean(item.customization) && <p className="cart-item-personalization">{personalizationSummary(item.customization, item.customization_media_asset_ids?.length ? item.customization_media_asset_ids : item.customization_media_asset_id ? [item.customization_media_asset_id] : [])}</p>}
+                      {Boolean(item.customization) && <p className="cart-item-personalization">{personalizationSummary(item.customization, item.customization_media_asset_ids?.length ? item.customization_media_asset_ids : item.customization_media_asset_id ? [item.customization_media_asset_id] : [], t)}</p>}
                       <label>
                         <span>{t('cart.quantity')}</span>
                         <select
