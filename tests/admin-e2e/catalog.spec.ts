@@ -89,8 +89,15 @@ test('lets an owner manage commercial settings and complete an order journey', a
   await expect(discounts.getByRole('spinbutton', { name: 'Percentage' })).toHaveValue('10')
   await discounts.getByLabel('Global usage limit').fill('12')
   await discounts.getByLabel('Audit reason').fill('Correct browser promotion details')
-  await discounts.getByRole('button', { name: 'Save changes' }).click()
-  await expect(discountRecord).toContainText('0 / 12 uses')
+  await Promise.all([
+    page.waitForResponse((response) =>
+      response.request().method() === 'PUT' &&
+      /\/api\/admin\/discounts\/[^/]+$/.test(new URL(response.url()).pathname) &&
+      response.ok(),
+    ),
+    discounts.getByRole('button', { name: 'Save changes' }).click(),
+  ])
+  await expect(discountRecord).toContainText('0 / 12 uses', { timeout: 15_000 })
 
   const categoryName = `Homewares ${unique}`
   const categorySlug = `homewares-${unique}`
@@ -150,8 +157,9 @@ test('lets an owner manage commercial settings and complete an order journey', a
     { name: 'woven-planter-front.png', mimeType: 'image/png', buffer: photoBuffer },
     { name: 'woven-planter-detail.png', mimeType: 'image/png', buffer: photoBuffer },
   ])
+  await expect.poll(() => uploadedPhoto, { timeout: 15_000 }).toBe(2)
+  await expect(product.locator('.product-thumbnail img')).toBeVisible({ timeout: 15_000 })
   page.off('dialog', describePhoto)
-  await expect(product.locator('.product-thumbnail img')).toBeVisible()
 
   await catalog.getByLabel('Search products').fill(`browsercatalog ${unique}`)
   await expect(product).toBeVisible()

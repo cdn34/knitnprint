@@ -69,6 +69,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Install shared PostgreSQL test extensions
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c 'CREATE EXTENSION IF NOT EXISTS citext WITH SCHEMA public'
       - run: cargo test --workspace
       - run: npm run db:migrate
       - run: npm run db:seed
@@ -106,6 +108,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: npm ci
+      - name: Start local object storage
+        run: |
+          docker compose up --detach --wait minio
+          docker compose run --rm minio-init
       - run: npm run db:migrate
       - run: npm run admin:create-owner
       - run: npx playwright install --with-deps chromium
@@ -172,7 +178,7 @@ jobs:
           # SQLx retains its disabled optional MySQL/RSA dependency in Cargo.lock.
           # KnitNPrint enables PostgreSQL only, so this unpatched RSA path is not built.
           ignore: RUSTSEC-2023-0071
-      - uses: aquasecurity/trivy-action@v0.33.1
+      - uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
           scanners: vuln,secret,misconfig
@@ -180,7 +186,7 @@ jobs:
           exit-code: 1
           ignore-unfixed: true
       - run: docker build --tag knitnprint-api:ci --file backend/Dockerfile .
-      - uses: aquasecurity/trivy-action@v0.33.1
+      - uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: knitnprint-api:ci
           severity: CRITICAL,HIGH
