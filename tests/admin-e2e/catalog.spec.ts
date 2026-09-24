@@ -316,7 +316,7 @@ test('lets an owner manage commercial settings and complete an order journey', a
   await expect(page.getByRole('radio', { name: /Default/ })).toBeDisabled()
   await expect(page.getByRole('radio', { name: /Plum/ })).toBeChecked()
   await expect(page.locator('.product-detail-price')).toContainText('46.00')
-  await expect(page.getByRole('status')).toContainText('Only 2 left')
+  await expect(page.getByRole('status')).toContainText('In stock')
 
   await page.locator('.variant-option').filter({ hasText: 'Oat' }).click()
   await expect(page.getByRole('radio', { name: /Oat/ })).toBeChecked()
@@ -328,7 +328,7 @@ test('lets an owner manage commercial settings and complete an order journey', a
   await expect(page.getByRole('radio', { name: /Plum/ })).toBeChecked()
   await expect(page.getByText(`SKU ${plumSku}`)).toBeVisible()
   await expect(page.locator('.product-detail-price')).toContainText('46.00')
-  await expect(page.getByRole('status')).toContainText('Only 2 left')
+  await expect(page.getByRole('status')).toContainText('In stock')
 
   await page.setViewportSize({ width: 390, height: 844 })
   await expect(page.getByRole('radio', { name: /Plum/ })).toBeVisible()
