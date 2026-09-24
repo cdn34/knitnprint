@@ -89,7 +89,7 @@ export const es = {
   'home.piece': 'pieza',
   'home.pieces': 'piezas',
   'home.newCollection': 'Nueva colección',
-  'home.knitprintCollection': 'Colección KnitNPrint',
+  'home.knitnprintCollection': 'Colección KnitNPrint',
   'home.viewCollection': 'Ver colección',
   'home.recentlyAdded': 'Añadido recientemente',
   'home.searchCatalog': 'Buscar en el catálogo',

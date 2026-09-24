@@ -1,4 +1,4 @@
-import type { PersonalizationConfig } from '@knitprint/api-client'
+import type { PersonalizationConfig } from '@knitnprint/api-client'
 import { ImagePlus, Move, ShoppingBag, Type } from 'lucide-react'
 import { type KeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import { cartApi } from '../cart-api'

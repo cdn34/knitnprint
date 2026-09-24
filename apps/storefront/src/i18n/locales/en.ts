@@ -88,7 +88,7 @@ export const en = {
   'home.piece': 'piece',
   'home.pieces': 'pieces',
   'home.newCollection': 'New collection',
-  'home.knitprintCollection': 'KnitNPrint collection',
+  'home.knitnprintCollection': 'KnitNPrint collection',
   'home.viewCollection': 'View collection',
   'home.recentlyAdded': 'Recently added',
   'home.searchCatalog': 'Search the catalog',

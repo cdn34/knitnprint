@@ -1,4 +1,4 @@
-import { ApiError } from '@knitprint/api-client'
+import { ApiError } from '@knitnprint/api-client'
 import { createFileRoute, notFound, redirect } from '@tanstack/react-router'
 import { ArrowLeft, Eye, ShoppingBag } from 'lucide-react'
 import { useState } from 'react'

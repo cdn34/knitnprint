@@ -152,13 +152,12 @@ pub async fn initiate_personalization(
         extension_for(&input.content_type)
     );
     let presigned = storage
-        .client
-        .put_object()
-        .bucket(&storage.bucket)
-        .key(&object_key)
-        .content_type(&input.content_type)
-        .content_length(input.byte_size)
-        .presigned(PresigningConfig::expires_in(Duration::from_secs(300)).expect("valid duration"))
+        .presign_upload(
+            &object_key,
+            &input.content_type,
+            input.byte_size,
+            Duration::from_secs(300),
+        )
         .await;
     let Ok(presigned) = presigned else {
         return unavailable();
@@ -180,7 +179,7 @@ pub async fn initiate_personalization(
         StatusCode::CREATED,
         Json(InitiateUploadResponse {
             id,
-            upload_url: presigned.uri().to_string(),
+            upload_url: presigned,
             method: "PUT".into(),
             expires_in_seconds: 300,
         }),
@@ -472,24 +471,16 @@ pub async fn admin_personalization_asset(
         Ok(None) => return not_found(),
         Err(_) => return unavailable(),
     };
-    let object = storage
-        .client
-        .get_object()
-        .bucket(&storage.bucket)
-        .key(object_key)
-        .send()
-        .await;
+    let object = storage.get(&object_key).await;
     let Ok(object) = object else {
         return not_found();
     };
-    let body = match object.body.collect().await {
-        Ok(body) => body.into_bytes(),
-        Err(_) => return unavailable(),
-    };
-    let mut response = Response::new(Body::from(body));
+    let mut response = Response::new(Body::from(object.bytes));
     response.headers_mut().insert(
         header::CONTENT_TYPE,
-        content_type
+        object
+            .content_type
+            .unwrap_or(content_type)
             .parse()
             .unwrap_or_else(|_| header::HeaderValue::from_static("image/webp")),
     );

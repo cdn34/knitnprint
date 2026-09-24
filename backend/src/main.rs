@@ -51,7 +51,7 @@ async fn main() {
             interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             loop {
                 interval.tick().await;
-                if let Err(error) = knitprint_api::discounts::expire_due(&pool).await {
+                if let Err(error) = knitnprint_api::discounts::expire_due(&pool).await {
                     warn!(%error, "automatic discount expiry failed");
                 }
             }
