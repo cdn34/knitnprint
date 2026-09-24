@@ -137,7 +137,16 @@ jobs:
       - run: cargo run -p knitnprint-api --bin migrate
       - run: cargo run -p knitnprint-api --bin seed
       - run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c 'CREATE DATABASE knitnprint_restore_test'
-      - run: scripts/verify-backup-restore.sh
+      - name: Verify backup restore with PostgreSQL 17 client
+        run: |
+          docker run --rm \
+            --network host \
+            --volume "$PWD:/workspace:ro" \
+            --workdir /workspace \
+            --env DATABASE_URL \
+            --env RESTORE_DATABASE_URL \
+            postgres:17-alpine \
+            sh scripts/verify-backup-restore.sh
       - run: cargo run -p knitnprint-api --bin check_operations
       - name: Start API for bounded load test
         run: |
@@ -160,6 +169,9 @@ jobs:
       - uses: rustsec/audit-check@v2.0.0
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+          # SQLx retains its disabled optional MySQL/RSA dependency in Cargo.lock.
+          # KnitNPrint enables PostgreSQL only, so this unpatched RSA path is not built.
+          ignore: RUSTSEC-2023-0071
       - uses: aquasecurity/trivy-action@v0.33.1
         with:
           scan-type: fs
