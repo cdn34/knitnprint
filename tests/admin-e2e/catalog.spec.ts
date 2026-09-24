@@ -233,6 +233,15 @@ test('lets an owner manage commercial settings and complete an order journey', a
   await inventory.getByRole('button', { name: 'Apply adjustment' }).click()
   await expect(plumInventoryRow).toContainText('2')
 
+  const defaultInventoryRow = inventory
+    .getByRole('button')
+    .filter({ hasText: sku })
+  await defaultInventoryRow.click()
+  await inventory.getByLabel('Quantity change').fill('-5')
+  await inventory.getByLabel('Reason').fill('Clear default variant stock')
+  await inventory.getByRole('button', { name: 'Apply adjustment' }).click()
+  await expect(defaultInventoryRow.locator('.stock-count strong')).toHaveText('0')
+
   await page.getByRole('link', { name: 'Dashboard' }).click()
   const metrics = page.getByRole('region', { name: 'Operational metrics' })
   await expect(metrics).toBeVisible()
