@@ -226,12 +226,41 @@ makes that earlier plan stale.
 
 ## Run the migration task
 
+Do not obtain the migration task-definition ARN from the aggregate Terraform
+output after a targeted apply. `-target` can leave unrelated root outputs
+stale even though the selected resource changed successfully. Resolve the
+latest active revision from ECS, then inspect its image, command, and logging
+configuration before launching it. See the
+[2026-09-26 postmortem](staging/postmortems/2026-09-26-targeted-apply-stale-output.md)
+for the incident and complete verification record.
+
 ```bash
 MIGRATION_TASK_DEFINITION="$(
-  terraform -chdir="${TF_ROOT}" output -json ecs_task_definitions \
-  | jq -r '.database_migration'
+  aws ecs describe-task-definition \
+    --task-definition knitnprint-staging-database-migration \
+    --profile knitnprint-administrator \
+    --region eu-west-1 \
+    --query 'taskDefinition.taskDefinitionArn' \
+    --output text \
+    --no-cli-pager
 )"
 
+printf '%s\n' "${MIGRATION_TASK_DEFINITION}"
+
+aws ecs describe-task-definition \
+  --task-definition "${MIGRATION_TASK_DEFINITION}" \
+  --profile knitnprint-administrator \
+  --region eu-west-1 \
+  --query 'taskDefinition.{arn:taskDefinitionArn,status:status,revision:revision,containers:containerDefinitions[].{name:name,image:image,command:command,log:logConfiguration.options}}' \
+  --output json \
+  --no-cli-pager
+```
+
+Confirm that the task definition is `ACTIVE`, uses the reviewed API digest,
+runs `/usr/local/bin/migrate`, and writes to the expected migration log stream.
+Then launch it:
+
+```bash
 MIGRATION_TASK_ARN="$(
   aws ecs run-task \
     --cluster knitnprint-staging \
