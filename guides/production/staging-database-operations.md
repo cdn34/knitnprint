@@ -33,6 +33,41 @@ NETWORK_CONFIGURATION="$(
 
 Keep that terminal open for the commands below.
 
+## How migration execution works
+
+The backend image contains a dedicated `/usr/local/bin/migrate` executable.
+`sqlx::migrate!` embeds the repository's migration files into that executable
+when the image is built. If a migration file changes after the image build,
+rebuild and republish the image before running the staging task.
+
+The one-off ECS migration task runs inside the staging VPC and receives
+`MIGRATION_DATABASE_URL` from Secrets Manager. It connects to private RDS as
+the restricted `knitnprint_migration` database role; it does not use the RDS
+master identity or the application's runtime identity.
+
+For each run, SQLx:
+
+1. Acquires a PostgreSQL advisory lock so only one migrator can run.
+2. Creates `_sqlx_migrations` if it does not already exist.
+3. Checks previously applied migration versions and checksums.
+4. Walks every forward migration embedded in the binary in version order.
+5. Skips versions already recorded as applied and executes only pending ones.
+6. Records each successful version, checksum, and execution time.
+
+Each normal migration file and its bookkeeping entry run in one transaction.
+If a migration fails, that migration is rolled back, later migrations do not
+run, and the task exits nonzero. Earlier migrations committed by the same run
+remain applied. Do not roll out the new API until the task exits `0` and logs
+`database migrations applied`.
+
+Running `npm run db:migrate` with the local Docker PostgreSQL URL affects only
+the local database. It verifies the migration set but does not change staging.
+For example, if staging records versions 1 through 24 and the image embeds
+versions 1 through 35, the ECS task validates and skips 1 through 24, then
+applies 25 through 35 in order. The previous API revision continues serving
+traffic during this migration-first step, so new migrations must remain
+backward-compatible with it.
+
 ## Create and test a migration
 
 Add the next immutable, sequentially numbered file under `migrations/`. Never
@@ -72,10 +107,19 @@ aws rds wait db-snapshot-available \
   --db-snapshot-identifier "${SNAPSHOT_ID}" \
   --profile knitnprint-administrator \
   --region eu-west-1
+
+aws rds describe-db-snapshots \
+  --db-snapshot-identifier "${SNAPSHOT_ID}" \
+  --profile knitnprint-administrator \
+  --region eu-west-1 \
+  --query 'DBSnapshots[0].Status' \
+  --output text \
+  --no-cli-pager
 ```
 
-Record the snapshot ID. Restoring it creates a separate database instance; it
-is not an instant in-place undo.
+The final command must print `available`. Record the snapshot ID. Restoring it
+creates a separate database instance; it is not an automatic or instant
+in-place undo.
 
 ## Publish the image and register the migration task first
 

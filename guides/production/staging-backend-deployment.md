@@ -52,10 +52,24 @@ docker image inspect "${API_REPOSITORY}:${RELEASE_SHA}" \
   --format '{{.Os}}/{{.Architecture}} {{json .Config.Entrypoint}} {{json .Config.Cmd}} {{.Config.User}}'
 ```
 
-The output should start with `linux/amd64`. The image should run as UID/GID
-`10001` and contain the API plus the operational binaries copied by
-`backend/Dockerfile`. The build uses `--load` because the following steps
-inspect and push the image from the local Docker image store.
+Expected image configuration:
+
+```text
+linux/amd64 null ["/usr/local/bin/knitnprint-api"] 65532:65532
+```
+
+The runtime is Google's distroless `nonroot` image. UID/GID `65532:65532` is
+therefore intentional, and the image does not contain `/bin/sh`. A `null`
+entrypoint is also expected because `backend/Dockerfile` configures the API as
+the image's `CMD`; ECS replaces that command when it runs an operational binary
+such as `migrate`.
+
+The multi-stage `COPY` in `backend/Dockerfile` includes the API, migration
+runner, and other operational binaries. The build fails if any required binary
+is absent. Fully cached Buildx steps are valid because the cache is
+content-addressed; still confirm that the final tag contains the current
+`RELEASE_SHA`. The build uses `--load` because the following steps inspect and
+push the image from the local Docker image store.
 
 ## 3. Push and obtain the immutable digest
 
