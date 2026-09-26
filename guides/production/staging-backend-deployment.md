@@ -4,6 +4,12 @@ The Rust API and its operational commands share one digest-pinned image in
 private ECR. The API runs in the combined ECS application task. Scheduled and
 one-off task definitions also use the same API digest.
 
+ECS does not build this image. Docker Buildx builds it on the release
+workstation, `docker push` publishes it to Amazon ECR, and the Terraform-managed
+ECS task definitions reference the resulting immutable ECR digest. ECS then
+orchestrates the tasks, while Fargate supplies the managed compute that pulls
+the image and runs its containers.
+
 If the release adds a database migration, read
 [staging-database-operations.md](staging-database-operations.md) first and run
 the backward-compatible migration before rolling the API service.

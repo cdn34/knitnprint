@@ -31,6 +31,25 @@ Rust API
   `-- SES eu-west-1
 ```
 
+Container delivery and execution are separate responsibilities:
+
+```text
+Release workstation -> Docker Buildx -> private Amazon ECR
+                                           |
+Terraform -> ECS task definitions ----------+
+                   |
+                   `-> ECS orchestrates tasks -> Fargate runs containers
+
+Admin release -> static build -> private S3 -> CloudFront
+```
+
+Buildx creates the API and storefront images before they reach AWS. ECR stores
+those images but does not build them. ECS task definitions select immutable ECR
+digests and describe how the containers run; ECS services and one-off tasks
+orchestrate their lifecycle. Fargate supplies the managed compute and pulls the
+selected images when ECS starts tasks. The admin application is static and does
+not use ECR, ECS, or Fargate.
+
 Fixed decisions:
 
 - AWS account: the existing shared account.
