@@ -4,6 +4,12 @@ The Rust API and its operational commands share one digest-pinned image in
 private ECR. The API runs in the combined ECS application task. Scheduled and
 one-off task definitions also use the same API digest.
 
+ECS does not build this image. Docker Buildx builds it on the release
+workstation, `docker push` publishes it to Amazon ECR, and the Terraform-managed
+ECS task definitions reference the resulting immutable ECR digest. ECS then
+orchestrates the tasks, while Fargate supplies the managed compute that pulls
+the image and runs its containers.
+
 If the release adds a database migration, read
 [staging-database-operations.md](staging-database-operations.md) first and run
 the backward-compatible migration before rolling the API service.
@@ -30,22 +36,46 @@ the exact source.
 
 ## 2. Build the production image
 
+Confirm that Docker Buildx is available and that a builder is registered:
+
+```bash
+docker buildx version
+docker buildx ls
+```
+
 ```bash
 RELEASE_SHA="$(git rev-parse HEAD)"
 API_REPOSITORY='739863594156.dkr.ecr.eu-west-1.amazonaws.com/knitnprint-staging-api'
 
-docker build \
+docker buildx build \
   --platform linux/amd64 \
   --file backend/Dockerfile \
   --tag "${API_REPOSITORY}:${RELEASE_SHA}" \
+  --load \
   .
 
 docker image inspect "${API_REPOSITORY}:${RELEASE_SHA}" \
-  --format '{{json .Config.Entrypoint}} {{json .Config.Cmd}} {{.Config.User}}'
+  --format '{{.Os}}/{{.Architecture}} {{json .Config.Entrypoint}} {{json .Config.Cmd}} {{.Config.User}}'
 ```
 
-The image should run as UID/GID `10001` and contain the API plus the operational
-binaries copied by `backend/Dockerfile`.
+Expected image configuration:
+
+```text
+linux/amd64 null ["/usr/local/bin/knitnprint-api"] 65532:65532
+```
+
+The runtime is Google's distroless `nonroot` image. UID/GID `65532:65532` is
+therefore intentional, and the image does not contain `/bin/sh`. A `null`
+entrypoint is also expected because `backend/Dockerfile` configures the API as
+the image's `CMD`; ECS replaces that command when it runs an operational binary
+such as `migrate`.
+
+The multi-stage `COPY` in `backend/Dockerfile` includes the API, migration
+runner, and other operational binaries. The build fails if any required binary
+is absent. Fully cached Buildx steps are valid because the cache is
+content-addressed; still confirm that the final tag contains the current
+`RELEASE_SHA`. The build uses `--load` because the following steps inspect and
+push the image from the local Docker image store.
 
 ## 3. Push and obtain the immutable digest
 

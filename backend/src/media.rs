@@ -7,6 +7,7 @@ use axum::{
     http::{StatusCode, header},
     response::{IntoResponse, Response},
 };
+use axum_extra::extract::cookie::CookieJar;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
@@ -14,6 +15,7 @@ use uuid::Uuid;
 use crate::{
     AppState,
     auth::{AuthenticatedStaff, require_capability},
+    carts::resolve_cart,
     error::ErrorBody,
     media_scanner::ScanOutcome,
 };
@@ -48,6 +50,12 @@ pub struct MediaRecord {
     pub product_id: Uuid,
     pub alt_text: String,
     pub position: i32,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct PersonalizationMediaRecord {
+    pub id: Uuid,
+    pub preview_url: String,
 }
 
 struct ProcessedVariant {
@@ -129,6 +137,65 @@ pub async fn initiate(
         .into_response()
 }
 
+#[utoipa::path(post, path = "/api/personalization/uploads", tag = "personalization", request_body = InitiateUploadRequest, responses((status = 201, body = InitiateUploadResponse), (status = 422, body = ErrorBody), (status = 503, body = ErrorBody)))]
+pub async fn initiate_personalization(
+    State(state): State<AppState>,
+    jar: CookieJar,
+    Json(input): Json<InitiateUploadRequest>,
+) -> Response {
+    if !valid_upload(&input) {
+        return invalid_upload();
+    }
+    let (Some(pool), Some(storage)) = (state.database, state.media_storage) else {
+        return unavailable();
+    };
+    let session = match resolve_cart(&pool, jar, state.secure_cookies).await {
+        Ok(session) => session,
+        Err(_) => return unavailable(),
+    };
+    let id = Uuid::now_v7();
+    let object_key = format!(
+        "personalization-quarantine/{id}/original.{}",
+        extension_for(&input.content_type)
+    );
+    let presigned = storage
+        .presign_upload(
+            &object_key,
+            &input.content_type,
+            input.byte_size,
+            Duration::from_secs(300),
+        )
+        .await;
+    let Ok(presigned) = presigned else {
+        return unavailable();
+    };
+    if sqlx::query(
+        "INSERT INTO media_assets (id, object_key, content_type, byte_size, personalization_cart_id) VALUES ($1,$2,$3,$4,$5)",
+    )
+    .bind(id)
+    .bind(object_key)
+    .bind(&input.content_type)
+    .bind(input.byte_size)
+    .bind(session.id)
+    .execute(&pool)
+    .await
+    .is_err()
+    {
+        return unavailable();
+    }
+    (
+        StatusCode::CREATED,
+        session.jar,
+        Json(InitiateUploadResponse {
+            id,
+            upload_url: presigned,
+            method: "PUT".into(),
+            expires_in_seconds: 300,
+        }),
+    )
+        .into_response()
+}
+
 #[utoipa::path(
     post,
     path = "/api/admin/media/uploads/{media_id}/complete",
@@ -153,19 +220,71 @@ pub async fn complete(
     if let Err(response) = require_capability(&actor, MEDIA_UPLOAD) {
         return response.into_response();
     }
-    let alt_text = input.alt_text.trim();
+    let alt_text = input.alt_text.trim().to_owned();
     if alt_text.is_empty() || alt_text.len() > 500 {
         return invalid_upload();
     }
+    complete_upload(
+        state,
+        media_id,
+        Some((input.product_id, alt_text)),
+        UploadOwner::Staff(actor.id),
+    )
+    .await
+}
+
+#[utoipa::path(post, path = "/api/personalization/uploads/{media_id}/complete", params(("media_id" = Uuid, Path)), tag = "personalization", responses((status = 200, body = PersonalizationMediaRecord), (status = 404, body = ErrorBody), (status = 422, body = ErrorBody), (status = 503, body = ErrorBody)))]
+pub async fn complete_personalization(
+    State(state): State<AppState>,
+    jar: CookieJar,
+    Path(media_id): Path<Uuid>,
+) -> Response {
+    let Some(pool) = state.database.as_ref() else {
+        return unavailable();
+    };
+    let session = match resolve_cart(pool, jar, state.secure_cookies).await {
+        Ok(session) => session,
+        Err(_) => return unavailable(),
+    };
+    let response = complete_upload(state, media_id, None, UploadOwner::Cart(session.id)).await;
+    (session.jar, response).into_response()
+}
+
+#[derive(Clone, Copy)]
+enum UploadOwner {
+    Staff(Uuid),
+    Cart(Uuid),
+}
+
+async fn complete_upload(
+    state: AppState,
+    media_id: Uuid,
+    attachment: Option<(Uuid, String)>,
+    owner: UploadOwner,
+) -> Response {
     let (Some(pool), Some(storage)) = (state.database, state.media_storage) else {
         return unavailable();
     };
-    let asset = sqlx::query_as::<_, (String, String, i64)>(
-        "SELECT object_key, content_type, byte_size FROM media_assets WHERE id = $1 AND status = 'pending'",
-    )
-    .bind(media_id)
-    .fetch_optional(&pool)
-    .await;
+    let asset = match owner {
+        UploadOwner::Staff(actor_id) => {
+            sqlx::query_as::<_, (String, String, i64)>(
+                "SELECT object_key, content_type, byte_size FROM media_assets WHERE id = $1 AND status = 'pending' AND created_by_staff_user_id = $2 AND personalization_cart_id IS NULL",
+            )
+            .bind(media_id)
+            .bind(actor_id)
+            .fetch_optional(&pool)
+            .await
+        }
+        UploadOwner::Cart(cart_id) => {
+            sqlx::query_as::<_, (String, String, i64)>(
+                "SELECT object_key, content_type, byte_size FROM media_assets WHERE id = $1 AND status = 'pending' AND personalization_cart_id = $2 AND created_by_staff_user_id IS NULL",
+            )
+            .bind(media_id)
+            .bind(cart_id)
+            .fetch_optional(&pool)
+            .await
+        }
+    };
     let (object_key, content_type, byte_size) = match asset {
         Ok(Some(asset)) => asset,
         Ok(None) => return not_found(),
@@ -189,7 +308,11 @@ pub async fn complete(
     match state.media_scanner.scan(&source).await {
         Ok(ScanOutcome::Clean) => {}
         Ok(ScanOutcome::Infected(signature)) => {
-            return reject_infected(&pool, media_id, actor.id, &signature).await;
+            let actor_id = match owner {
+                UploadOwner::Staff(actor_id) => Some(actor_id),
+                UploadOwner::Cart(_) => None,
+            };
+            return reject_infected(&pool, media_id, actor_id, &signature).await;
         }
         Err(error) => {
             tracing::warn!(media_id = %media_id, %error, "media malware scan failed closed");
@@ -220,15 +343,19 @@ pub async fn complete(
         Ok(transaction) => transaction,
         Err(_) => return unavailable(),
     };
-    let position: i32 = match sqlx::query_scalar(
-        "SELECT COALESCE(max(position) + 1, 0) FROM product_media WHERE product_id = $1",
-    )
-    .bind(input.product_id)
-    .fetch_one(&mut *transaction)
-    .await
-    {
-        Ok(position) => position,
-        Err(_) => return unavailable(),
+    let position: i32 = if let Some((product_id, _)) = &attachment {
+        match sqlx::query_scalar(
+            "SELECT COALESCE(max(position) + 1, 0) FROM product_media WHERE product_id = $1",
+        )
+        .bind(product_id)
+        .fetch_one(&mut *transaction)
+        .await
+        {
+            Ok(position) => position,
+            Err(_) => return unavailable(),
+        }
+    } else {
+        0
     };
     for variant in &variants {
         if sqlx::query(
@@ -257,38 +384,47 @@ pub async fn complete(
         .execute(&mut *transaction)
         .await
         .is_err()
-        || sqlx::query(
-            "INSERT INTO product_media (product_id, media_asset_id, alt_text, position) VALUES ($1, $2, $3, $4)",
-        )
-        .bind(input.product_id)
-        .bind(media_id)
-        .bind(alt_text)
-        .bind(position)
-        .execute(&mut *transaction)
-        .await
-        .is_err()
-        || sqlx::query(
-            r#"
+    {
+        return unavailable();
+    }
+    if let Some((product_id, alt_text)) = &attachment
+        && sqlx::query("INSERT INTO product_media (product_id, media_asset_id, alt_text, position) VALUES ($1, $2, $3, $4)")
+            .bind(product_id).bind(media_id).bind(alt_text).bind(position)
+            .execute(&mut *transaction).await.is_err()
+    { return unavailable(); }
+    if sqlx::query(
+        r#"
             INSERT INTO audit_log (actor_staff_user_id, action, entity_type, entity_id)
             VALUES ($1, 'media.complete', 'media_asset', $2)
             "#,
-        )
-        .bind(actor.id)
-        .bind(media_id.to_string())
-        .execute(&mut *transaction)
-        .await
-        .is_err()
+    )
+    .bind(match owner {
+        UploadOwner::Staff(actor_id) => Some(actor_id),
+        UploadOwner::Cart(_) => None,
+    })
+    .bind(media_id.to_string())
+    .execute(&mut *transaction)
+    .await
+    .is_err()
         || transaction.commit().await.is_err()
     {
         return unavailable();
     }
-    Json(MediaRecord {
-        id: media_id,
-        product_id: input.product_id,
-        alt_text: alt_text.into(),
-        position,
-    })
-    .into_response()
+    if let Some((product_id, alt_text)) = attachment {
+        Json(MediaRecord {
+            id: media_id,
+            product_id,
+            alt_text,
+            position,
+        })
+        .into_response()
+    } else {
+        Json(PersonalizationMediaRecord {
+            id: media_id,
+            preview_url: format!("/api/admin/personalization/media/{media_id}/detail"),
+        })
+        .into_response()
+    }
 }
 
 #[utoipa::path(
@@ -357,6 +493,49 @@ pub async fn public_asset(
     response
 }
 
+#[utoipa::path(get, path = "/api/admin/personalization/media/{media_id}/{variant}", params(("media_id" = Uuid, Path), ("variant" = String, Path)), tag = "admin personalization", responses((status = 200, description = "Processed customer personalization image"), (status = 401, body = ErrorBody), (status = 403, body = ErrorBody), (status = 404, body = ErrorBody)))]
+pub async fn admin_personalization_asset(
+    State(state): State<AppState>,
+    actor: AuthenticatedStaff,
+    Path((media_id, variant)): Path<(Uuid, String)>,
+) -> Response {
+    if let Err(response) = require_capability(&actor, "orders.read") {
+        return response.into_response();
+    }
+    if !matches!(variant.as_str(), "thumbnail" | "detail") {
+        return not_found();
+    }
+    let (Some(pool), Some(storage)) = (state.database, state.media_storage) else {
+        return unavailable();
+    };
+    let asset = sqlx::query_as::<_, (String, String)>(
+        "SELECT mv.object_key, mv.content_type FROM media_assets m JOIN media_variants mv ON mv.media_asset_id=m.id WHERE m.id=$1 AND mv.kind=$2 AND m.status='ready' AND NOT EXISTS (SELECT 1 FROM product_media pm WHERE pm.media_asset_id=m.id) LIMIT 1"
+    ).bind(media_id).bind(&variant).fetch_optional(&pool).await;
+    let (object_key, content_type) = match asset {
+        Ok(Some(asset)) => asset,
+        Ok(None) => return not_found(),
+        Err(_) => return unavailable(),
+    };
+    let object = storage.get(&object_key).await;
+    let Ok(object) = object else {
+        return not_found();
+    };
+    let mut response = Response::new(Body::from(object.bytes));
+    response.headers_mut().insert(
+        header::CONTENT_TYPE,
+        object
+            .content_type
+            .unwrap_or(content_type)
+            .parse()
+            .unwrap_or_else(|_| header::HeaderValue::from_static("image/webp")),
+    );
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        header::HeaderValue::from_static("private, no-store"),
+    );
+    response
+}
+
 fn process_image(source: &[u8]) -> Result<Vec<ProcessedVariant>, image::ImageError> {
     let format = image::guess_format(source)?;
     let dimensions =
@@ -403,7 +582,7 @@ fn declared_format_matches(source: &[u8], content_type: &str) -> bool {
 async fn reject_infected(
     pool: &sqlx::PgPool,
     media_id: Uuid,
-    actor_id: Uuid,
+    actor_id: Option<Uuid>,
     signature: &str,
 ) -> Response {
     let detail = signature.chars().take(200).collect::<String>();

@@ -1,15 +1,15 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/bin/sh
+set -eu
 
 : "${DATABASE_URL:?DATABASE_URL is required}"
 : "${RESTORE_DATABASE_URL:?RESTORE_DATABASE_URL must point to an empty disposable database}"
 
-if [[ "${DATABASE_URL}" == "${RESTORE_DATABASE_URL}" ]]; then
+if [ "${DATABASE_URL}" = "${RESTORE_DATABASE_URL}" ]; then
   echo "source and restore databases must be different" >&2
   exit 2
 fi
 
-backup_file="$(mktemp /tmp/knitnprint-backup-XXXXXX.dump)"
+backup_file="$(mktemp /tmp/knitnprint-backup.XXXXXX)"
 trap 'rm -f "${backup_file}"' EXIT
 
 pg_dump --format=custom --no-owner --no-acl --file="${backup_file}" "${DATABASE_URL}"
@@ -25,7 +25,7 @@ snapshot_query="SELECT json_build_array(
   (SELECT count(*) FROM customers),
   (SELECT count(*) FROM products),
   (SELECT count(*) FROM media_assets),
-  (SELECT count(*) FROM inventory_levels),
+  (SELECT count(*) FROM inventory_items),
   (SELECT count(*) FROM carts),
   (SELECT count(*) FROM orders),
   (SELECT count(*) FROM order_lines),

@@ -4,6 +4,7 @@ import { brandEn } from './brand/en'
 import { commercialEn } from './commercial/en'
 import { faqEn } from './faq/en'
 import { legalEn } from './legal/en'
+import { personalizationEn } from '../personalization/en'
 
 export const en = {
   ...accountEn,
@@ -11,6 +12,7 @@ export const en = {
   ...commercialEn,
   ...faqEn,
   ...legalEn,
+  ...personalizationEn,
   ...cartEn,
   'common.skipToContent': 'Skip to content',
   'common.viewAllFaqs': 'View all FAQs',
@@ -19,8 +21,6 @@ export const en = {
   'common.priceUnavailable': 'Price unavailable',
   'stock.soldOut': 'Sold out',
   'stock.soldOutDetail': 'This option is currently unavailable.',
-  'stock.low': 'Only {count} left',
-  'stock.lowDetail': 'A small number remains in the studio.',
   'stock.available': 'In stock',
   'stock.availableDetail': 'Available from our studio inventory.',
   'shell.announcement': 'Small-batch objects, made slowly in Portugal',
@@ -90,7 +90,7 @@ export const en = {
   'home.piece': 'piece',
   'home.pieces': 'pieces',
   'home.newCollection': 'New collection',
-  'home.knitprintCollection': 'KnitNPrint collection',
+  'home.knitnprintCollection': 'KnitNPrint collection',
   'home.viewCollection': 'View collection',
   'home.recentlyAdded': 'Recently added',
   'home.searchCatalog': 'Search the catalog',

@@ -40,6 +40,21 @@ async fn cleanup() -> Result<(u64, u64), String> {
             FROM media_assets
             WHERE (status = 'pending' AND created_at < now() - make_interval(hours => $1))
                OR status = 'failed'
+               OR (
+                    status = 'ready'
+                    AND created_by_staff_user_id IS NULL
+                    AND personalization_cart_id IS NULL
+                    AND NOT EXISTS (
+                        SELECT 1 FROM cart_lines AS line
+                        WHERE media_assets.id = line.customization_media_asset_id
+                           OR media_assets.id = ANY(line.customization_media_asset_ids)
+                    )
+                    AND NOT EXISTS (
+                        SELECT 1 FROM order_lines AS line
+                        WHERE media_assets.id = line.customization_media_asset_id
+                           OR media_assets.id = ANY(line.customization_media_asset_ids)
+                    )
+               )
             ORDER BY created_at, id
             LIMIT 100
             FOR UPDATE SKIP LOCKED
@@ -87,7 +102,7 @@ async fn cleanup() -> Result<(u64, u64), String> {
         )
         .bind(id.to_string())
         .bind(format!(
-            "Upload remained incomplete for more than {max_age_hours} hours"
+            "Upload was abandoned or remained incomplete for more than {max_age_hours} hours"
         ))
         .execute(&mut *transaction)
         .await

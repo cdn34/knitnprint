@@ -39,6 +39,38 @@ pub struct ChangeDiscountStatusRequest {
     pub reason: String,
 }
 
+#[derive(Deserialize, ToSchema)]
+pub struct UpdateDiscountRequest {
+    pub code: String,
+    pub kind: String,
+    pub value: i64,
+    pub currency: String,
+    #[serde(default)]
+    pub minimum_order_minor: i64,
+    pub starts_at: Option<String>,
+    pub ends_at: Option<String>,
+    pub usage_limit: Option<i64>,
+    pub per_customer_limit: Option<i64>,
+    pub reason: String,
+}
+
+impl From<UpdateDiscountRequest> for CreateDiscountRequest {
+    fn from(input: UpdateDiscountRequest) -> Self {
+        Self {
+            code: input.code,
+            kind: input.kind,
+            value: input.value,
+            currency: input.currency,
+            minimum_order_minor: input.minimum_order_minor,
+            starts_at: input.starts_at,
+            ends_at: input.ends_at,
+            usage_limit: input.usage_limit,
+            per_customer_limit: input.per_customer_limit,
+            reason: input.reason,
+        }
+    }
+}
+
 #[derive(Serialize, ToSchema, FromRow)]
 pub struct Discount {
     pub id: Uuid,
@@ -126,6 +158,9 @@ pub async fn list(State(state): State<AppState>, actor: AuthenticatedStaff) -> R
     let Some(pool) = state.database else {
         return unavailable();
     };
+    if expire_due(&pool).await.is_err() {
+        return unavailable();
+    }
     match discount_records(&pool).await {
         Ok(records) => Json(records).into_response(),
         Err(_) => unavailable(),
@@ -210,6 +245,101 @@ pub async fn create(
 }
 
 #[utoipa::path(
+    put,
+    path = "/api/admin/discounts/{discount_id}",
+    tag = "admin discounts",
+    params(("discount_id" = Uuid, Path)),
+    request_body = UpdateDiscountRequest,
+    responses(
+        (status = 200, body = Discount),
+        (status = 401, body = ErrorBody),
+        (status = 403, body = ErrorBody),
+        (status = 404, body = ErrorBody),
+        (status = 409, body = ErrorBody),
+        (status = 422, body = ErrorBody),
+        (status = 503, body = ErrorBody)
+    )
+)]
+pub async fn update(
+    State(state): State<AppState>,
+    actor: AuthenticatedStaff,
+    Path(discount_id): Path<Uuid>,
+    Json(input): Json<UpdateDiscountRequest>,
+) -> Response {
+    if let Err(response) = require_capability(&actor, DISCOUNTS_MANAGE) {
+        return response.into_response();
+    }
+    let Ok(input) = ValidatedDiscount::new(input.into()) else {
+        return invalid();
+    };
+    let Some(pool) = state.database else {
+        return unavailable();
+    };
+    let mut tx = match pool.begin().await {
+        Ok(tx) => tx,
+        Err(_) => return unavailable(),
+    };
+    let changed = sqlx::query(
+        r#"UPDATE discounts SET
+            code = $2, kind = $3, fixed_amount_minor = $4,
+            percentage_basis_points = $5, currency = $6,
+            minimum_order_minor = $7, starts_at = $8::timestamptz,
+            ends_at = $9::timestamptz, usage_limit = $10,
+            per_customer_limit = $11, updated_at = now()
+        WHERE id = $1"#,
+    )
+    .bind(discount_id)
+    .bind(&input.code)
+    .bind(&input.kind)
+    .bind(input.fixed_amount_minor)
+    .bind(input.percentage_basis_points)
+    .bind(&input.currency)
+    .bind(input.minimum_order_minor)
+    .bind(input.starts_at.as_deref())
+    .bind(input.ends_at.as_deref())
+    .bind(input.usage_limit)
+    .bind(input.per_customer_limit)
+    .execute(&mut *tx)
+    .await;
+    let changed = match changed {
+        Ok(changed) => changed,
+        Err(sqlx::Error::Database(database_error))
+            if database_error.code().as_deref() == Some("23505") =>
+        {
+            return error(
+                StatusCode::CONFLICT,
+                "discount_code_exists",
+                "That discount code already exists.",
+            );
+        }
+        Err(_) => return unavailable(),
+    };
+    if changed.rows_affected() == 0 {
+        return error(
+            StatusCode::NOT_FOUND,
+            "discount_not_found",
+            "The discount was not found.",
+        );
+    }
+    if sqlx::query("INSERT INTO audit_log (actor_staff_user_id,action,entity_type,entity_id,reason,metadata) VALUES ($1,'discount.update','discount',$2,$3,jsonb_build_object('code',$4::text))")
+        .bind(actor.id).bind(discount_id.to_string()).bind(&input.reason).bind(&input.code).execute(&mut *tx).await.is_err()
+        || tx.commit().await.is_err()
+    { return unavailable() }
+    if expire_due(&pool).await.is_err() {
+        return unavailable();
+    }
+    match discount_record(&pool, discount_id).await {
+        Ok(Some(record)) => Json(record).into_response(),
+        Ok(None) => error(
+            StatusCode::NOT_FOUND,
+            "discount_not_found",
+            "The discount was not found.",
+        ),
+        Err(_) => unavailable(),
+    }
+}
+
+#[utoipa::path(
     post,
     path = "/api/admin/discounts/{discount_id}/status",
     tag = "admin discounts",
@@ -249,7 +379,9 @@ pub async fn change_status(
         r#"UPDATE discounts SET status = $2,
              disabled_by_staff_user_id = CASE WHEN $2 = 'disabled' THEN $3 ELSE NULL END,
              disabled_reason = CASE WHEN $2 = 'disabled' THEN $4 ELSE NULL END,
-             updated_at = now() WHERE id = $1"#,
+             updated_at = now()
+           WHERE id = $1
+             AND ($2 = 'disabled' OR ends_at IS NULL OR ends_at > now())"#,
     )
     .bind(discount_id)
     .bind(status)
@@ -261,6 +393,18 @@ pub async fn change_status(
         return unavailable();
     };
     if changed.rows_affected() == 0 {
+        let exists =
+            sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM discounts WHERE id = $1)")
+                .bind(discount_id)
+                .fetch_one(&mut *tx)
+                .await;
+        if matches!(exists, Ok(true)) && input.enabled {
+            return error(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "discount_expired",
+                "An expired discount cannot be enabled until its end date is edited.",
+            );
+        }
         return error(
             StatusCode::NOT_FOUND,
             "discount_not_found",
@@ -278,7 +422,12 @@ pub async fn change_status(
     { return unavailable() }
     match discount_record(&pool, discount_id).await {
         Ok(Some(record)) => Json(record).into_response(),
-        _ => unavailable(),
+        Ok(None) => error(
+            StatusCode::NOT_FOUND,
+            "discount_not_found",
+            "The discount was not found.",
+        ),
+        Err(_) => unavailable(),
     }
 }
 
@@ -450,6 +599,39 @@ async fn evaluate_rule(
         0
     };
     calculate(rule, subtotal_minor, currency, global_count, customer_count)
+}
+
+const AUTOMATIC_EXPIRY_REASON: &str = "Automatically disabled after the end date.";
+
+pub async fn expire_due(pool: &PgPool) -> Result<u64, sqlx::Error> {
+    expire_due_with_executor(pool).await
+}
+
+async fn expire_due_with_executor<'e, E>(executor: E) -> Result<u64, sqlx::Error>
+where
+    E: sqlx::Executor<'e, Database = Postgres>,
+{
+    let result = sqlx::query(
+        r#"WITH expired AS (
+            UPDATE discounts
+               SET status = 'disabled',
+                   disabled_by_staff_user_id = NULL,
+                   disabled_reason = $1,
+                   updated_at = now()
+             WHERE status = 'active'
+               AND ends_at IS NOT NULL
+               AND ends_at <= now()
+         RETURNING id, code, ends_at
+        )
+        INSERT INTO audit_log (action, entity_type, entity_id, reason, metadata)
+        SELECT 'discount.expire', 'discount', id::text, $1,
+               jsonb_build_object('code', code, 'ends_at', ends_at)
+          FROM expired"#,
+    )
+    .bind(AUTOMATIC_EXPIRY_REASON)
+    .execute(executor)
+    .await?;
+    Ok(result.rows_affected())
 }
 
 fn calculate(

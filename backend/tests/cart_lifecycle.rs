@@ -47,6 +47,70 @@ async fn cart_prices_stock_delivery_and_retries_are_server_controlled() {
     assert!(cart_cookie.starts_with("knitnprint_cart="));
     assert_eq!(response_json(empty).await["items"], json!([]));
 
+    let upload_owner = request(&router, "GET", "/api/cart", None, None, None).await;
+    let upload_owner_cookie = response_cookie(&upload_owner);
+    let upload_owner_id = Uuid::parse_str(
+        response_json(upload_owner).await["id"]
+            .as_str()
+            .expect("cart response should include an id"),
+    )
+    .unwrap();
+    let other_cart = request(&router, "GET", "/api/cart", None, None, None).await;
+    let other_cart_cookie = response_cookie(&other_cart);
+    let media_id = Uuid::now_v7();
+    sqlx::query(
+        r#"
+        INSERT INTO media_assets (
+            id, object_key, content_type, byte_size, status, scan_status,
+            scanned_at, completed_at, personalization_cart_id
+        )
+        VALUES ($1, $2, 'image/png', 1, 'ready', 'clean', now(), now(), $3)
+        "#,
+    )
+    .bind(media_id)
+    .bind(format!("personalization-test/{media_id}.png"))
+    .bind(upload_owner_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let product_id: Uuid =
+        sqlx::query_scalar("SELECT product_id FROM product_variants WHERE id = $1")
+            .bind(variant_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    sqlx::query("INSERT INTO product_personalization (product_id, mode) VALUES ($1, 'photo')")
+        .bind(product_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let personalization = json!({
+        "variant_id": variant_id,
+        "quantity": 1,
+        "customization": { "photo": {} },
+        "customization_media_asset_ids": [media_id]
+    });
+    let cross_cart = request(
+        &router,
+        "POST",
+        "/api/cart/items",
+        Some(&other_cart_cookie),
+        Some(personalization.clone()),
+        Some("cross-cart-media-0001"),
+    )
+    .await;
+    assert_eq!(cross_cart.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let owned_media = request(
+        &router,
+        "POST",
+        "/api/cart/items",
+        Some(&upload_owner_cookie),
+        Some(personalization),
+        Some("owned-cart-media-0001"),
+    )
+    .await;
+    assert_eq!(owned_media.status(), StatusCode::CREATED);
+
     let added = request(
         &router,
         "POST",

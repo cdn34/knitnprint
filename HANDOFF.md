@@ -699,14 +699,15 @@ production builds, the 22-test storefront/account browser suite, and all four
 admin browser journeys passed on 2026-08-15. The live npm production audit
 identified two high-severity transitive advisories; the lockfile was advanced
 to `js-yaml` 4.3.1 and `nanoid` 3.3.18, after which the audit reported zero
-vulnerabilities and the frontend checks/builds passed again. The pinned-base,
-non-root API container built successfully and its configured user was verified
-as `10001:10001`. The operational backlog check reported healthy, and live
-local HTTP checks confirmed security headers and hostile-origin rejection. CI
-will run the RustSec/Trivy scans, backup/restore drill, and k6 gate in its clean
-tooling environment. No request was sent to live Stripe, SES, AWS S3, or a
-production malware scanner because their production credentials/services are
-not committed or available locally.
+vulnerabilities and the frontend checks/builds passed again. The then-current
+pinned-base, non-root API container built successfully and its configured user
+was verified as `10001:10001`. The later distroless hardening changed the
+current runtime identity to `65532:65532`. The operational backlog check
+reported healthy, and live local HTTP checks confirmed security headers and
+hostile-origin rejection. CI will run the RustSec/Trivy scans, backup/restore
+drill, and k6 gate in its clean tooling environment. No request was sent to
+live Stripe, SES, AWS S3, or a production malware scanner because their
+production credentials/services are not committed or available locally.
 
 ## Environment notes
 

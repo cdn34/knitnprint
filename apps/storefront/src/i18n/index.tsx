@@ -8,7 +8,7 @@ export type Locale = (typeof supportedLocales)[number]
 
 export const localeLabels: Record<Locale, string> = { en: 'English', pt: 'Português', es: 'Español' }
 const dictionaries: Record<Locale, Record<TranslationKey, string>> = { en, pt, es }
-const STORAGE_KEY = 'knitprint-language'
+const STORAGE_KEY = 'knitnprint-language'
 
 type TranslationValues = Record<string, string | number>
 type I18nContextValue = {

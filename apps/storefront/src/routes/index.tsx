@@ -254,7 +254,7 @@ function HomePage() {
                     : t('home.newCollection')}
                 </span>
                 <span className="category-copy">
-                  <small>{category.isPlaceholder ? t('home.comingSoon') : t('home.knitprintCollection')}</small>
+                  <small>{category.isPlaceholder ? t('home.comingSoon') : t('home.knitnprintCollection')}</small>
                   <strong>{category.name}</strong>
                   <span>{category.description}</span>
                   <em>{t('home.viewCollection')} <ArrowRight size={14} /></em>
@@ -321,10 +321,10 @@ function HomePage() {
           </div>
         </section>
 
-        <section className="why-knitprint" aria-labelledby="why-knitprint-title">
+        <section className="why-knitnprint" aria-labelledby="why-knitnprint-title">
           <div className="home-section-title home-section-title--centered">
             <p className="eyebrow">{t('home.differenceEyebrow')}</p>
-            <h2 id="why-knitprint-title">{t('home.differenceTitle')}</h2>
+            <h2 id="why-knitnprint-title">{t('home.differenceTitle')}</h2>
           </div>
           <div className="benefit-grid">
             <article>

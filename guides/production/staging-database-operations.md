@@ -33,6 +33,88 @@ NETWORK_CONFIGURATION="$(
 
 Keep that terminal open for the commands below.
 
+## ECS, Fargate, and CloudWatch in this stack
+
+Amazon ECS is the container orchestrator and control plane. It stores task
+definitions, starts tasks, and keeps services at their desired task count. A
+task definition is an immutable, versioned blueprint describing container
+images, commands, CPU and memory, secrets, networking, roles, and logging. An
+ECS service maintains long-running tasks such as the API, while `ecs run-task`
+starts a standalone task that may run once and stop.
+
+AWS Fargate is compute capacity for ECS. ECS decides what should run from the
+task definition; Fargate supplies and manages the machines on which those
+containers run, so this repository does not provision an ECS worker fleet of
+EC2 instances. Both the long-running application service and the one-off
+migration task use Fargate.
+
+Amazon ECR is the private container-image registry. It stores images already
+built and pushed from the release workstation; neither ECS nor ECR builds the
+images. ECS task definitions reference immutable ECR digests, and Fargate pulls
+those images when ECS starts a task. The API, storefront, migration,
+notification-worker, and other operational containers use these private
+images. ClamAV also runs on Fargate but uses its separately pinned public image.
+The static admin application is uploaded to private S3 and delivered through
+CloudFront rather than run as a Fargate container.
+
+CloudWatch Logs is the configured destination for container standard output
+and standard error. `aws ecs run-task` is asynchronous and does not attach the
+remote container to the local terminal. `ecs describe-tasks` reports lifecycle
+state and the container exit code, while the `awslogs` driver preserves the
+migration program's messages after its short-lived Fargate task stops.
+
+```text
+Docker Buildx -> image -> ECR
+                           |
+Terraform -> ECS task definition
+                           |-> ECS service -> long-running Fargate task
+                           `-> ecs run-task -> one-off Fargate migration task -> RDS
+                                                  |
+                                                  `-> CloudWatch Logs
+
+Admin build -> private S3 -> CloudFront
+```
+
+See the AWS documentation for
+[ECS task definitions](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task_definitions.html)
+and
+[Fargate task logging](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/fargate-tasks-services.html).
+
+## How migration execution works
+
+The backend image contains a dedicated `/usr/local/bin/migrate` executable.
+`sqlx::migrate!` embeds the repository's migration files into that executable
+when the image is built. If a migration file changes after the image build,
+rebuild and republish the image before running the staging task.
+
+The one-off ECS migration task runs inside the staging VPC and receives
+`MIGRATION_DATABASE_URL` from Secrets Manager. It connects to private RDS as
+the restricted `knitnprint_migration` database role; it does not use the RDS
+master identity or the application's runtime identity.
+
+For each run, SQLx:
+
+1. Acquires a PostgreSQL advisory lock so only one migrator can run.
+2. Creates `_sqlx_migrations` if it does not already exist.
+3. Checks previously applied migration versions and checksums.
+4. Walks every forward migration embedded in the binary in version order.
+5. Skips versions already recorded as applied and executes only pending ones.
+6. Records each successful version, checksum, and execution time.
+
+Each normal migration file and its bookkeeping entry run in one transaction.
+If a migration fails, that migration is rolled back, later migrations do not
+run, and the task exits nonzero. Earlier migrations committed by the same run
+remain applied. Do not roll out the new API until the task exits `0` and logs
+`database migrations applied`.
+
+Running `npm run db:migrate` with the local Docker PostgreSQL URL affects only
+the local database. It verifies the migration set but does not change staging.
+For example, if staging records versions 1 through 24 and the image embeds
+versions 1 through 35, the ECS task validates and skips 1 through 24, then
+applies 25 through 35 in order. The previous API revision continues serving
+traffic during this migration-first step, so new migrations must remain
+backward-compatible with it.
+
 ## Create and test a migration
 
 Add the next immutable, sequentially numbered file under `migrations/`. Never
@@ -72,10 +154,19 @@ aws rds wait db-snapshot-available \
   --db-snapshot-identifier "${SNAPSHOT_ID}" \
   --profile knitnprint-administrator \
   --region eu-west-1
+
+aws rds describe-db-snapshots \
+  --db-snapshot-identifier "${SNAPSHOT_ID}" \
+  --profile knitnprint-administrator \
+  --region eu-west-1 \
+  --query 'DBSnapshots[0].Status' \
+  --output text \
+  --no-cli-pager
 ```
 
-Record the snapshot ID. Restoring it creates a separate database instance; it
-is not an instant in-place undo.
+The final command must print `available`. Record the snapshot ID. Restoring it
+creates a separate database instance; it is not an automatic or instant
+in-place undo.
 
 ## Publish the image and register the migration task first
 
@@ -94,24 +185,82 @@ terraform -chdir="${TF_ROOT}" show -no-color staging-migration-task.tfplan
 sha256sum "${TF_ROOT}/staging-migration-task.tfplan"
 ```
 
-This targeted apply is a deliberate migration-first exception. Review that it
-only registers the migration task revision, then apply it:
+This `-target` is a deliberate migration-first exception. It lets Terraform
+register a new revision of only the migration task definition even though the
+same API digest will eventually update several other task definitions. ECS
+task definitions are immutable, so Terraform replaces the managed resource by
+registering a new revision and deregistering the old revision. It does not
+modify RDS data, start a task, or update the running API service.
+
+Read-only data sources may appear in the plan. The only managed resource change
+must be `aws_ecs_task_definition.database_migration`, whose container image must
+change to the reviewed API digest. The plan must not change the application
+service or task definition, notification worker, scheduler, owner bootstrap,
+RDS, networking, load balancer, S3, or secrets.
+
+`terraform show` renders the saved binary plan for review. The checksum is an
+audit record proving that the file applied later is byte-for-byte identical to
+the file reviewed; Terraform and AWS do not consume the checksum. Do not commit
+saved plan files because they can contain sensitive configuration.
+
+Apply the reviewed targeted plan:
 
 ```bash
 terraform -chdir="${TF_ROOT}" apply staging-migration-task.tfplan
 ```
 
-Immediately after the migration succeeds, create and apply the full backend
-rollout plan so Terraform is not left partially converged.
+The targeted apply only registers the task definition. It does not execute the
+migration. At this temporary checkpoint, the running ECS service still uses
+the old API image while the new migration task definition uses the new image:
+
+```text
+Running application service -> old API task definition and image
+Migration task definition   -> new API image and embedded migrations
+```
+
+Launch and verify the one-off task in the next section. Immediately after it
+succeeds, regenerate, review, and apply the full backend rollout plan so
+Terraform is not left partially converged. Do not reuse a full plan created
+before the targeted apply; the targeted apply changes Terraform state and
+makes that earlier plan stale.
 
 ## Run the migration task
 
+Do not obtain the migration task-definition ARN from the aggregate Terraform
+output after a targeted apply. `-target` can leave unrelated root outputs
+stale even though the selected resource changed successfully. Resolve the
+latest active revision from ECS, then inspect its image, command, and logging
+configuration before launching it. See the
+[2026-09-26 postmortem](staging/postmortems/2026-09-26-targeted-apply-stale-output.md)
+for the incident and complete verification record.
+
 ```bash
 MIGRATION_TASK_DEFINITION="$(
-  terraform -chdir="${TF_ROOT}" output -json ecs_task_definitions \
-  | jq -r '.database_migration'
+  aws ecs describe-task-definition \
+    --task-definition knitnprint-staging-database-migration \
+    --profile knitnprint-administrator \
+    --region eu-west-1 \
+    --query 'taskDefinition.taskDefinitionArn' \
+    --output text \
+    --no-cli-pager
 )"
 
+printf '%s\n' "${MIGRATION_TASK_DEFINITION}"
+
+aws ecs describe-task-definition \
+  --task-definition "${MIGRATION_TASK_DEFINITION}" \
+  --profile knitnprint-administrator \
+  --region eu-west-1 \
+  --query 'taskDefinition.{arn:taskDefinitionArn,status:status,revision:revision,containers:containerDefinitions[].{name:name,image:image,command:command,log:logConfiguration.options}}' \
+  --output json \
+  --no-cli-pager
+```
+
+Confirm that the task definition is `ACTIVE`, uses the reviewed API digest,
+runs `/usr/local/bin/migrate`, and writes to the expected migration log stream.
+Then launch it:
+
+```bash
 MIGRATION_TASK_ARN="$(
   aws ecs run-task \
     --cluster knitnprint-staging \

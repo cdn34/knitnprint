@@ -44,7 +44,7 @@ variable "vpc_cidr" {
 variable "api_image_digest" {
   description = "Immutable OCI index digest for the reviewed staging API image."
   type        = string
-  default     = "sha256:3bfdd65ea94b55306745e061cf043173894dfd712d664ff54062f62f3536f224"
+  default     = "sha256:9da244543d3e6af94fbb855d952c5fa8f67391e306972a277116f83e761a762a"
 
   validation {
     condition     = can(regex("^sha256:[0-9a-f]{64}$", var.api_image_digest))
@@ -55,7 +55,7 @@ variable "api_image_digest" {
 variable "storefront_image_digest" {
   description = "Immutable OCI index digest for the reviewed staging storefront image."
   type        = string
-  default     = "sha256:eaeb06f4a8eca93b264456f665ddeb310f9a42ff87429650e55fd30bd2396589"
+  default     = "sha256:bbff633c84415d43b552458c33f0452c19ddf7ec018d851c249a58ab83850729"
 
   validation {
     condition     = can(regex("^sha256:[0-9a-f]{64}$", var.storefront_image_digest))

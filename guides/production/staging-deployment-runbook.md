@@ -351,33 +351,70 @@ cleanup_payments
 check_operations
 ```
 
-The development-only `seed` binary is intentionally absent, and the container runs as UID/GID `10001`.
+The development-only `seed` binary is intentionally absent. The distroless
+runtime uses its standard non-root UID/GID `65532:65532` and contains no shell.
 
-Build the image:
+For current replays, confirm that Docker Buildx is available and that a builder
+is registered, then build the image for the local Docker image store:
 
 ```bash
-docker build --file backend/Dockerfile --tag knitnprint-api:test .
+docker buildx version
+docker buildx ls
+
+docker buildx build \
+  --file backend/Dockerfile \
+  --tag knitnprint-api:test \
+  --load \
+  .
 ```
 
-Inspect its default process and user, then verify every operational binary:
+Inspect its default process and user:
 
 ```bash
 docker image inspect knitnprint-api:test \
   --format '{{json .Config.Cmd}} {{json .Config.Entrypoint}} {{.Config.User}}'
+```
 
-docker run --rm --entrypoint /bin/sh knitnprint-api:test -c '
-  set -eu
-  test "$(id -u)" = 10001
-  for binary in \
-    knitnprint-api migrate create_owner deliver_notifications \
-    cleanup_sessions cleanup_customers cleanup_carts cleanup_media \
-    cleanup_payments check_operations
-  do
-    test -x "/usr/local/bin/$binary"
-  done
-  test ! -e /usr/local/bin/seed
+Expected output:
+
+```text
+["/usr/local/bin/knitnprint-api"] null 65532:65532
+```
+
+Do not try to verify this image with `/bin/sh`; distroless deliberately omits a
+shell. To inspect the filesystem without starting the container, export a
+temporary container and check its file list from the host:
+
+```bash
+VERIFY_CONTAINER_ID="$(docker create knitnprint-api:test)"
+IMAGE_CONTENTS="$(docker export "${VERIFY_CONTAINER_ID}" | tar -tf -)"
+docker rm "${VERIFY_CONTAINER_ID}" >/dev/null
+
+BINARY_CHECK_FAILED=0
+for binary in \
+  knitnprint-api migrate create_owner deliver_notifications \
+  cleanup_sessions cleanup_customers cleanup_carts cleanup_media \
+  cleanup_payments check_operations
+do
+  if ! printf '%s\n' "${IMAGE_CONTENTS}" | rg -x "usr/local/bin/${binary}" >/dev/null; then
+    printf 'missing operational binary: %s\n' "${binary}" >&2
+    BINARY_CHECK_FAILED=1
+  fi
+done
+
+if printf '%s\n' "${IMAGE_CONTENTS}" | rg -x 'usr/local/bin/seed' >/dev/null; then
+  echo 'development seed binary must not be present' >&2
+  BINARY_CHECK_FAILED=1
+fi
+
+if [ "${BINARY_CHECK_FAILED}" -eq 0 ]; then
   echo operational-binaries-ok
-'
+  unset VERIFY_CONTAINER_ID IMAGE_CONTENTS BINARY_CHECK_FAILED
+else
+  echo operational-binaries-check-failed >&2
+  unset VERIFY_CONTAINER_ID IMAGE_CONTENTS BINARY_CHECK_FAILED
+  false
+fi
 ```
 
 Expected final line:
@@ -571,9 +608,10 @@ ps -ef \
 ### Build and smoke-test the final storefront image
 
 ```bash
-docker build \
+docker buildx build \
   --file apps/storefront/Dockerfile \
   --tag knitnprint-storefront:test \
+  --load \
   .
 
 docker image inspect knitnprint-storefront:test \

@@ -4,6 +4,7 @@ import { brandPt } from './brand/pt'
 import { commercialPt } from './commercial/pt'
 import { faqPt } from './faq/pt'
 import { legalPt } from './legal/pt'
+import { personalizationPt } from '../personalization/pt'
 import { cartPt } from './cart/pt'
 
 export const pt = {
@@ -12,6 +13,7 @@ export const pt = {
   ...commercialPt,
   ...faqPt,
   ...legalPt,
+  ...personalizationPt,
   ...cartPt,
   'common.skipToContent': 'Saltar para o conteúdo',
   'common.viewAllFaqs': 'Ver todas as perguntas frequentes',
@@ -20,8 +22,6 @@ export const pt = {
   'common.priceUnavailable': 'Preço indisponível',
   'stock.soldOut': 'Esgotado',
   'stock.soldOutDetail': 'Esta opção não está disponível neste momento.',
-  'stock.low': 'Apenas {count} disponíveis',
-  'stock.lowDetail': 'Restam poucas unidades no estúdio.',
   'stock.available': 'Em stock',
   'stock.availableDetail': 'Disponível no inventário do nosso estúdio.',
   'shell.announcement': 'Peças em pequenas séries, criadas com tempo em Portugal',
@@ -91,7 +91,7 @@ export const pt = {
   'home.piece': 'peça',
   'home.pieces': 'peças',
   'home.newCollection': 'Nova coleção',
-  'home.knitprintCollection': 'Coleção KnitNPrint',
+  'home.knitnprintCollection': 'Coleção KnitNPrint',
   'home.viewCollection': 'Ver coleção',
   'home.recentlyAdded': 'Adicionado recentemente',
   'home.searchCatalog': 'Pesquisar no catálogo',
