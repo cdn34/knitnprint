@@ -55,7 +55,7 @@ variable "api_image_digest" {
 variable "storefront_image_digest" {
   description = "Immutable OCI index digest for the reviewed staging storefront image."
   type        = string
-  default     = "sha256:eaeb06f4a8eca93b264456f665ddeb310f9a42ff87429650e55fd30bd2396589"
+  default     = "sha256:bbff633c84415d43b552458c33f0452c19ddf7ec018d851c249a58ab83850729"
 
   validation {
     condition     = can(regex("^sha256:[0-9a-f]{64}$", var.storefront_image_digest))
