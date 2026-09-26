@@ -11,3 +11,7 @@ apps/*/.output
 **/.env.*
 !**/.env.example
 commands.md
+**/.terraform
+**/*.tfplan
+**/*.tfstate
+**/*.tfstate.*

@@ -353,10 +353,18 @@ check_operations
 
 The development-only `seed` binary is intentionally absent, and the container runs as UID/GID `10001`.
 
-Build the image:
+For current replays, confirm that Docker Buildx is available and that a builder
+is registered, then build the image for the local Docker image store:
 
 ```bash
-docker build --file backend/Dockerfile --tag knitnprint-api:test .
+docker buildx version
+docker buildx ls
+
+docker buildx build \
+  --file backend/Dockerfile \
+  --tag knitnprint-api:test \
+  --load \
+  .
 ```
 
 Inspect its default process and user, then verify every operational binary:
@@ -571,9 +579,10 @@ ps -ef \
 ### Build and smoke-test the final storefront image
 
 ```bash
-docker build \
+docker buildx build \
   --file apps/storefront/Dockerfile \
   --tag knitnprint-storefront:test \
+  --load \
   .
 
 docker image inspect knitnprint-storefront:test \

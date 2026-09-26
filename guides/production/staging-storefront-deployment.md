@@ -23,22 +23,32 @@ commit SHA identifies the source used for the image.
 
 ## 2. Build and smoke-test the image
 
+Confirm that Docker Buildx is available and that a builder is registered:
+
+```bash
+docker buildx version
+docker buildx ls
+```
+
 ```bash
 RELEASE_SHA="$(git rev-parse HEAD)"
 STOREFRONT_REPOSITORY='739863594156.dkr.ecr.eu-west-1.amazonaws.com/knitnprint-staging-storefront'
 
-docker build \
+docker buildx build \
   --platform linux/amd64 \
   --file apps/storefront/Dockerfile \
   --tag "${STOREFRONT_REPOSITORY}:${RELEASE_SHA}" \
+  --load \
   .
 
 docker image inspect "${STOREFRONT_REPOSITORY}:${RELEASE_SHA}" \
-  --format '{{json .Config.Cmd}} {{.Config.User}}'
+  --format '{{.Os}}/{{.Architecture}} {{json .Config.Cmd}} {{.Config.User}}'
 ```
 
-The configured user should be `knitnprint`. For a fuller local smoke test, use
-the storefront container commands in `local-setup.md`.
+The output should start with `linux/amd64`, and the configured user should be
+`knitnprint`. The build uses `--load` because the following steps inspect,
+smoke-test, and push the image from the local Docker image store. For a fuller
+local smoke test, use the storefront container commands in `local-setup.md`.
 
 ## 3. Push to private ECR
 

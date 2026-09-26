@@ -30,22 +30,32 @@ the exact source.
 
 ## 2. Build the production image
 
+Confirm that Docker Buildx is available and that a builder is registered:
+
+```bash
+docker buildx version
+docker buildx ls
+```
+
 ```bash
 RELEASE_SHA="$(git rev-parse HEAD)"
 API_REPOSITORY='739863594156.dkr.ecr.eu-west-1.amazonaws.com/knitnprint-staging-api'
 
-docker build \
+docker buildx build \
   --platform linux/amd64 \
   --file backend/Dockerfile \
   --tag "${API_REPOSITORY}:${RELEASE_SHA}" \
+  --load \
   .
 
 docker image inspect "${API_REPOSITORY}:${RELEASE_SHA}" \
-  --format '{{json .Config.Entrypoint}} {{json .Config.Cmd}} {{.Config.User}}'
+  --format '{{.Os}}/{{.Architecture}} {{json .Config.Entrypoint}} {{json .Config.Cmd}} {{.Config.User}}'
 ```
 
-The image should run as UID/GID `10001` and contain the API plus the operational
-binaries copied by `backend/Dockerfile`.
+The output should start with `linux/amd64`. The image should run as UID/GID
+`10001` and contain the API plus the operational binaries copied by
+`backend/Dockerfile`. The build uses `--load` because the following steps
+inspect and push the image from the local Docker image store.
 
 ## 3. Push and obtain the immutable digest
 
