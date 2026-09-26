@@ -8,10 +8,7 @@ use thiserror::Error;
 const DEFAULT_API_URL: &str = "https://api.packlink.com/v1/";
 const DEFAULT_ORIGIN_COUNTRY: &str = "PT";
 const DEFAULT_ORIGIN_POSTAL_CODE: &str = "3780-294";
-const DEFAULT_PACKAGE_WIDTH_CM: u16 = 35;
-const DEFAULT_PACKAGE_LENGTH_CM: u16 = 50;
-const DEFAULT_PACKAGE_HEIGHT_CM: u16 = 25;
-const DEFAULT_PACKAGE_WEIGHT_GRAMS: u32 = 500;
+const PACKAGE_CONFIGURATION_STATUS: &str = "configured per product";
 const MAX_PACKAGES_PER_SHIPMENT: usize = 100;
 
 #[derive(Clone, Debug)]
@@ -26,10 +23,6 @@ struct PacklinkConfiguration {
     api_url: Url,
     origin_country: String,
     origin_postal_code: String,
-    package_width_cm: u16,
-    package_length_cm: u16,
-    package_height_cm: u16,
-    package_weight_grams: u32,
     source: Option<String>,
 }
 
@@ -211,30 +204,6 @@ impl PacklinkService {
             2,
             20,
         )?;
-        let package_width_cm = number(
-            "PACKLINK_PACKAGE_WIDTH_CM",
-            DEFAULT_PACKAGE_WIDTH_CM,
-            1,
-            300,
-        )?;
-        let package_length_cm = number(
-            "PACKLINK_PACKAGE_LENGTH_CM",
-            DEFAULT_PACKAGE_LENGTH_CM,
-            1,
-            300,
-        )?;
-        let package_height_cm = number(
-            "PACKLINK_PACKAGE_HEIGHT_CM",
-            DEFAULT_PACKAGE_HEIGHT_CM,
-            1,
-            300,
-        )?;
-        let package_weight_grams = number(
-            "PACKLINK_PACKAGE_WEIGHT_GRAMS",
-            DEFAULT_PACKAGE_WEIGHT_GRAMS,
-            1,
-            1_000_000,
-        )?;
         let source = env::var("PACKLINK_SOURCE")
             .ok()
             .map(|value| value.trim().to_owned())
@@ -251,10 +220,6 @@ impl PacklinkService {
                 api_url,
                 origin_country,
                 origin_postal_code,
-                package_width_cm,
-                package_length_cm,
-                package_height_cm,
-                package_weight_grams,
                 source,
             }),
         })
@@ -276,10 +241,7 @@ impl PacklinkService {
             return PacklinkConfigurationStatus {
                 status: "not_configured".into(),
                 origin: format!("{DEFAULT_ORIGIN_POSTAL_CODE}, {DEFAULT_ORIGIN_COUNTRY}"),
-                package: format!(
-                    "{DEFAULT_PACKAGE_WIDTH_CM} × {DEFAULT_PACKAGE_LENGTH_CM} × {DEFAULT_PACKAGE_HEIGHT_CM} cm · {} kg",
-                    DEFAULT_PACKAGE_WEIGHT_GRAMS as f64 / 1000.0
-                ),
+                package: PACKAGE_CONFIGURATION_STATUS.into(),
             };
         };
         PacklinkConfigurationStatus {
@@ -288,13 +250,7 @@ impl PacklinkService {
                 "{}, {}",
                 configuration.origin_postal_code, configuration.origin_country
             ),
-            package: format!(
-                "{} × {} × {} cm · {} kg",
-                configuration.package_width_cm,
-                configuration.package_length_cm,
-                configuration.package_height_cm,
-                configuration.package_weight_grams as f64 / 1000.0
-            ),
+            package: PACKAGE_CONFIGURATION_STATUS.into(),
         }
     }
 
@@ -492,23 +448,6 @@ fn text(name: &str, fallback: &str, minimum: usize, maximum: usize) -> Result<St
     }
 }
 
-fn number<T>(name: &str, fallback: T, minimum: T, maximum: T) -> Result<T, String>
-where
-    T: std::str::FromStr + PartialOrd + Copy,
-{
-    let value = match env::var(name) {
-        Ok(value) => value
-            .parse::<T>()
-            .map_err(|_| format!("{name} must be a number"))?,
-        Err(_) => fallback,
-    };
-    if value < minimum || value > maximum {
-        Err(format!("{name} is outside the supported range"))
-    } else {
-        Ok(value)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
@@ -616,6 +555,7 @@ mod tests {
         let service = PacklinkService::disabled();
         assert!(!service.enabled());
         assert_eq!(service.status().status, "not_configured");
+        assert_eq!(service.status().package, "configured per product");
     }
 
     #[tokio::test]
@@ -688,10 +628,6 @@ mod tests {
                 api_url: Url::parse(&format!("http://{address}/v1/")).unwrap(),
                 origin_country: "PT".into(),
                 origin_postal_code: "3780-294".into(),
-                package_width_cm: 35,
-                package_length_cm: 50,
-                package_height_cm: 25,
-                package_weight_grams: 500,
                 source: None,
             }),
         };
@@ -710,6 +646,7 @@ mod tests {
                 weight_grams: 1_250,
             },
         ];
+        assert_eq!(service.status().package, "configured per product");
         let quotes = service.quotes("PT", "1000-001", &packages).await.unwrap();
         let request = server.await.unwrap();
 

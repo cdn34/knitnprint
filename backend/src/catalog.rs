@@ -400,7 +400,7 @@ pub async fn create(
     let package_profile =
         match resolve_shipping_package(&pool, input.shipping.package_profile_id).await {
             Ok(profile) => profile,
-            Err(response) => return response,
+            Err(error) => return error.into_response(),
         };
     if input.shipping.configured && package_profile.is_none() {
         return invalid_input();
@@ -555,7 +555,7 @@ pub async fn update(
     let package_profile =
         match resolve_shipping_package(&pool, input.shipping.package_profile_id).await {
             Ok(profile) => profile,
-            Err(response) => return response,
+            Err(error) => return error.into_response(),
         };
     if input.shipping.configured && package_profile.is_none() {
         return invalid_input();
@@ -1778,7 +1778,7 @@ fn valid_shipping_package(input: &ShippingPackageProfileRequest) -> bool {
 async fn resolve_shipping_package(
     pool: &PgPool,
     profile_id: Option<Uuid>,
-) -> Result<Option<ShippingPackageProfile>, Response> {
+) -> Result<Option<ShippingPackageProfile>, ResolveShippingPackageError> {
     let Some(profile_id) = profile_id else {
         return Ok(None);
     };
@@ -1791,8 +1791,22 @@ async fn resolve_shipping_package(
     .await
     {
         Ok(Some(profile)) if profile.active => Ok(Some(profile)),
-        Ok(_) => Err(invalid_input()),
-        Err(_) => Err(unavailable()),
+        Ok(_) => Err(ResolveShippingPackageError::InvalidInput),
+        Err(_) => Err(ResolveShippingPackageError::Unavailable),
+    }
+}
+
+enum ResolveShippingPackageError {
+    InvalidInput,
+    Unavailable,
+}
+
+impl ResolveShippingPackageError {
+    fn into_response(self) -> Response {
+        match self {
+            Self::InvalidInput => invalid_input(),
+            Self::Unavailable => unavailable(),
+        }
     }
 }
 

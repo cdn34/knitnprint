@@ -118,7 +118,7 @@ test('lets an owner manage commercial settings and complete an order journey', a
   await catalog.locator('#product-sku').fill(sku)
   await catalog.getByLabel('Price').fill('42.00')
   await catalog.getByLabel('Stock').fill('5')
-  await catalog.getByLabel(categoryName).check()
+  await catalog.getByRole('checkbox', { name: categoryName }).check()
   await catalog.getByRole('button', { name: 'Create draft' }).click()
 
   const product = catalog.getByRole('article').filter({ hasText: slug })

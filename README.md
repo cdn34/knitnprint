@@ -182,9 +182,11 @@ but never accepts or displays their credentials.
 
 Live Packlink PRO shipping prices replace the flat-rate methods when
 `PACKLINK_API_KEY` is configured on the API server. The default dispatch origin
-is `3780-294, PT` and the default parcel is `35 × 50 × 25 cm` at `500 g`; each
-value can be overridden with the matching `PACKLINK_ORIGIN_*` or
-`PACKLINK_PACKAGE_*` environment variable documented in `backend/.env.example`.
+is `3780-294, PT` and can be overridden with the matching `PACKLINK_ORIGIN_*`
+environment variables documented in `backend/.env.example`. Parcel dimensions,
+empty-package weight, product weight, and units per package are configured in
+the admin catalog; the server composes parcels from those profiles and the cart
+quantity.
 After the customer saves the delivery address, the server requests current
 Packlink services, stores them for 15 minutes, and charges the exact returned
 price. Carrier collection in Anadia and services where the sender takes the
