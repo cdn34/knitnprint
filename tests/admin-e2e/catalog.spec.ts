@@ -333,7 +333,11 @@ test('lets an owner manage commercial settings and complete an order journey', a
   await expect(page.getByRole('button', { name: 'Show product photo 1' })).toHaveAttribute('aria-pressed', 'true')
   await page.getByRole('button', { name: 'Next product photo' }).click()
   await expect(page.getByRole('button', { name: 'Show product photo 2' })).toHaveAttribute('aria-pressed', 'true')
-  await expect(page.getByRole('radio', { name: /Default/ })).toBeDisabled()
+  await expect(page.getByRole('radio', { name: /Default/ })).toBeChecked()
+  await expect(page.locator('.product-detail-price')).toContainText('42.00')
+  await expect(page.getByRole('status')).toContainText('In stock')
+
+  await page.locator('.variant-option').filter({ hasText: 'Plum' }).click()
   await expect(page.getByRole('radio', { name: /Plum/ })).toBeChecked()
   await expect(page.locator('.product-detail-price')).toContainText('46.00')
   await expect(page.getByRole('status')).toContainText('In stock')
