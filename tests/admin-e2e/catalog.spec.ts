@@ -104,6 +104,18 @@ test('lets an owner manage commercial settings and complete an order journey', a
   await page.request.post('/api/admin/categories', {
     data: { name: categoryName, slug: categorySlug, description: '' },
   })
+  const shippingPackageResponse = await page.request.post('/api/admin/shipping-packages', {
+    data: {
+      name: `Browser box ${unique}`,
+      width_cm: 35,
+      length_cm: 50,
+      height_cm: 25,
+      empty_weight_grams: 100,
+      active: true,
+    },
+  })
+  expect(shippingPackageResponse.ok()).toBeTruthy()
+  const shippingPackage = await shippingPackageResponse.json() as { id: string }
   await page.getByRole('link', { name: 'Products' }).click()
 
   const catalog = page.getByRole('region', { name: 'Products' })
@@ -118,8 +130,16 @@ test('lets an owner manage commercial settings and complete an order journey', a
   await catalog.locator('#product-sku').fill(sku)
   await catalog.getByLabel('Price').fill('42.00')
   await catalog.getByLabel('Stock').fill('5')
+  await catalog.getByLabel('Package').selectOption(shippingPackage.id)
   await catalog.getByRole('checkbox', { name: categoryName }).check()
-  await catalog.getByRole('button', { name: 'Create draft' }).click()
+  await Promise.all([
+    page.waitForResponse((response) =>
+      response.request().method() === 'POST' &&
+      new URL(response.url()).pathname === '/api/admin/products' &&
+      response.ok(),
+    ),
+    catalog.getByRole('button', { name: 'Create draft' }).click(),
+  ])
 
   const product = catalog.getByRole('article').filter({ hasText: slug })
   await expect(product).toContainText(title)
