@@ -374,9 +374,13 @@ test('lets an owner manage commercial settings and complete an order journey', a
   await page.getByLabel('City').fill('Lisbon')
   await page.getByLabel('Postal code').fill('1000-008')
   await page.getByRole('button', { name: 'Save delivery details' }).click()
-  await page
-    .getByLabel('Shipping method')
-    .selectOption({ label: 'Express tracked · €12.00' })
+  const shippingMethod = page.getByLabel('Shipping method')
+  const expressShippingId = await shippingMethod
+    .locator('option')
+    .filter({ hasText: 'Express tracked' })
+    .getAttribute('value')
+  expect(expressShippingId).toBeTruthy()
+  await shippingMethod.selectOption(expressShippingId!)
   await page.getByLabel('Discount code').fill(discountCode.toLowerCase())
   await page.getByRole('button', { name: 'Apply', exact: true }).click()
   await expect(page.locator('.cart-summary')).toContainText(discountCode)
