@@ -130,7 +130,7 @@ test('lets an owner manage commercial settings and complete an order journey', a
   await catalog.locator('#product-sku').fill(sku)
   await catalog.getByLabel('Price').fill('42.00')
   await catalog.getByLabel('Stock').fill('5')
-  await catalog.getByLabel('Package').selectOption(shippingPackage.id)
+  await catalog.locator('#shipping-package-profile').selectOption(shippingPackage.id)
   await catalog.getByRole('checkbox', { name: categoryName }).check()
   await Promise.all([
     page.waitForResponse((response) =>
