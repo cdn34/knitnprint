@@ -39,6 +39,10 @@ async fn main() {
             eprintln!("invalid payment configuration: {error}");
             std::process::exit(2);
         });
+    let packlink = knitnprint_api::packlink::PacklinkService::from_env().unwrap_or_else(|error| {
+        eprintln!("invalid Packlink configuration: {error}");
+        std::process::exit(2);
+    });
 
     if deployed && database.is_none() {
         eprintln!("database connection is required in staging and production");
@@ -72,6 +76,7 @@ async fn main() {
             media_scanner,
             email,
             payments,
+            packlink,
             trusted_proxy_hops: config.trusted_proxy_hops,
             secure_cookies: deployed,
             manual_payments_enabled: !deployed,

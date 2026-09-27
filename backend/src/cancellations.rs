@@ -434,7 +434,7 @@ impl ValidatedRefund {
             || input
                 .lines
                 .iter()
-                .any(|line| !(1..=99).contains(&line.quantity))
+                .any(|line| !(1..=100).contains(&line.quantity))
             || !(3..=500).contains(&reason.len())
             || internal_note.len() > 2000
         {

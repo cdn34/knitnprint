@@ -180,6 +180,21 @@ jurisdiction before enabling production tax collection. The Settings page also
 reports whether database, media, email, and payment integrations are configured,
 but never accepts or displays their credentials.
 
+Live Packlink PRO shipping prices replace the flat-rate methods when
+`PACKLINK_API_KEY` is configured on the API server. The default dispatch origin
+is `3780-294, PT` and can be overridden with the matching `PACKLINK_ORIGIN_*`
+environment variables documented in `backend/.env.example`. Parcel dimensions,
+empty-package weight, product weight, and units per package are configured in
+the admin catalog; the server composes parcels from those profiles and the cart
+quantity.
+After the customer saves the delivery address, the server requests current
+Packlink services, stores them for 15 minutes, and charges the exact returned
+price. Carrier collection in Anadia and services where the sender takes the
+parcel to a drop-off point are both offered. Delivery to a recipient parcel shop
+is excluded until the storefront provides a destination pickup-point selector.
+The API key is server-only and must be injected through the runtime secret
+manager rather than committed to the repository.
+
 The admin Dashboard is a live, capability-aware operational projection. Staff
 with order access see paid orders awaiting fulfillment, recent orders, current
 payment failures, recent refunds, and order/revenue totals; staff with inventory

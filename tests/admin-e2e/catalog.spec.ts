@@ -104,6 +104,18 @@ test('lets an owner manage commercial settings and complete an order journey', a
   await page.request.post('/api/admin/categories', {
     data: { name: categoryName, slug: categorySlug, description: '' },
   })
+  const shippingPackageResponse = await page.request.post('/api/admin/shipping-packages', {
+    data: {
+      name: `Browser box ${unique}`,
+      width_cm: 35,
+      length_cm: 50,
+      height_cm: 25,
+      empty_weight_grams: 100,
+      active: true,
+    },
+  })
+  expect(shippingPackageResponse.ok()).toBeTruthy()
+  const shippingPackage = await shippingPackageResponse.json() as { id: string }
   await page.getByRole('link', { name: 'Products' }).click()
 
   const catalog = page.getByRole('region', { name: 'Products' })
@@ -118,8 +130,16 @@ test('lets an owner manage commercial settings and complete an order journey', a
   await catalog.locator('#product-sku').fill(sku)
   await catalog.getByLabel('Price').fill('42.00')
   await catalog.getByLabel('Stock').fill('5')
-  await catalog.getByLabel(categoryName).check()
-  await catalog.getByRole('button', { name: 'Create draft' }).click()
+  await catalog.locator('#shipping-package-profile').selectOption(shippingPackage.id)
+  await catalog.getByRole('checkbox', { name: categoryName }).check()
+  await Promise.all([
+    page.waitForResponse((response) =>
+      response.request().method() === 'POST' &&
+      new URL(response.url()).pathname === '/api/admin/products' &&
+      response.ok(),
+    ),
+    catalog.getByRole('button', { name: 'Create draft' }).click(),
+  ])
 
   const product = catalog.getByRole('article').filter({ hasText: slug })
   await expect(product).toContainText(title)
@@ -313,7 +333,11 @@ test('lets an owner manage commercial settings and complete an order journey', a
   await expect(page.getByRole('button', { name: 'Show product photo 1' })).toHaveAttribute('aria-pressed', 'true')
   await page.getByRole('button', { name: 'Next product photo' }).click()
   await expect(page.getByRole('button', { name: 'Show product photo 2' })).toHaveAttribute('aria-pressed', 'true')
-  await expect(page.getByRole('radio', { name: /Default/ })).toBeDisabled()
+  await expect(page.getByRole('radio', { name: /Default/ })).toBeChecked()
+  await expect(page.locator('.product-detail-price')).toContainText('42.00')
+  await expect(page.getByRole('status')).toContainText('In stock')
+
+  await page.locator('.variant-option').filter({ hasText: 'Plum' }).click()
   await expect(page.getByRole('radio', { name: /Plum/ })).toBeChecked()
   await expect(page.locator('.product-detail-price')).toContainText('46.00')
   await expect(page.getByRole('status')).toContainText('In stock')
@@ -350,9 +374,13 @@ test('lets an owner manage commercial settings and complete an order journey', a
   await page.getByLabel('City').fill('Lisbon')
   await page.getByLabel('Postal code').fill('1000-008')
   await page.getByRole('button', { name: 'Save delivery details' }).click()
-  await page
-    .getByLabel('Shipping method')
-    .selectOption({ label: 'Express tracked · €12.00' })
+  const shippingMethod = page.getByLabel('Shipping method')
+  const expressShippingId = await shippingMethod
+    .locator('option')
+    .filter({ hasText: 'Express tracked' })
+    .getAttribute('value')
+  expect(expressShippingId).toBeTruthy()
+  await shippingMethod.selectOption(expressShippingId!)
   await page.getByLabel('Discount code').fill(discountCode.toLowerCase())
   await page.getByRole('button', { name: 'Apply', exact: true }).click()
   await expect(page.locator('.cart-summary')).toContainText(discountCode)

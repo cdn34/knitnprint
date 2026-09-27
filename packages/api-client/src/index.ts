@@ -69,12 +69,15 @@ export type {
   PersonalizationConfig,
   Product,
   ProductMedia,
+  ReorderCategoriesRequest,
   Refund,
   RefundLine,
   ResetPasswordRequest,
   SelectShippingMethodRequest,
   ShippingMethod,
   ShippingMethodInput,
+  ShippingPackageProfile,
+  ShippingPackageProfileRequest,
   ShippingSelection,
   ShippingZone,
   ShippingZoneInput,
@@ -138,8 +141,11 @@ import type {
   PaymentCheckout,
   PaymentOptions,
   Product,
+  ReorderCategoriesRequest,
   ResetPasswordRequest,
   SelectShippingMethodRequest,
+  ShippingPackageProfile,
+  ShippingPackageProfileRequest,
   StaffProfile,
   StaffRecord,
   UpdateCommercialSettingsRequest,
@@ -336,6 +342,10 @@ export function createApiClient(options: ApiClientOptions = {}) {
         },
         body: JSON.stringify(input),
       }),
+    refreshCartShippingQuotes: () =>
+      send<Cart>('/api/cart/shipping-quotes', {
+        method: 'POST',
+      }),
     setCartDelivery: (input: GuestCustomerRequest, idempotencyKey: string) =>
       send<Cart>('/api/cart/delivery', {
         method: 'POST',
@@ -466,9 +476,36 @@ export function createApiClient(options: ApiClientOptions = {}) {
         body: JSON.stringify(input),
       }),
     listCategories: () => send<Array<Category>>('/api/admin/categories'),
+    listShippingPackages: () =>
+      send<Array<ShippingPackageProfile>>('/api/admin/shipping-packages'),
+    createShippingPackage: (input: ShippingPackageProfileRequest) =>
+      send<ShippingPackageProfile>('/api/admin/shipping-packages', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(input),
+      }),
+    updateShippingPackage: (
+      profileId: string,
+      input: ShippingPackageProfileRequest,
+    ) =>
+      send<ShippingPackageProfile>(`/api/admin/shipping-packages/${profileId}`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(input),
+      }),
+    deleteShippingPackage: (profileId: string) =>
+      send<void>(`/api/admin/shipping-packages/${profileId}`, {
+        method: 'DELETE',
+      }),
     createCategory: (input: CreateCategoryRequest) =>
       send<Category>('/api/admin/categories', {
         method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(input),
+      }),
+    reorderCategories: (input: ReorderCategoriesRequest) =>
+      send<Array<Category>>('/api/admin/categories/order', {
+        method: 'PUT',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(input),
       }),
