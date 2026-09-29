@@ -103,7 +103,6 @@ data "aws_iam_policy_document" "api_task" {
     effect  = "Allow"
     actions = ["ses:SendEmail"]
     resources = [
-      "arn:${data.aws_partition.current.partition}:ses:${var.aws_region}:${local.account_id}:configuration-set/knitnprint-staging-transactional",
       "arn:${data.aws_partition.current.partition}:ses:${var.aws_region}:${local.account_id}:identity/staging.knitnprint.com",
     ]
 
@@ -112,6 +111,21 @@ data "aws_iam_policy_document" "api_task" {
       variable = "ses:FromAddress"
       values   = ["no-reply@staging.knitnprint.com"]
     }
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestedRegion"
+      values   = [var.aws_region]
+    }
+  }
+
+  statement {
+    sid     = "UseStagingTransactionalConfigurationSet"
+    effect  = "Allow"
+    actions = ["ses:SendEmail"]
+    resources = [
+      "arn:${data.aws_partition.current.partition}:ses:${var.aws_region}:${local.account_id}:configuration-set/knitnprint-staging-transactional",
+    ]
 
     condition {
       test     = "StringEquals"

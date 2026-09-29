@@ -257,7 +257,7 @@ impl EmailService {
                 request
                     .send()
                     .await
-                    .map_err(|error| format!("SES send failed: {error}"))?;
+                    .map_err(|error| format!("SES send failed: {error:?}"))?;
                 Ok(())
             }
             Delivery::Disabled => Err("email delivery is not configured".into()),
