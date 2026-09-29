@@ -99,12 +99,10 @@ data "aws_iam_policy_document" "api_task" {
   }
 
   statement {
-    sid     = "SendStagingTransactionalEmail"
-    effect  = "Allow"
-    actions = ["ses:SendEmail"]
-    resources = [
-      "arn:${data.aws_partition.current.partition}:ses:${var.aws_region}:${local.account_id}:identity/staging.knitnprint.com",
-    ]
+    sid       = "SendStagingTransactionalEmail"
+    effect    = "Allow"
+    actions   = ["ses:SendEmail"]
+    resources = ["*"]
 
     condition {
       test     = "StringEquals"
