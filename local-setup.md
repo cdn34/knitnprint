@@ -180,11 +180,46 @@ cleared whenever the API restarts.
 
 ## Send a real email through SES from local development
 
-Stop the API, authenticate to AWS, and restart it with SES enabled. Keep
-`APP_ENV=development`; staging mode rejects local HTTP and MinIO settings.
+On each new computer, install AWS CLI v2 and configure the administrator SSO
+profile once. The setup command is `aws configure sso`; `aws sso login` only
+authenticates an already configured profile. Do not run either command with
+`sudo`.
+
+```bash
+aws --version
+aws configure sso --profile knitnprint-administrator
+```
+
+Use these values in the configuration wizard:
+
+```text
+SSO session name (Recommended):                    knitnprint
+SSO start URL [None]:                               <AWS access portal URL>
+SSO region [None]:                                  us-east-1
+SSO registration scopes [sso:account:access]:       sso:account:access
+AWS account/role:                                   AdministratorAccess
+Default client Region [None]:                       eu-west-1
+CLI default output format (json if not specified):  json
+Profile name [suggested-name]:                      knitnprint-administrator
+```
+
+Get the start URL from **IAM Identity Center → Settings → AWS access
+portal URL**; do not use the ordinary AWS Console URL. See
+[`guides/production/aws-identity-and-staging-credentials.md`](guides/production/aws-identity-and-staging-credentials.md#initial-administrator-cli-profile)
+for the complete identity setup.
+
+After that one-time setup, stop the API, authenticate to AWS, and restart it
+with SES enabled. Repeat `aws sso login` whenever the cached SSO session
+expires. Keep `APP_ENV=development`; staging mode rejects local HTTP and MinIO
+settings.
 
 ```bash
 aws sso login --profile knitnprint-administrator
+
+aws sts get-caller-identity \
+  --profile knitnprint-administrator \
+  --region eu-west-1 \
+  --no-cli-pager
 
 set -a
 source backend/.env
@@ -224,9 +259,11 @@ npm run admin:deliver-notifications
 
 Run it after an order or fulfillment event, or invoke it once per minute while
 testing. For a real inbox delivery, run it with the SES variables from the
-previous section. In development-mailbox mode the worker uses its own temporary
-in-memory mailbox, so its messages are not visible through the separately
-running API's development-email endpoint.
+previous section. If the worker runs in a new terminal, export those variables
+again because shell environment variables are not shared between terminals. In
+development-mailbox mode the worker uses its own temporary in-memory mailbox,
+so its messages are not visible through the separately running API's
+development-email endpoint.
 
 ## Database shell
 
