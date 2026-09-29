@@ -44,7 +44,7 @@ variable "vpc_cidr" {
 variable "api_image_digest" {
   description = "Immutable OCI index digest for the reviewed staging API image."
   type        = string
-  default     = "sha256:20453ba7b64bd376a710a6b46f2d49a97aa45642f400aa55ec20c1b8717d942a"
+  default     = "sha256:52bcec34c6043a4c8d7eedd162bca91515e75a388644bca1bb2f0941e9d326aa"
 
   validation {
     condition     = can(regex("^sha256:[0-9a-f]{64}$", var.api_image_digest))
