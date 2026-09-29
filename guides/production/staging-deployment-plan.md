@@ -87,7 +87,7 @@ Before provisioning AWS:
   - Require S3, ClamAV, and SES configuration.
   - Allow only Stripe `sk_test_` keys; reject live keys in staging.
   - Never run migrations during API startup.
-- Add `EMAIL_RECIPIENT_ALLOWLIST`.
+- Keep `EMAIL_RECIPIENT_ALLOWLIST` available as an optional restriction.
   - Required and non-empty in staging.
   - Accept normalized, exact email addresses.
   - Enforce it centrally for verification, reset, order, and fulfilment email.
@@ -127,7 +127,7 @@ Public configuration additions:
 
 ```text
 APP_ENV=staging
-EMAIL_RECIPIENT_ALLOWLIST=owner@example.com,tester@example.com
+# Optional: EMAIL_RECIPIENT_ALLOWLIST=owner@example.com,tester@example.com
 TRUSTED_PROXY_HOPS=1
 API_BASE_URL=http://internal-api-service:8080
 ```
@@ -150,7 +150,7 @@ MEDIA_SCAN_TIMEOUT_SECONDS=10
 
 EMAIL_DELIVERY=ses
 EMAIL_FROM=no-reply@staging.knitnprint.com
-EMAIL_RECIPIENT_ALLOWLIST=<explicit-test-addresses>
+# Optional: EMAIL_RECIPIENT_ALLOWLIST=<explicit-test-addresses>
 AWS_REGION=eu-west-1
 SES_CONFIGURATION_SET=knitnprint-staging-transactional
 ```
@@ -387,7 +387,7 @@ Application and container gates:
 - Existing Rust, TypeScript, browser, security, migration, and backup tests pass.
 - Both Docker images build and run locally.
 - Storefront browser bundle contains no localhost API URL.
-- Staging mode rejects HTTP URLs, missing database/media/email configuration, live Stripe keys, and empty recipient allowlists.
+- Staging mode rejects HTTP URLs, missing database/media/email configuration, live Stripe keys, and invalid configured recipient allowlists.
 - Production continues to reject test Stripe keys.
 - Runtime database credentials cannot migrate.
 - Cleanup jobs operate without attempting migrations.
@@ -409,8 +409,8 @@ Functional staging acceptance:
 - Unapproved origins and spoofed forwarded IP headers are rejected or safely handled.
 - Clean image upload, scan, publication, and retrieval work.
 - Scanner outage fails media publication closed.
-- Verification and password-reset emails reach allowlisted recipients.
-- Non-allowlisted staging email is blocked before SES.
+- Verification and password-reset emails can reach arbitrary recipients after SES production access is approved.
+- A configured optional allowlist blocks non-matching staging email before SES.
 - SES bounce/complaint test events reach operational alerts.
 - Stripe test checkout, successful payment, cancellation, refund, invalid signature, and duplicate webhook delivery are verified.
 - The unsafe payment cleanup remains disabled.
@@ -439,4 +439,4 @@ Documentation delivered with implementation:
   release roles remain least privilege; do not build a huge action-by-action
   human Terraform policy merely to avoid clearly identified temporary admin use.
 - SES `us-east-1` remains operational until `eu-west-1` sending is proven; nothing is “moved” or deleted in place.
-- SES production access in Ireland is requested only after the public staging site, DKIM, suppression handling, and staging recipient allowlist are working.
+- SES production access in Ireland is requested only after the public staging site, DKIM, suppression handling, and unrestricted staging-recipient policy are reviewed.

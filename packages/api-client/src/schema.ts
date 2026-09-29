@@ -351,6 +351,11 @@ export interface DashboardRefund {
   "status": string
 }
 
+export interface DeleteCustomerAccountRequest {
+  "email": string
+  "reason": string
+}
+
 export interface DisableStaffRequest {
   "reason": string
 }

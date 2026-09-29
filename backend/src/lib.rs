@@ -148,7 +148,10 @@ pub fn app(state: AppState) -> Router {
                 .delete(catalog::shipping_package_delete),
         )
         .route("/api/admin/inventory", get(inventory::list))
-        .route("/api/admin/customers", get(customers::list))
+        .route(
+            "/api/admin/customers",
+            get(customers::list).delete(customers::delete_registered_account),
+        )
         .route("/api/admin/customers/{customer_id}", get(customers::detail))
         .route(
             "/api/admin/customers/{customer_id}/orders",

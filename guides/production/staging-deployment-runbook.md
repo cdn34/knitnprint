@@ -24,7 +24,7 @@ Related documents:
 | --- | --- | --- |
 | Deployment architecture and staging plan | Complete | Commit `47c0120` |
 | `APP_ENV=staging` and KnitNPrint naming correction | Complete | Commit `ed3a125` |
-| Staging email-recipient allowlist | Complete | Commit `4c3ce83` |
+| Optional email-recipient allowlist | Available; intentionally unset in staging | Commit `4c3ce83`, later staging policy change |
 | Deployable storefront Node runtime | Complete | Commit `9dbcd49` |
 | Admin static deployment/indexing policy | Complete | Commit `89ed17b` |
 | Backend operational binaries in runtime image | Complete | Commit `a3bd602` |
@@ -196,17 +196,18 @@ git show --stat ed3a125
 
 ## 3. Restrict staging email recipients
 
-Commit `4c3ce83` added `EMAIL_RECIPIENT_ALLOWLIST`.
+Commit `4c3ce83` added the optional `EMAIL_RECIPIENT_ALLOWLIST`. Staging now
+intentionally leaves it unset so arbitrary recipient addresses can be tested.
 
 The completed behavior is:
 
-- staging refuses startup without a valid, non-empty allowlist;
+- a configured allowlist must be valid and non-empty;
 - addresses are trimmed, normalized to lowercase, deduplicated, and matched exactly;
 - verification, password-reset, order, and fulfilment messages are checked centrally;
 - a blocked recipient is rejected before SES is called;
-- production remains unrestricted unless an allowlist is explicitly configured.
+- staging and production remain unrestricted unless an allowlist is explicitly configured.
 
-Example staging configuration:
+Example configuration when a temporary restriction is desired:
 
 ```text
 APP_ENV=staging

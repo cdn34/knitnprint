@@ -745,6 +745,77 @@
             }
           }
         }
+      },
+      "delete": {
+        "tags": [
+          "admin customers"
+        ],
+        "operationId": "delete_registered_account",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeleteCustomerAccountRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Registered customer account and dependent non-commercial data deleted"
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/admin/customers/{customer_id}": {
@@ -5887,6 +5958,21 @@
             "type": "string"
           },
           "status": {
+            "type": "string"
+          }
+        }
+      },
+      "DeleteCustomerAccountRequest": {
+        "type": "object",
+        "required": [
+          "email",
+          "reason"
+        ],
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "reason": {
             "type": "string"
           }
         }

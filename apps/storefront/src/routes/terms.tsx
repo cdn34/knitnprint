@@ -140,7 +140,7 @@ function TermsPage() {
           <PolicySection number="13" title="Data protection">
             <p>KnitNPrint is committed to protecting its customers’ privacy and acts in accordance with the General Data Protection Regulation (GDPR — EU 2016/679).</p>
             <p>The data collected is used solely to manage orders and communicate with customers.</p>
-            <p>Customers have the right to access, correct or delete their data at any time.</p>
+            <p>Customers may request access, correction or deletion of their data, subject to applicable legal, tax and accounting retention obligations.</p>
           </PolicySection>
 
           <PolicySection number="14" title="Complaints Book">

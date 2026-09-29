@@ -259,15 +259,14 @@ APP_ENV=staging
 STOREFRONT_BASE_URL=https://staging.knitnprint.com
 EMAIL_DELIVERY=ses
 EMAIL_FROM=no-reply@staging.knitnprint.com
-EMAIL_RECIPIENT_ALLOWLIST=owner@example.com,tester@example.com
 AWS_REGION=eu-west-1
 # Optional: SES_CONFIGURATION_SET=knitnprint-staging-transactional
 ```
 
-Addresses are trimmed, normalized to lowercase, deduplicated, and matched
-exactly. Account, order, and fulfilment email outside the staging allowlist is
-rejected before an SES request is made. Production's minimum email
-configuration is:
+`EMAIL_RECIPIENT_ALLOWLIST` remains available as an optional comma-separated
+exact-match restriction, but staging is unrestricted when it is unset. SES
+sandbox restrictions still apply until production access is approved in the
+configured AWS account and Region. Production's minimum email configuration is:
 
 ```bash
 APP_ENV=production

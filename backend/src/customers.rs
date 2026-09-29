@@ -14,9 +14,11 @@ use crate::{
     AppState,
     auth::{AuthenticatedStaff, require_capability},
     error::ErrorBody,
+    login_rate_limit::clear_customer_account_buckets,
     orders::OrderSummary,
 };
 
+const CUSTOMERS_DELETE: &str = "customers.delete";
 const CUSTOMERS_READ: &str = "customers.read";
 const ORDERS_READ: &str = "orders.read";
 
@@ -105,6 +107,12 @@ struct CustomerDetailRow {
 #[derive(Deserialize, IntoParams)]
 pub struct CustomerQuery {
     pub q: Option<String>,
+}
+
+#[derive(Deserialize, Serialize, ToSchema)]
+pub struct DeleteCustomerAccountRequest {
+    pub email: String,
+    pub reason: String,
 }
 
 #[utoipa::path(
@@ -341,6 +349,119 @@ pub async fn list(
 }
 
 #[utoipa::path(
+    delete,
+    path = "/api/admin/customers",
+    tag = "admin customers",
+    request_body = DeleteCustomerAccountRequest,
+    responses(
+        (status = 204, description = "Registered customer account and dependent non-commercial data deleted"),
+        (status = 401, body = ErrorBody),
+        (status = 403, body = ErrorBody),
+        (status = 404, body = ErrorBody),
+        (status = 422, body = ErrorBody),
+        (status = 503, body = ErrorBody)
+    )
+)]
+pub async fn delete_registered_account(
+    State(state): State<AppState>,
+    actor: AuthenticatedStaff,
+    Json(input): Json<DeleteCustomerAccountRequest>,
+) -> Response {
+    if let Err(response) = require_capability(&actor, CUSTOMERS_DELETE) {
+        return response.into_response();
+    }
+    if !valid_email(&input.email) {
+        return invalid_delete_email();
+    }
+    let reason = input.reason.trim();
+    if !(3..=500).contains(&reason.len()) {
+        return invalid_delete_reason();
+    }
+    let email = input.email.trim().to_ascii_lowercase();
+    let Some(pool) = state.database else {
+        return unavailable();
+    };
+    let mut transaction = match pool.begin().await {
+        Ok(transaction) => transaction,
+        Err(_) => return unavailable(),
+    };
+    let customer_id = match sqlx::query_scalar::<_, Uuid>(
+        r#"
+        SELECT id
+        FROM customers
+        WHERE email = $1
+          AND customer_type = 'registered'
+          AND anonymized_at IS NULL
+        FOR UPDATE
+        "#,
+    )
+    .bind(&email)
+    .fetch_optional(&mut *transaction)
+    .await
+    {
+        Ok(Some(customer_id)) => customer_id,
+        Ok(None) => return account_not_found(),
+        Err(_) => return unavailable(),
+    };
+    if sqlx::query(
+        r#"
+        DELETE FROM carts cart
+        WHERE cart.customer_id = $1
+          AND NOT EXISTS (SELECT 1 FROM orders WHERE orders.cart_id = cart.id)
+        "#,
+    )
+    .bind(customer_id)
+    .execute(&mut *transaction)
+    .await
+    .is_err()
+        || sqlx::query("DELETE FROM customer_addresses WHERE customer_id = $1")
+            .bind(customer_id)
+            .execute(&mut *transaction)
+            .await
+            .is_err()
+        || sqlx::query("DELETE FROM customer_accounts WHERE customer_id = $1")
+            .bind(customer_id)
+            .execute(&mut *transaction)
+            .await
+            .is_err()
+        || clear_customer_account_buckets(&mut transaction, &email)
+            .await
+            .is_err()
+        || sqlx::query(
+            r#"
+            UPDATE customers
+            SET email = $2,
+                first_name = 'Anonymized',
+                last_name = 'Customer',
+                phone = '',
+                anonymized_at = now(),
+                updated_at = now()
+            WHERE id = $1 AND anonymized_at IS NULL
+            "#,
+        )
+        .bind(customer_id)
+        .bind(format!("deleted+{customer_id}@knitnprint.invalid"))
+        .execute(&mut *transaction)
+        .await
+        .map(|result| result.rows_affected() != 1)
+        .unwrap_or(true)
+        || audit_with_reason(
+            &mut transaction,
+            actor.id,
+            "customer.account_delete",
+            customer_id,
+            reason,
+        )
+        .await
+        .is_err()
+        || transaction.commit().await.is_err()
+    {
+        return unavailable();
+    }
+    StatusCode::NO_CONTENT.into_response()
+}
+
+#[utoipa::path(
     get,
     path = "/api/admin/customers/{customer_id}",
     params(("customer_id" = Uuid, Path)),
@@ -552,6 +673,28 @@ async fn audit(
     Ok(())
 }
 
+async fn audit_with_reason(
+    transaction: &mut Transaction<'_, Postgres>,
+    actor: Uuid,
+    action: &str,
+    customer_id: Uuid,
+    reason: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r#"
+        INSERT INTO audit_log (actor_staff_user_id, action, entity_type, entity_id, reason)
+        VALUES ($1, $2, 'customer', $3, $4)
+        "#,
+    )
+    .bind(actor)
+    .bind(action)
+    .bind(customer_id.to_string())
+    .bind(reason)
+    .execute(&mut **transaction)
+    .await?;
+    Ok(())
+}
+
 pub(crate) fn valid_guest(input: &GuestCustomerRequest) -> bool {
     valid_email(&input.email)
         && valid_required(&input.first_name, 100)
@@ -616,6 +759,30 @@ fn invalid_query() -> Response {
         StatusCode::UNPROCESSABLE_ENTITY,
         "invalid_customer_query",
         "Customer search must contain at most 200 characters.",
+    )
+}
+
+fn invalid_delete_email() -> Response {
+    error(
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "invalid_customer_email",
+        "Provide the exact email address of a registered customer account.",
+    )
+}
+
+fn invalid_delete_reason() -> Response {
+    error(
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "invalid_customer_delete_reason",
+        "Provide a deletion reason containing 3 to 500 characters.",
+    )
+}
+
+fn account_not_found() -> Response {
+    error(
+        StatusCode::NOT_FOUND,
+        "registered_customer_not_found",
+        "No active registered customer account has that email address.",
     )
 }
 

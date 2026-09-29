@@ -81,3 +81,37 @@ test('lets authorized staff search and inspect a guest customer', async ({
   }))
   expect(dimensions.content).toBeLessThanOrEqual(dimensions.viewport)
 })
+
+test('lets an owner delete and recreate a registered test account', async ({ page }) => {
+  const unique = `${Date.now()}-${test.info().retry}`
+  const customerEmail = `account-reset-${unique}@example.com`
+  const registration = {
+    email: customerEmail,
+    password: 'integration-customer-passphrase',
+    first_name: 'Reset',
+    last_name: 'Tester',
+  }
+  const created = await page.request.post('http://127.0.0.1:8080/api/account/register', {
+    data: registration,
+  })
+  expect(created.status()).toBe(201)
+
+  await page.goto('/')
+  await page.getByLabel('Email address').fill(ownerEmail)
+  await page.getByLabel('Password').fill(ownerPassword)
+  await page.getByRole('button', { name: 'Sign in' }).click()
+  await page.getByRole('link', { name: 'Customers' }).click()
+
+  page.once('dialog', (dialog) => dialog.accept())
+  await page.getByLabel('Registered customer email').fill(customerEmail)
+  await page.getByRole('button', { name: 'Delete customer account' }).click()
+  await expect(page.getByRole('status')).toContainText(
+    `Deleted ${customerEmail}. It can now be registered again.`,
+  )
+
+  const recreated = await page.request.post(
+    'http://127.0.0.1:8080/api/account/register',
+    { data: registration },
+  )
+  expect(recreated.status()).toBe(201)
+})

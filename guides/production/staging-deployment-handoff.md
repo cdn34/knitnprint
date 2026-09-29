@@ -318,7 +318,7 @@ findings. The next work is:
 2. Add CloudFront, external application DNS, and focused monitoring.
 3. Complete public acceptance checks and request SES production access in
    `eu-west-1` after the public staging site,
-   recipient allowlist, and failure handling are working.
+   recipient policy and failure handling are working.
 
 ## Object-storage requirement added during bootstrap work
 

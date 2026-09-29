@@ -363,6 +363,7 @@ function AdminShell({ profile }: Readonly<{ profile: StaffProfile }>) {
           profile.capabilities.includes('customers.read') && (
             <CustomerManagement
               canReadOrders={profile.capabilities.includes('orders.read')}
+              canDeleteAccounts={profile.capabilities.includes('customers.delete')}
             />
           )}
         {page === 'discounts' &&
@@ -1432,10 +1433,13 @@ function formatCustomerDate(value: string) {
 
 function CustomerManagement({
   canReadOrders,
-}: Readonly<{ canReadOrders: boolean }>) {
+  canDeleteAccounts,
+}: Readonly<{ canReadOrders: boolean; canDeleteAccounts: boolean }>) {
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [deletedEmail, setDeletedEmail] = useState<string | null>(null)
+  const client = useQueryClient()
   useEffect(() => {
     const timeout = window.setTimeout(
       () => setDebouncedSearch(search.trim()),
@@ -1457,6 +1461,33 @@ function CustomerManagement({
     queryFn: () => api.customerOrders(selectedId ?? ''),
     enabled: Boolean(selectedId) && canReadOrders,
   })
+  const deleteAccount = useMutation({
+    mutationFn: api.deleteCustomerAccount,
+    onSuccess: (_data, input) => {
+      setDeletedEmail(input.email.trim().toLowerCase())
+      setSelectedId(null)
+      client.removeQueries({ queryKey: ['customer'] })
+      client.removeQueries({ queryKey: ['customer-orders'] })
+      client.invalidateQueries({ queryKey: customersKey })
+    },
+  })
+
+  function submitAccountDeletion(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const form = event.currentTarget
+    const email = String(new FormData(form).get('customer-delete-email') ?? '').trim()
+    if (!email) return
+    if (!window.confirm(`Permanently delete the registered account for ${email}?`)) return
+    setDeletedEmail(null)
+    const reason = String(new FormData(form).get('customer-delete-reason') ?? '').trim()
+    if (!reason) return
+    deleteAccount.mutate(
+      { email, reason },
+      {
+        onSuccess: () => form.reset(),
+      },
+    )
+  }
 
   return (
     <section
@@ -1481,6 +1512,54 @@ function CustomerManagement({
           onChange={(event) => setSearch(event.target.value)}
         />
       </label>
+      {canDeleteAccounts && (
+        <form className="customer-account-reset" onSubmit={submitAccountDeletion}>
+          <div>
+            <strong>Delete a customer account</strong>
+            <span>
+              Removes the login, sessions, verification tokens, addresses, and active carts.
+              Legally required order records remain separately retained.
+            </span>
+          </div>
+          <label>
+            <span>Registered customer email</span>
+            <input
+              name="customer-delete-email"
+              type="email"
+              autoComplete="off"
+              placeholder="customer@example.com"
+              required
+            />
+          </label>
+          <label>
+            <span>Deletion reason</span>
+            <input
+              name="customer-delete-reason"
+              type="text"
+              defaultValue="Customer erasure request"
+              minLength={3}
+              maxLength={500}
+              required
+            />
+          </label>
+          <button className="danger-button" type="submit" disabled={deleteAccount.isPending}>
+            <Trash2 size={14} aria-hidden="true" />
+            {deleteAccount.isPending ? 'Deleting…' : 'Delete customer account'}
+          </button>
+          {deletedEmail && (
+            <p className="customer-account-reset-success" role="status">
+              Deleted {deletedEmail}. It can now be registered again.
+            </p>
+          )}
+          {deleteAccount.isError && (
+            <p className="customer-account-reset-error" role="alert">
+              {deleteAccount.error instanceof ApiError
+                ? deleteAccount.error.body.error.message
+                : 'The account could not be deleted.'}
+            </p>
+          )}
+        </form>
+      )}
       <div className="customer-layout">
         <div className="customer-list">
           {customers.isPending && (
@@ -3539,6 +3618,7 @@ const assignableCapabilities = [
   ['orders.refund', 'Refund orders'],
   ['discounts.manage', 'Manage discounts'],
   ['customers.read', 'View customers'],
+  ['customers.delete', 'Delete customer accounts'],
   ['inventory.adjust', 'Adjust inventory'],
   ['media.upload', 'Upload media'],
   ['media.review', 'Review media'],

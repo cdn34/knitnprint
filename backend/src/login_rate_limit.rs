@@ -42,6 +42,41 @@ impl AuthScope {
     }
 }
 
+pub async fn clear_customer_account_buckets(
+    transaction: &mut Transaction<'_, Postgres>,
+    email: &str,
+) -> Result<u64, sqlx::Error> {
+    let hashes = [
+        bucket_hash(AuthScope::Customer, "account", email),
+        bucket_hash(
+            AuthScope::AccountAction,
+            "account",
+            &format!("register\0{email}"),
+        ),
+        bucket_hash(
+            AuthScope::AccountAction,
+            "account",
+            &format!("verification\0{email}"),
+        ),
+        bucket_hash(
+            AuthScope::AccountAction,
+            "account",
+            &format!("password_reset\0{email}"),
+        ),
+    ];
+    let mut removed = 0;
+    for hash in hashes {
+        removed += sqlx::query(
+            "DELETE FROM auth_login_rate_limits WHERE dimension = 'account' AND key_hash = $1",
+        )
+        .bind(hash.as_slice())
+        .execute(&mut **transaction)
+        .await?
+        .rows_affected();
+    }
+    Ok(removed)
+}
+
 pub async fn consume_account_action(
     pool: &PgPool,
     action: &str,

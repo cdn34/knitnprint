@@ -414,7 +414,7 @@ async fn send_ses(
     request
         .send()
         .await
-        .map_err(|error| format!("SES send failed: {error}"))?;
+        .map_err(|error| format!("SES send failed: {error:?}"))?;
     Ok(())
 }
 
@@ -469,15 +469,11 @@ fn delivery_mode(
 }
 
 fn parse_recipient_allowlist(
-    environment: Environment,
+    _environment: Environment,
     configured: Option<&str>,
 ) -> Result<Option<Arc<HashSet<String>>>, String> {
     let Some(configured) = configured else {
-        return if environment == Environment::Staging {
-            Err("EMAIL_RECIPIENT_ALLOWLIST is required in staging".into())
-        } else {
-            Ok(None)
-        };
+        return Ok(None);
     };
 
     let mut recipients = HashSet::new();
@@ -559,8 +555,12 @@ mod tests {
     }
 
     #[test]
-    fn staging_requires_a_valid_recipient_allowlist() {
-        assert!(parse_recipient_allowlist(Environment::Staging, None).is_err());
+    fn recipient_allowlist_is_optional_and_validated_when_configured() {
+        assert!(
+            parse_recipient_allowlist(Environment::Staging, None)
+                .unwrap()
+                .is_none()
+        );
         assert!(parse_recipient_allowlist(Environment::Staging, Some("")).is_err());
         assert!(parse_recipient_allowlist(Environment::Staging, Some("not-an-email")).is_err());
         assert!(

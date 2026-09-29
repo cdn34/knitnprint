@@ -9,6 +9,7 @@ use knitnprint_api::{
     auth::{SESSION_COOKIE, hash_password},
 };
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 use sqlx::{
     PgPool,
     postgres::{PgConnectOptions, PgPoolOptions},
@@ -288,6 +289,168 @@ async fn customer_account_authentication_and_address_ownership_lifecycle() {
     let other_body = response_json(other_me).await;
     assert_eq!(other_body["email"], "grace.account@example.com");
     assert_eq!(other_body["addresses"], json!([]));
+    let other_customer_id = profile_id(&other_body);
+    let test_cart_id = Uuid::now_v7();
+    sqlx::query("INSERT INTO carts (id, token_hash, customer_id) VALUES ($1, $2, $3)")
+        .bind(test_cart_id)
+        .bind([7_u8; 32].as_slice())
+        .bind(other_customer_id)
+        .execute(&pool)
+        .await
+        .expect("test cart should be attached to the registered customer");
+    let order_cart_id = Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO carts (id, token_hash, customer_id, status, currency) VALUES ($1, $2, $3, 'converted', 'EUR')",
+    )
+    .bind(order_cart_id)
+    .bind([8_u8; 32].as_slice())
+    .bind(other_customer_id)
+    .execute(&pool)
+    .await
+    .expect("converted cart should be attached to the registered customer");
+    let order_id = Uuid::now_v7();
+    sqlx::query(
+        r#"
+        INSERT INTO orders (
+            id, order_number, cart_id, customer_id, checkout_idempotency_hash,
+            currency, subtotal_minor, total_minor,
+            customer_email, customer_first_name, customer_last_name,
+            shipping_recipient_name, shipping_line1, shipping_city,
+            shipping_postal_code, shipping_country_code
+        ) VALUES (
+            $1, $2, $3, $4, $5,
+            'EUR', 1000, 1000,
+            'grace.account@example.com', 'Grace', 'Hopper',
+            'Grace Hopper', '1 Compiler Way', 'Lisbon', '1000-001', 'PT'
+        )
+        "#,
+    )
+    .bind(order_id)
+    .bind(format!("KNP-ERASURE-{}", order_id.simple()))
+    .bind(order_cart_id)
+    .bind(other_customer_id)
+    .bind([9_u8; 32].as_slice())
+    .execute(&pool)
+    .await
+    .expect("commercial order fixture should be retained during account erasure");
+    let registration_bucket: [u8; 32] =
+        Sha256::digest(b"account_action\0account\0register\0grace.account@example.com").into();
+    sqlx::query(
+        r#"
+        INSERT INTO auth_login_rate_limits (
+            auth_scope, dimension, key_hash, event_count, locked_until
+        ) VALUES ('account_action', 'account', $1, 5, now() + interval '1 hour')
+        ON CONFLICT (auth_scope, dimension, key_hash) DO UPDATE
+        SET event_count = 5, locked_until = now() + interval '1 hour'
+        "#,
+    )
+    .bind(registration_bucket.as_slice())
+    .execute(&pool)
+    .await
+    .expect("registration rate-limit fixture should be locked");
+
+    let anonymous_delete = request(
+        &router,
+        "DELETE",
+        "/api/admin/customers",
+        None,
+        Some(json!({
+            "email": "grace.account@example.com",
+            "reason": "Customer erasure request"
+        })),
+    )
+    .await;
+    assert_eq!(anonymous_delete.status(), StatusCode::UNAUTHORIZED);
+    let deleted = request(
+        &router,
+        "DELETE",
+        "/api/admin/customers",
+        Some(&admin_cookie),
+        Some(json!({
+            "email": " GRACE.Account@Example.COM ",
+            "reason": " Customer erasure request "
+        })),
+    )
+    .await;
+    assert_eq!(deleted.status(), StatusCode::NO_CONTENT);
+    let anonymized_customer: (String, String, String, bool) = sqlx::query_as(
+        "SELECT email::text, first_name, last_name, anonymized_at IS NOT NULL FROM customers WHERE id = $1",
+    )
+    .bind(other_customer_id)
+    .fetch_one(&pool)
+    .await
+    .expect("deleted customer tombstone should remain auditable");
+    assert_eq!(
+        anonymized_customer,
+        (
+            format!("deleted+{other_customer_id}@knitnprint.invalid"),
+            "Anonymized".into(),
+            "Customer".into(),
+            true,
+        )
+    );
+    let deleted_account_count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM customer_accounts WHERE customer_id = $1")
+            .bind(other_customer_id)
+            .fetch_one(&pool)
+            .await
+            .expect("deleted account count should be readable");
+    assert_eq!(deleted_account_count, 0);
+    let deleted_cart_count: i64 = sqlx::query_scalar("SELECT count(*) FROM carts WHERE id = $1")
+        .bind(test_cart_id)
+        .fetch_one(&pool)
+        .await
+        .expect("deleted cart count should be readable");
+    assert_eq!(deleted_cart_count, 0);
+    let retained_order: (String, Uuid, Uuid) =
+        sqlx::query_as("SELECT customer_email, customer_id, cart_id FROM orders WHERE id = $1")
+            .bind(order_id)
+            .fetch_one(&pool)
+            .await
+            .expect("commercial order should remain after account erasure");
+    assert_eq!(retained_order.0, "grace.account@example.com");
+    assert_eq!(retained_order.1, other_customer_id);
+    assert_eq!(retained_order.2, order_cart_id);
+    let deleted_bucket_count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM auth_login_rate_limits WHERE key_hash = $1")
+            .bind(registration_bucket.as_slice())
+            .fetch_one(&pool)
+            .await
+            .expect("registration rate-limit count should be readable");
+    assert_eq!(deleted_bucket_count, 0);
+    let deleted_session =
+        request(&router, "GET", "/api/account/me", Some(&other_cookie), None).await;
+    assert_eq!(deleted_session.status(), StatusCode::UNAUTHORIZED);
+    let deletion_audit: (String, Option<String>) = sqlx::query_as(
+        "SELECT action, reason FROM audit_log WHERE entity_id = $1 AND action = 'customer.account_delete'",
+    )
+    .bind(other_customer_id.to_string())
+    .fetch_one(&pool)
+    .await
+    .expect("account deletion should be audited");
+    assert_eq!(deletion_audit.0, "customer.account_delete");
+    assert_eq!(
+        deletion_audit.1.as_deref(),
+        Some("Customer erasure request")
+    );
+
+    let recreated = request(
+        &router,
+        "POST",
+        "/api/account/register",
+        None,
+        Some(registration_fixture(
+            "grace.account@example.com",
+            "Grace",
+            "Hopper",
+        )),
+    )
+    .await;
+    assert_eq!(recreated.status(), StatusCode::CREATED);
+    assert_ne!(
+        profile_id(&response_json(recreated).await),
+        other_customer_id
+    );
 
     let logout = request(
         &router,

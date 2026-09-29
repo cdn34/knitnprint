@@ -34,6 +34,7 @@ export type {
   CustomerLoginRequest,
   CustomerRegisterRequest,
   CustomerSummary,
+  DeleteCustomerAccountRequest,
   Discount,
   DisableStaffRequest,
   ErrorBody,
@@ -121,6 +122,7 @@ import type {
   CustomerLoginRequest,
   CustomerRegisterRequest,
   CustomerSummary,
+  DeleteCustomerAccountRequest,
   Discount,
   DisableStaffRequest,
   ErrorBody,
@@ -284,6 +286,12 @@ export function createApiClient(options: ApiClientOptions = {}) {
       }),
     listCustomers: (query: { q?: string } = {}) =>
       send<Array<CustomerSummary>>(withQuery('/api/admin/customers', query)),
+    deleteCustomerAccount: (input: DeleteCustomerAccountRequest) =>
+      send<void>('/api/admin/customers', {
+        method: 'DELETE',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(input),
+      }),
     customer: (customerId: string) =>
       send<CustomerDetail>(`/api/admin/customers/${customerId}`),
     customerOrders: (customerId: string) =>

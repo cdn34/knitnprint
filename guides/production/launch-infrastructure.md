@@ -366,7 +366,7 @@ Within the shared AWS account and `eu-west-1`:
 6. Describe account-verification, password-reset, and order-notification use cases.
 7. Describe the bounce and complaint suppression and monitoring process.
 
-SES sandbox status is scoped to an AWS account and Region, not to an individual sender domain. After production access is approved in `eu-west-1`, both verified staging and production identities in that account and Region can send to unverified recipients. Staging therefore needs an application-level recipient allowlist to prevent accidental customer email.
+SES sandbox status is scoped to an AWS account and Region, not to an individual sender domain. After production access is approved in `eu-west-1`, both verified staging and production identities in that account and Region can send to unverified recipients. Staging intentionally leaves the optional application-level recipient allowlist unset so account and checkout flows can be tested with arbitrary addresses.
 
 The existing `us-east-1` SES identities and production-access status do not automatically transfer to `eu-west-1`. Keep the current setup operational during the migration, create and verify the identities again in Ireland, and submit a separate production-access request for that Region. See the [AWS SES production-access procedure](https://docs.aws.amazon.com/ses/latest/dg/request-production-access.html).
 
@@ -411,7 +411,7 @@ Scheduled processes
 - [ ] Configure the staging site at `staging.knitnprint.com`.
 - [ ] Verify staging and production SES sender identities in `eu-west-1`.
 - [ ] Request and receive SES production access in `eu-west-1`.
-- [ ] Enforce a staging email-recipient allowlist.
+- [ ] Confirm staging's unrestricted-recipient policy is intentional before requesting SES production access.
 - [ ] Provision PostgreSQL, backups, and restore testing.
 - [ ] Provision private S3 storage and the ClamAV scanner.
 - [ ] Configure environment-scoped deployment and runtime IAM roles.

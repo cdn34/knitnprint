@@ -22,7 +22,6 @@ resource "aws_ecs_task_definition" "notification_worker" {
         { name = "APP_ENV", value = "staging" },
         { name = "EMAIL_DELIVERY", value = "ses" },
         { name = "EMAIL_FROM", value = local.staging_email_from },
-        { name = "EMAIL_RECIPIENT_ALLOWLIST", value = local.staging_email_allowlist },
         { name = "SES_CONFIGURATION_SET", value = local.staging_ses_configuration_set },
         { name = "STOREFRONT_BASE_URL", value = local.staging_storefront_base_url },
         { name = "NOTIFICATION_BATCH_SIZE", value = "25" },
