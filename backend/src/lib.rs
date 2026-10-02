@@ -10,6 +10,7 @@ pub mod dashboard;
 pub mod discounts;
 pub mod email;
 pub mod error;
+pub mod feedback;
 pub mod fulfillment;
 pub mod health;
 pub mod inventory;
@@ -138,6 +139,15 @@ pub fn app(state: AppState) -> Router {
             "/api/admin/categories/order",
             axum::routing::put(catalog::category_reorder),
         )
+        .route("/api/admin/feedback", get(feedback::admin_list))
+        .route(
+            "/api/admin/feedback/{feedback_id}",
+            axum::routing::put(feedback::moderate),
+        )
+        .route(
+            "/api/admin/feedback/{feedback_id}/reply",
+            axum::routing::put(feedback::reply),
+        )
         .route(
             "/api/admin/shipping-packages",
             get(catalog::shipping_package_list).post(catalog::shipping_package_create),
@@ -239,6 +249,10 @@ pub fn app(state: AppState) -> Router {
             axum::routing::post(payments::stripe_webhook),
         )
         .route("/api/products", get(catalog::public_list))
+        .route(
+            "/api/feedback",
+            get(feedback::public_site_list).post(feedback::create_site),
+        )
         .route("/api/orders", axum::routing::post(orders::create))
         .route("/api/orders/{order_id}", get(orders::customer_detail))
         .route(
@@ -273,6 +287,10 @@ pub fn app(state: AppState) -> Router {
         )
         .route("/api/categories", get(catalog::public_category_list))
         .route("/api/products/{slug}", get(catalog::public_detail))
+        .route(
+            "/api/products/{slug}/feedback",
+            get(feedback::public_list).post(feedback::create),
+        )
         .route("/api/media/{media_id}/{variant}", get(media::public_asset))
         .fallback(error::not_found)
         .with_state(state)

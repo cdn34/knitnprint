@@ -33,6 +33,7 @@ import {
   LockKeyhole,
   LogOut,
   Mail,
+  MessageSquareText,
   MapPin,
   Package,
   Pencil,
@@ -42,6 +43,7 @@ import {
   Plus,
   Search,
   Send,
+  Star,
   ShieldCheck,
   SlidersHorizontal,
   TriangleAlert,
@@ -58,6 +60,7 @@ import {
   type Category,
   type Discount,
   type Product,
+  type AdminProductFeedback,
   type ShippingPackageProfile,
   type InventoryRecord,
   type Order,
@@ -218,6 +221,7 @@ function AdminShell({ profile }: Readonly<{ profile: StaffProfile }>) {
       ? [
           { id: 'products', label: 'Products', icon: Package },
           { id: 'shipping-packages', label: 'Shipping packages', icon: Boxes },
+          { id: 'feedback', label: 'Feedback validation', icon: MessageSquareText },
         ]
       : []),
     ...(profile.capabilities.includes('inventory.adjust')
@@ -317,6 +321,8 @@ function AdminShell({ profile }: Readonly<{ profile: StaffProfile }>) {
                   ? 'Order operations.'
                 : page === 'products'
                   ? 'Product catalog.'
+                  : page === 'feedback'
+                    ? 'Customer feedback.'
                   : page === 'shipping-packages'
                     ? 'Shipping packages.'
                   : page === 'inventory'
@@ -355,6 +361,9 @@ function AdminShell({ profile }: Readonly<{ profile: StaffProfile }>) {
               canWrite={profile.capabilities.includes('catalog.write')}
             />
           )}
+        {page === 'feedback' && profile.capabilities.includes('catalog.read') && (
+          <FeedbackManagement canModerate={profile.capabilities.includes('catalog.write')} />
+        )}
         {page === 'inventory' &&
           profile.capabilities.includes('inventory.adjust') && (
             <InventoryManagement initialVariantId={target.entityId} />
@@ -2224,6 +2233,167 @@ function EditablePrintArea({ area, label, kind = 'print', active, onActivate, on
 }
 
 const shippingPackagesKey = ['shipping-packages'] as const
+
+const feedbackKey = ['product-feedback'] as const
+
+function FeedbackManagement({ canModerate }: Readonly<{ canModerate: boolean }>) {
+  const client = useQueryClient()
+  const [status, setStatus] = useState<'pending' | 'approved' | 'rejected' | 'all'>('pending')
+  const feedback = useQuery({
+    queryKey: [...feedbackKey, status],
+    queryFn: () => api.listAdminFeedback(status),
+    refetchInterval: 30_000,
+  })
+  const moderation = useMutation({
+    mutationFn: ({ id, nextStatus }: { id: string; nextStatus: 'approved' | 'rejected' }) =>
+      api.moderateProductFeedback(id, { status: nextStatus }),
+    onSuccess: () => client.invalidateQueries({ queryKey: feedbackKey }),
+  })
+  const response = useMutation({
+    mutationFn: ({ id, reply }: { id: string; reply: string | null }) =>
+      api.replyToProductFeedback(id, { reply }),
+    onSuccess: () => client.invalidateQueries({ queryKey: feedbackKey }),
+  })
+
+  function saveResponse(event: FormEvent<HTMLFormElement>, id: string) {
+    event.preventDefault()
+    const form = new FormData(event.currentTarget)
+    const reply = String(form.get('store_reply') ?? '').trim()
+    response.mutate({ id, reply: reply || null })
+  }
+
+  return (
+    <section className="feedback-management-section" id="feedback" aria-labelledby="feedback-management-heading">
+      <div className="section-heading">
+        <div>
+          <p>Community · Store and product reviews</p>
+          <h2 id="feedback-management-heading">Feedback validation</h2>
+        </div>
+        <span>{feedback.data?.length ?? 0} shown</span>
+      </div>
+      <div className="feedback-management-intro">
+        <MessageSquareText aria-hidden="true" />
+        <div>
+          <strong>Keep published reviews helpful and respectful.</strong>
+          <p>Read every submission before publishing it. Pending feedback is never visible on the storefront.</p>
+        </div>
+      </div>
+      <div className="feedback-status-tabs" aria-label="Filter feedback by status">
+        {(['pending', 'approved', 'rejected', 'all'] as const).map((option) => (
+          <button
+            key={option}
+            type="button"
+            aria-pressed={status === option}
+            onClick={() => setStatus(option)}
+          >
+            {option === 'all' ? 'All feedback' : option}
+          </button>
+        ))}
+      </div>
+
+      {feedback.isPending && <p className="panel-message">Loading feedback…</p>}
+      {feedback.isError && <p className="panel-message error" role="alert">Feedback could not be loaded.</p>}
+      {moderation.isError && <p className="panel-message error" role="alert">The feedback status could not be saved. Try again.</p>}
+      {response.isError && <p className="panel-message error" role="alert">The KnitnPrint response could not be saved. Try again.</p>}
+      {feedback.data?.length === 0 && (
+        <div className="feedback-management-empty">
+          <CircleCheck aria-hidden="true" />
+          <strong>No {status === 'all' ? '' : status} feedback to review</strong>
+          <span>New customer comments will appear here automatically.</span>
+        </div>
+      )}
+      <div className="feedback-management-list">
+        {feedback.data?.map((item: AdminProductFeedback) => (
+          <article key={item.id}>
+            <div className="feedback-management-meta">
+              <span className={`feedback-status feedback-status--${item.status}`}>{item.status}</span>
+              <time dateTime={item.created_at}>{orderDate(item.created_at)}</time>
+              {item.product_slug && item.product_title ? (
+                <a href={`${storefrontUrl}/products/${item.product_slug}`} target="_blank" rel="noreferrer">
+                  {item.product_title}
+                </a>
+              ) : <span className="feedback-management-source">Storefront review</span>}
+            </div>
+            <div className="feedback-management-author">
+              <span aria-hidden="true">{item.display_name.trim().charAt(0).toUpperCase()}</span>
+              <div>
+                <strong>{item.display_name}</strong>
+                <span className="feedback-admin-stars" aria-label={`${item.rating} out of 5 stars`}>
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <Star key={star} className={star <= item.rating ? 'filled' : ''} aria-hidden="true" />
+                  ))}
+                </span>
+              </div>
+            </div>
+            <p className="feedback-management-comment">{item.comment}</p>
+            {item.moderated_at && (
+              <small className="feedback-moderated-by">
+                Last moderated by {item.moderated_by_name ?? 'a staff member'} on {orderDate(item.moderated_at)}.
+              </small>
+            )}
+            {canModerate && item.status === 'approved' && (
+              <form
+                className="feedback-response-form"
+                key={`${item.id}-${item.replied_at ?? 'new'}`}
+                onSubmit={(event) => saveResponse(event, item.id)}
+              >
+                <label htmlFor={`feedback-reply-${item.id}`}>Response from KnitnPrint</label>
+                <textarea
+                  id={`feedback-reply-${item.id}`}
+                  name="store_reply"
+                  rows={4}
+                  maxLength={1200}
+                  defaultValue={item.store_reply ?? ''}
+                  placeholder="Write a helpful response that will appear below the customer review."
+                />
+                {item.replied_at && (
+                  <small>
+                    Last answered by {item.replied_by_name ?? 'a staff member'} on {orderDate(item.replied_at)}.
+                  </small>
+                )}
+                <div>
+                  <button type="submit" disabled={response.isPending}>
+                    <Send aria-hidden="true" /> {item.store_reply ? 'Update response' : 'Publish response'}
+                  </button>
+                  {item.store_reply && (
+                    <button
+                      type="button"
+                      className="remove-response"
+                      disabled={response.isPending}
+                      onClick={() => response.mutate({ id: item.id, reply: null })}
+                    >
+                      <Trash2 aria-hidden="true" /> Remove response
+                    </button>
+                  )}
+                </div>
+              </form>
+            )}
+            {canModerate && (
+              <div className="feedback-management-actions">
+                <button
+                  type="button"
+                  className="approve"
+                  disabled={moderation.isPending || item.status === 'approved'}
+                  onClick={() => moderation.mutate({ id: item.id, nextStatus: 'approved' })}
+                >
+                  <CircleCheck aria-hidden="true" /> Approve and publish
+                </button>
+                <button
+                  type="button"
+                  className="reject"
+                  disabled={moderation.isPending || item.status === 'rejected'}
+                  onClick={() => moderation.mutate({ id: item.id, nextStatus: 'rejected' })}
+                >
+                  <UserRoundX aria-hidden="true" /> Reject
+                </button>
+              </div>
+            )}
+          </article>
+        ))}
+      </div>
+    </section>
+  )
+}
 
 function ShippingPackageManagement({ canWrite }: Readonly<{ canWrite: boolean }>) {
   const client = useQueryClient()

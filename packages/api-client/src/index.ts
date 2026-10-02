@@ -1,5 +1,6 @@
 export type {
   AddCartItemRequest,
+  AdminProductFeedback,
   AppliedDiscount,
   ApplyDiscountRequest,
   AccountTokenRequest,
@@ -24,6 +25,7 @@ export type {
   CreateRefundRequest,
   CreateOrderRequest,
   CreateProductRequest,
+  CreateProductFeedbackRequest,
   CreateCategoryRequest,
   CreateVariantRequest,
   CreateStaffRequest,
@@ -69,8 +71,11 @@ export type {
   PaymentStatusEvent,
   PersonalizationConfig,
   Product,
+  ProductFeedback,
+  ProductFeedbackSummary,
   ProductMedia,
   ReorderCategoriesRequest,
+  ReplyToProductFeedbackRequest,
   Refund,
   RefundLine,
   ResetPasswordRequest,
@@ -84,18 +89,21 @@ export type {
   ShippingZoneInput,
   StaffProfile,
   StaffRecord,
+  SubmittedProductFeedback,
   TaxRule,
   TaxRuleInput,
   TaxSelection,
   UpdateCommercialSettingsRequest,
   UpdateDiscountRequest,
   UpdateProductRequest,
+  ModerateProductFeedbackRequest,
   Variant,
   UpdateCartItemRequest,
 } from './schema'
 
 import type {
   AddCartItemRequest,
+  AdminProductFeedback,
   ApplyDiscountRequest,
   AccountTokenRequest,
   ChangeProductStatusRequest,
@@ -113,6 +121,7 @@ import type {
   CreateRefundRequest,
   CreateOrderRequest,
   CreateProductRequest,
+  CreateProductFeedbackRequest,
   CreateCategoryRequest,
   CreateVariantRequest,
   CreateStaffRequest,
@@ -143,16 +152,20 @@ import type {
   PaymentCheckout,
   PaymentOptions,
   Product,
+  ProductFeedbackSummary,
   ReorderCategoriesRequest,
+  ReplyToProductFeedbackRequest,
   ResetPasswordRequest,
   SelectShippingMethodRequest,
   ShippingPackageProfile,
   ShippingPackageProfileRequest,
   StaffProfile,
   StaffRecord,
+  SubmittedProductFeedback,
   UpdateCommercialSettingsRequest,
   UpdateDiscountRequest,
   UpdateProductRequest,
+  ModerateProductFeedbackRequest,
   UpdateCartItemRequest,
 } from './schema'
 
@@ -458,6 +471,20 @@ export function createApiClient(options: ApiClientOptions = {}) {
       }),
     listAdminProducts: (query: { q?: string; status?: string } = {}) =>
       send<Array<Product>>(withQuery('/api/admin/products', query)),
+    listAdminFeedback: (status = 'pending') =>
+      send<Array<AdminProductFeedback>>(withQuery('/api/admin/feedback', { status })),
+    moderateProductFeedback: (feedbackId: string, input: ModerateProductFeedbackRequest) =>
+      send<AdminProductFeedback>(`/api/admin/feedback/${feedbackId}`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(input),
+      }),
+    replyToProductFeedback: (feedbackId: string, input: ReplyToProductFeedbackRequest) =>
+      send<AdminProductFeedback>(`/api/admin/feedback/${feedbackId}/reply`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(input),
+      }),
     adminProduct: (productId: string) =>
       send<Product>(`/api/admin/products/${productId}`),
     createProduct: (input: CreateProductRequest) =>
@@ -548,6 +575,21 @@ export function createApiClient(options: ApiClientOptions = {}) {
       send<Array<Product>>(withQuery('/api/products', query)),
     product: (slug: string) =>
       send<Product>(`/api/products/${encodeURIComponent(slug)}`),
+    productFeedback: (slug: string) =>
+      send<ProductFeedbackSummary>(`/api/products/${encodeURIComponent(slug)}/feedback`),
+    submitProductFeedback: (slug: string, input: CreateProductFeedbackRequest) =>
+      send<SubmittedProductFeedback>(`/api/products/${encodeURIComponent(slug)}/feedback`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(input),
+      }),
+    siteFeedback: () => send<ProductFeedbackSummary>('/api/feedback'),
+    submitSiteFeedback: (input: CreateProductFeedbackRequest) =>
+      send<SubmittedProductFeedback>('/api/feedback', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(input),
+      }),
     initiateMediaUpload: (input: InitiateUploadRequest) =>
       send<InitiateUploadResponse>('/api/admin/media/uploads', {
         method: 'POST',
