@@ -22,6 +22,43 @@ test('renders the branded storefront shell', async ({ page }) => {
   ).toBeGreaterThan(0)
 })
 
+test('keeps navigation visible during scroll and opens the mobile menu', async ({ page }) => {
+  await page.goto('/returns')
+  const header = page.locator('.site-header-shell')
+
+  await page.evaluate(() => window.scrollTo(0, 1200))
+  await expect.poll(() => header.evaluate((element) => Math.round(element.getBoundingClientRect().top))).toBe(0)
+  await expect(page.locator('.announcement')).not.toBeInViewport()
+
+  if (await page.evaluate(() => matchMedia('(max-width: 760px)').matches)) {
+    const toggle = page.locator('.mobile-action button')
+    await expect(toggle).toHaveAccessibleName('Open menu')
+    await toggle.click()
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    await expect(page.locator('#mobile-primary-nav').getByRole('link')).toHaveCount(4)
+    await toggle.press('Escape')
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+  } else {
+    await expect(page.locator('.desktop-nav')).toBeVisible()
+  }
+})
+
+test('keeps the mobile menu usable on narrow screens', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 700 })
+  await page.goto('/returns')
+
+  const toggle = page.getByRole('button', { name: 'Open menu' })
+  const bounds = await toggle.boundingBox()
+  expect(bounds).not.toBeNull()
+  expect(bounds!.x).toBeGreaterThanOrEqual(0)
+  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(320)
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBe(320)
+
+  await toggle.click()
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+  await expect(page.locator('#mobile-primary-nav')).toBeVisible()
+})
+
 test('filters published products when the catalog is available', async ({
   page,
 }) => {

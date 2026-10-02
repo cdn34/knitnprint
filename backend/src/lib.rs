@@ -124,6 +124,10 @@ pub fn app(state: AppState) -> Router {
             axum::routing::post(catalog::change_status),
         )
         .route(
+            "/api/admin/products/{product_id}/media/{media_id}",
+            axum::routing::delete(catalog::delete_media),
+        )
+        .route(
             "/api/admin/products/{product_id}/variants",
             axum::routing::post(catalog::add_variant),
         )

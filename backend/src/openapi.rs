@@ -60,6 +60,7 @@ use crate::{
         catalog::create,
         catalog::update,
         catalog::delete,
+        catalog::delete_media,
         catalog::change_status,
         catalog::category_list,
         catalog::category_create,
