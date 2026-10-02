@@ -1,23 +1,14 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
+  ChevronDown,
   CircleUserRound,
   Menu,
   ShoppingBag,
   Sparkles,
+  X,
 } from 'lucide-react'
 import { cartApi, CART_COUNT_UPDATED } from '../cart-api'
 import { localeLabels, supportedLocales, useI18n, type Locale } from '../i18n'
-
-function IconButton({
-  label,
-  children,
-}: Readonly<{ label: string; children: ReactNode }>) {
-  return (
-    <button className="icon-button" aria-label={label} type="button">
-      {children}
-    </button>
-  )
-}
 
 export function StorefrontAnnouncement() {
   const { t } = useI18n()
@@ -32,6 +23,14 @@ export function StorefrontAnnouncement() {
 export function StorefrontHeader() {
   const { locale, setLocale, t } = useI18n()
   const [cartCount, setCartCount] = useState(0)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuButtonRef = useRef<HTMLButtonElement>(null)
+  const navigationLinks = [
+    { href: '/products', label: t('shell.shop') },
+    { href: '/collections', label: t('shell.collections') },
+    { href: '/about', label: t('shell.ourStory') },
+    { href: '/b2b', label: 'B2B' },
+  ]
 
   useEffect(() => {
     let active = true
@@ -47,51 +46,69 @@ export function StorefrontHeader() {
     }
   }, [])
 
+  useEffect(() => {
+    if (!menuOpen) return
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setMenuOpen(false)
+        menuButtonRef.current?.focus()
+      }
+    }
+    window.addEventListener('keydown', closeOnEscape)
+    return () => window.removeEventListener('keydown', closeOnEscape)
+  }, [menuOpen])
+
   return (
-    <header className="site-header">
-      <a className="brand" href="/" aria-label={t('shell.homeLabel')}>
-        <img
-          src="/knitnprint-wordmark.webp"
-          alt="KnitNPrint"
-          width="750"
-          height="195"
-        />
-      </a>
+    <div className="site-header-shell">
+      <header className="site-header">
+        <a className="brand" href="/" aria-label={t('shell.homeLabel')}>
+          <img
+            src="/knitnprint-wordmark.webp"
+            alt="KnitNPrint"
+            width="750"
+            height="195"
+          />
+        </a>
 
-      <nav className="desktop-nav" aria-label={t('shell.mainNavigation')}>
-        <a href="/products">{t('shell.shop')}</a>
-        <a href="/collections">{t('shell.collections')}</a>
-        <a href="/about">{t('shell.ourStory')}</a>
-        <a href="/b2b">B2B</a>
+        <nav className="desktop-nav" aria-label={t('shell.mainNavigation')}>
+          {navigationLinks.map((link) => <a key={link.href} href={link.href}>{link.label}</a>)}
+        </nav>
+
+        <div className="header-actions">
+          <label className="language-selector">
+            <span className="sr-only">{t('shell.language')}</span>
+            <select
+              aria-label={t('shell.language')}
+              value={locale}
+              onChange={(event) => setLocale(event.target.value as Locale)}
+            >
+              {supportedLocales.map((option) => (
+                <option value={option} key={option}>{localeLabels[option]}</option>
+              ))}
+            </select>
+            <span className="language-selector-display" aria-hidden="true">
+              {locale.toUpperCase()}
+              <ChevronDown size={13} strokeWidth={2} />
+            </span>
+          </label>
+          <a className="icon-button" aria-label={t('shell.account')} href="/account">
+            <CircleUserRound />
+          </a>
+          <a className="icon-button cart-icon-button" aria-label={`${t('shell.viewCart')} · ${cartCount}`} href="/cart">
+            <ShoppingBag />
+            {cartCount > 0 && <span className="cart-count-badge" aria-hidden="true">{cartCount > 999 ? '999+' : cartCount}</span>}
+          </a>
+          <span className="mobile-action">
+            <button ref={menuButtonRef} className="icon-button" type="button" aria-label={t(menuOpen ? 'shell.closeMenu' : 'shell.openMenu')} aria-controls="mobile-primary-nav" aria-expanded={menuOpen} onClick={() => setMenuOpen((open) => !open)}>
+              {menuOpen ? <X /> : <Menu />}
+            </button>
+          </span>
+        </div>
+      </header>
+      <nav id="mobile-primary-nav" className="mobile-nav" aria-label={t('shell.mainNavigation')} hidden={!menuOpen}>
+        {navigationLinks.map((link) => <a key={link.href} href={link.href} onClick={() => setMenuOpen(false)}>{link.label}</a>)}
       </nav>
-
-      <div className="header-actions">
-        <label className="language-selector">
-          <span className="sr-only">{t('shell.language')}</span>
-          <select
-            aria-label={t('shell.language')}
-            value={locale}
-            onChange={(event) => setLocale(event.target.value as Locale)}
-          >
-            {supportedLocales.map((option) => (
-              <option value={option} key={option}>{localeLabels[option]}</option>
-            ))}
-          </select>
-        </label>
-        <a className="icon-button" aria-label={t('shell.account')} href="/account">
-          <CircleUserRound />
-        </a>
-        <a className="icon-button cart-icon-button" aria-label={`${t('shell.viewCart')} · ${cartCount}`} href="/cart">
-          <ShoppingBag />
-          {cartCount > 0 && <span className="cart-count-badge" aria-hidden="true">{cartCount > 999 ? '999+' : cartCount}</span>}
-        </a>
-        <span className="mobile-action">
-          <IconButton label={t('shell.openMenu')}>
-            <Menu />
-          </IconButton>
-        </span>
-      </div>
-    </header>
+    </div>
   )
 }
 

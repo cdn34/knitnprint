@@ -1,8 +1,9 @@
 import type { PersonalizationConfig } from '@knitnprint/api-client'
-import { ImagePlus, Move, Ruler, ShoppingBag, Type } from 'lucide-react'
+import { ImagePlus, Move, ShoppingBag, Type } from 'lucide-react'
 import { type KeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import { cartApi } from '../cart-api'
-import { useI18n, type Locale } from '../i18n'
+import { useI18n } from '../i18n'
+import { printAreaForVariant } from '../personalization-scale'
 
 const SUPPORTED_FONTS = ['Roboto', 'Montserrat', 'Playfair Display', 'Dancing Script', 'Pacifico'] as const
 const DEFAULT_COLORS = ['#111111', '#ffffff', '#9c5263', '#1f4f78', '#b3232f']
@@ -10,7 +11,7 @@ const safeBasisPoints = (value: unknown, fallback: number) => typeof value === '
 
 type ElementFrame = { x: number; y: number; width: number; height: number }
 type Interaction = { pointerX: number; pointerY: number; frame: ElementFrame; handle: 'move' | 'nw' | 'ne' | 'sw' | 'se' }
-type PrintArea = ElementFrame & { id: string; label: string; physicalWidthCm: number; physicalHeightCm: number }
+type PrintArea = ElementFrame & { id: string; label: string; physicalWidthCm: number; physicalHeightCm: number; previewFrame?: ElementFrame }
 type ArticleReference = ElementFrame & { physicalWidthCm: number; physicalHeightCm: number }
 type PrintView = { id: string; label: string; mediaId?: string; articleReference?: ArticleReference; printAreas: PrintArea[] }
 type ProductMediaForPersonalizer = { id: string; url: string }
@@ -50,7 +51,7 @@ function configuredPrintAreas(raw: unknown, config: PersonalizationConfig, areaL
   return [{ id: 'area-1', label: areaLabel(1), x: safeBasisPoints(config.area_x, 2500) / 100, y: safeBasisPoints(config.area_y, 2500) / 100, width: safeBasisPoints(config.area_width, 5000) / 100, height: safeBasisPoints(config.area_height, 5000) / 100, physicalWidthCm: 20, physicalHeightCm: 20 }]
 }
 
-function configuredViews(config: PersonalizationConfig, frontLabel: string, viewLabel: (number: number) => string, areaLabel: (number: number) => string): PrintView[] {
+function configuredViews(config: PersonalizationConfig, variantId: string, frontLabel: string, viewLabel: (number: number) => string, areaLabel: (number: number) => string): PrintView[] {
   if (Array.isArray(config.views)) {
     const views = config.views.flatMap((item, index) => {
       if (!item || typeof item !== 'object') return []
@@ -64,12 +65,23 @@ function configuredViews(config: PersonalizationConfig, frontLabel: string, view
         && typeof rawReference.physical_height_cm === 'number' && Number.isFinite(rawReference.physical_height_cm)
         ? { x: Number(rawReference.x) / 100, y: Number(rawReference.y) / 100, width: Number(rawReference.width) / 100, height: Number(rawReference.height) / 100, physicalWidthCm: rawReference.physical_width_cm, physicalHeightCm: rawReference.physical_height_cm }
         : undefined
+      const variantReferences = Array.isArray(view.variant_references) ? view.variant_references : []
+      const variantReference = variantReferences.find((raw): raw is Record<string, unknown> => Boolean(raw && typeof raw === 'object' && (raw as Record<string, unknown>).variant_id === variantId && (raw as Record<string, unknown>).configured === true))
+      const effectiveReference = articleReference && variantReference
+        && typeof variantReference.physical_width_cm === 'number' && typeof variantReference.physical_height_cm === 'number'
+        ? { ...articleReference, physicalWidthCm: variantReference.physical_width_cm, physicalHeightCm: variantReference.physical_height_cm }
+        : articleReference
+      const effectivePrintAreas = articleReference && effectiveReference && variantReference
+        ? printAreas.map((area) => {
+          return { ...area, ...printAreaForVariant(area, articleReference, effectiveReference) }
+        })
+        : printAreas
       return [{
         id: typeof view.id === 'string' && view.id ? view.id : `view-${index + 1}`,
         label: typeof view.label === 'string' && view.label ? view.label : index === 0 ? frontLabel : viewLabel(index + 1),
         mediaId: typeof view.media_id === 'string' ? view.media_id : undefined,
-        articleReference,
-        printAreas,
+        articleReference: effectiveReference,
+        printAreas: effectivePrintAreas,
       }]
     })
     if (views.length) return views
@@ -78,36 +90,15 @@ function configuredViews(config: PersonalizationConfig, frontLabel: string, view
 }
 
 const designKey = (viewId: string, areaId: string) => `${viewId}:${areaId}`
-const formatCm = (value: number, locale: Locale) => new Intl.NumberFormat(locale === 'pt' ? 'pt-PT' : locale === 'es' ? 'es-ES' : 'en-GB', { maximumFractionDigits: 1 }).format(Math.round(value * 10) / 10)
-const physicalFrameSize = (area: PrintArea, frame: ElementFrame, locale: Locale) => `${formatCm(area.physicalWidthCm * frame.width / 100, locale)} × ${formatCm(area.physicalHeightCm * frame.height / 100, locale)} cm`
-
-type ElementPlacement = { left: number; right: number; top: number; bottom: number; absoluteFrame: ElementFrame }
-
-function elementPlacement(view: PrintView, area: PrintArea, frame: ElementFrame): ElementPlacement | undefined {
-  const reference = view.articleReference
-  if (!reference) return undefined
-  const absoluteFrame = {
-    x: area.x + area.width * frame.x / 100,
-    y: area.y + area.height * frame.y / 100,
-    width: area.width * frame.width / 100,
-    height: area.height * frame.height / 100,
-  }
-  return {
-    left: reference.physicalWidthCm * (absoluteFrame.x - reference.x) / reference.width,
-    right: reference.physicalWidthCm * (reference.x + reference.width - absoluteFrame.x - absoluteFrame.width) / reference.width,
-    top: reference.physicalHeightCm * (absoluteFrame.y - reference.y) / reference.height,
-    bottom: reference.physicalHeightCm * (reference.y + reference.height - absoluteFrame.y - absoluteFrame.height) / reference.height,
-    absoluteFrame,
-  }
-}
 
 function articleReferenceSnapshot(view: PrintView, area: PrintArea) {
   const reference = view.articleReference
   if (!reference) return undefined
+  const availableWidth = reference.physicalWidthCm * area.width / reference.width
   return {
     article_width_cm: reference.physicalWidthCm,
     article_height_cm: reference.physicalHeightCm,
-    print_left_cm: Math.round(reference.physicalWidthCm * (area.x - reference.x) / reference.width * 100) / 100,
+    print_left_cm: Math.round((reference.physicalWidthCm * (area.x - reference.x) / reference.width + Math.max(0, availableWidth - area.physicalWidthCm) / 2) * 100) / 100,
     print_top_cm: Math.round(reference.physicalHeightCm * (area.y - reference.y) / reference.height * 100) / 100,
   }
 }
@@ -138,11 +129,10 @@ type AreaDesign = {
   photoFrame: ElementFrame
 }
 
-function DesignElement({ frame, kind, label, measurement, selected, onSelect, onChange, children }: Readonly<{
+function DesignElement({ frame, kind, label, selected, onSelect, onChange, children }: Readonly<{
   frame: ElementFrame
   kind: 'photo' | 'text'
   label: string
-  measurement: string
   selected: boolean
   onSelect: () => void
   onChange: (frame: ElementFrame) => void
@@ -195,7 +185,7 @@ function DesignElement({ frame, kind, label, measurement, selected, onSelect, on
     className={`personalizer-element personalizer-element--${kind}${selected ? ' personalizer-element--selected' : ''}`}
     role="group"
     tabIndex={0}
-    aria-label={t('personalization.elementInstructions', { label, measurement })}
+    aria-label={t('personalization.elementInstructions', { label })}
     style={{ left: `${frame.x}%`, top: `${frame.y}%`, width: `${frame.width}%`, height: `${frame.height}%` }}
     onPointerDown={(event) => start(event, 'move')}
     onPointerMove={move}
@@ -204,7 +194,6 @@ function DesignElement({ frame, kind, label, measurement, selected, onSelect, on
     onKeyDown={moveWithKeyboard}
   >
     <div className="personalizer-element-content">{children}</div>
-    <span className="personalizer-element-measure">{measurement}</span>
     {(['nw', 'ne', 'sw', 'se'] as const).map((handle) => <button
       key={handle}
       type="button"
@@ -218,36 +207,10 @@ function DesignElement({ frame, kind, label, measurement, selected, onSelect, on
   </div>
 }
 
-function PlacementSummary({ placement }: Readonly<{ placement?: ElementPlacement }>) {
-  const { locale, t } = useI18n()
-  if (!placement) return <p className="personalizer-placement-unavailable"><Ruler />{t('personalization.placementUnavailable')}</p>
-  return <div className="personalizer-placement-summary" aria-label={t('personalization.placementDistances')}>
-    <span><small>{t('personalization.top')}</small><b>{formatCm(placement.top, locale)} cm</b></span>
-    <span><small>{t('personalization.left')}</small><b>{formatCm(placement.left, locale)} cm</b></span>
-    <span><small>{t('personalization.right')}</small><b>{formatCm(placement.right, locale)} cm</b></span>
-    <span><small>{t('personalization.bottom')}</small><b>{formatCm(placement.bottom, locale)} cm</b></span>
-  </div>
-}
-
-function MeasurementGuides({ reference, placement }: Readonly<{ reference?: ArticleReference; placement?: ElementPlacement }>) {
-  const { locale, t } = useI18n()
-  if (!reference || !placement) return null
-  const frame = placement.absoluteFrame
-  const right = frame.x + frame.width
-  const bottom = frame.y + frame.height
-  const referenceRight = reference.x + reference.width
-  const referenceBottom = reference.y + reference.height
-  return <div className="personalizer-measurement-layer" aria-hidden="true">
-    <div className="personalizer-article-reference" style={{ left: `${reference.x}%`, top: `${reference.y}%`, width: `${reference.width}%`, height: `${reference.height}%` }}><span>{t('personalization.articleBounds')}</span></div>
-    <span className="personalizer-distance-guide personalizer-distance-guide--horizontal" style={{ left: `${reference.x}%`, top: `${frame.y + frame.height / 2}%`, width: `${Math.max(0, frame.x - reference.x)}%` }}><b>{formatCm(placement.left, locale)} cm</b></span>
-    <span className="personalizer-distance-guide personalizer-distance-guide--horizontal" style={{ left: `${right}%`, top: `${frame.y + frame.height / 2}%`, width: `${Math.max(0, referenceRight - right)}%` }}><b>{formatCm(placement.right, locale)} cm</b></span>
-    <span className="personalizer-distance-guide personalizer-distance-guide--vertical" style={{ left: `${frame.x + frame.width / 2}%`, top: `${reference.y}%`, height: `${Math.max(0, frame.y - reference.y)}%` }}><b>{formatCm(placement.top, locale)} cm</b></span>
-    <span className="personalizer-distance-guide personalizer-distance-guide--vertical" style={{ left: `${frame.x + frame.width / 2}%`, top: `${bottom}%`, height: `${Math.max(0, referenceBottom - bottom)}%` }}><b>{formatCm(placement.bottom, locale)} cm</b></span>
-  </div>
-}
-
-export function ProductPersonalizer({ config, productMedia, onChange, previewOpen, onPreviewClose, onAddToCart, addToCartDisabled, addToCartLabel }: Readonly<{
+export function ProductPersonalizer({ config, variantId, variantLabel, productMedia, onChange, previewOpen, onPreviewClose, onAddToCart, addToCartDisabled, addToCartLabel }: Readonly<{
   config: PersonalizationConfig
+  variantId: string
+  variantLabel?: string
   productMedia: ProductMediaForPersonalizer[]
   onChange: (value: { customization: CustomerCustomization | null; mediaIds: string[]; ready: boolean; missing: string[] }) => void
   previewOpen: boolean
@@ -256,7 +219,7 @@ export function ProductPersonalizer({ config, productMedia, onChange, previewOpe
   addToCartDisabled: boolean
   addToCartLabel: string
 }>) {
-  const { locale, t } = useI18n()
+  const { t } = useI18n()
   const fonts = useMemo(() => { const valid = Array.isArray(config.allowed_fonts) ? config.allowed_fonts.filter((value): value is typeof SUPPORTED_FONTS[number] => typeof value === 'string' && SUPPORTED_FONTS.includes(value as typeof SUPPORTED_FONTS[number])) : []; return valid.length ? valid : [...SUPPORTED_FONTS] }, [config.allowed_fonts])
   const colors = useMemo(() => { const valid = Array.isArray(config.allowed_colors) ? config.allowed_colors.filter((value): value is string => typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value)) : []; return valid.length ? valid : DEFAULT_COLORS }, [config.allowed_colors])
   const colorName = (value: string) => ({
@@ -271,10 +234,11 @@ export function ProductPersonalizer({ config, productMedia, onChange, previewOpe
   const combined = wantsPhoto && wantsText
   const views = useMemo(() => configuredViews(
     config,
+    variantId,
     t('personalization.front'),
     (number) => t('personalization.viewFallback', { number }),
     (number) => t('personalization.areaFallback', { number }),
-  ), [config, t])
+  ), [config, variantId, t])
   const newDesign = (): AreaDesign => ({
     text: '',
     font: fonts[0] ?? 'Arial',
@@ -295,14 +259,18 @@ export function ProductPersonalizer({ config, productMedia, onChange, previewOpe
   const activeDesignKey = designKey(activeView.id, activeAreaId)
   const activeDesign = designs[activeDesignKey] ?? newDesign()
   const activePrintArea = printAreas.find(({ id }) => id === activeAreaId) ?? printAreas[0]
-  const activePhotoMeasurement = physicalFrameSize(activePrintArea, activeDesign.photoFrame, locale)
-  const activeTextMeasurement = physicalFrameSize(activePrintArea, activeDesign.textFrame, locale)
-  const activePhotoPlacement = elementPlacement(activeView, activePrintArea, activeDesign.photoFrame)
-  const activeTextPlacement = elementPlacement(activeView, activePrintArea, activeDesign.textFrame)
-  const selectedPlacement = selected === 'photo' ? activePhotoPlacement : activeTextPlacement
   const activeProductImage = productMedia.find(({ id }) => id === activeView.mediaId)?.url ?? (views.length === 1 ? productMedia[0]?.url : undefined)
   const previewView = views.find(({ id }) => id === previewViewId) ?? views[0]
   const previewProductImage = productMedia.find(({ id }) => id === previewView.mediaId)?.url ?? (views.length === 1 ? productMedia[0]?.url : undefined)
+  const previewHasDesign = previewView.printAreas.some((area) => {
+    const design = designs[designKey(previewView.id, area.id)]
+    return Boolean(design?.photoUrl || design?.text.trim())
+  })
+  const previewIsPrintCapped = previewView.printAreas.some((area) => {
+    const design = designs[designKey(previewView.id, area.id)]
+    const frame = area.previewFrame
+    return Boolean((design?.photoUrl || design?.text.trim()) && frame && (frame.width < area.width - 0.01 || frame.height < area.height - 0.01))
+  })
 
   function updateDesign(key: string, update: Partial<AreaDesign> | ((current: AreaDesign) => AreaDesign)) {
     setDesigns((current) => {
@@ -384,19 +352,15 @@ export function ProductPersonalizer({ config, productMedia, onChange, previewOpe
           <header className="personalizer-sidebar-heading"><span className="personalizer-step">1</span><div><strong>{t('personalization.chooseWhere')}</strong><small>{activeView.label} · {activePrintArea.label}</small></div></header>
           <div className="personalizer-sidebar-label"><span>{t('personalization.productSide')}</span><small>{views.length} {t(views.length === 1 ? 'personalization.availableSingular' : 'personalization.availablePlural')}</small></div>
           {views.length > 1 ? <div className="personalizer-view-switcher" role="tablist" aria-label={t('personalization.chooseProductSide')}>{views.map((view, index) => <button key={view.id} type="button" role="tab" aria-selected={view.id === activeView.id} className={view.id === activeView.id ? 'selected' : ''} onClick={() => selectView(view)}><b>{index + 1}</b><span>{view.label}</span></button>)}</div> : <div className="personalizer-single-choice"><b>1</b><span>{activeView.label}</span></div>}
-          <div className="personalizer-area-switcher" role="group" aria-label={t('personalization.choosePrintArea')}><div className="personalizer-sidebar-label"><span>{t('personalization.printArea')}</span><small>{t('personalization.maximumSize', { width: formatCm(activePrintArea.physicalWidthCm, locale), height: formatCm(activePrintArea.physicalHeightCm, locale) })}</small></div><div>{printAreas.map((area, index) => <button key={area.id} type="button" className={activeAreaId === area.id ? 'selected' : ''} aria-pressed={activeAreaId === area.id} onClick={() => setActiveAreaId(area.id)}><b>{index + 1}</b>{area.label}</button>)}</div></div>
+          <div className="personalizer-area-switcher" role="group" aria-label={t('personalization.choosePrintArea')}><div className="personalizer-sidebar-label"><span>{t('personalization.printArea')}</span></div><div>{printAreas.map((area, index) => <button key={area.id} type="button" className={activeAreaId === area.id ? 'selected' : ''} aria-pressed={activeAreaId === area.id} onClick={() => setActiveAreaId(area.id)}><b>{index + 1}</b>{area.label}</button>)}</div></div>
         </section>
         {wantsPhoto && <div className={`personalizer-tool${selected === 'photo' ? ' personalizer-tool--selected' : ''}`} onClick={() => setSelected('photo')}>
           <header className="personalizer-sidebar-heading"><span className="personalizer-step">2</span><div><strong><ImagePlus /> {t('personalization.photo')} · {activePrintArea.label}</strong><small>{t('personalization.optional')}</small></div></header>
-          <span className="personalizer-measure"><small>{t('personalization.finalSize')}</small><b>{activePhotoMeasurement}</b></span>
-          <PlacementSummary placement={activePhotoPlacement} />
           <label className="personalizer-upload">{t(uploadingAreas[activeDesignKey] ? 'personalization.preparingPhoto' : activeDesign.photoUrl ? 'personalization.replacePhoto' : 'personalization.uploadPhoto')}<input type="file" accept="image/jpeg,image/png,image/webp" disabled={uploadingAreas[activeDesignKey]} onChange={(event) => void upload(activeDesignKey, event.currentTarget.files?.[0])} /></label>
           <span className="personalizer-drag-hint"><Move /> {t('personalization.photoDragHint')}</span>
         </div>}
         {wantsText && <div className={`personalizer-tool${selected === 'text' ? ' personalizer-tool--selected' : ''}`} onClick={() => setSelected('text')}>
           <header className="personalizer-sidebar-heading"><span className="personalizer-step">{wantsPhoto ? 3 : 2}</span><div><strong><Type /> {t('personalization.text')} · {activePrintArea.label}</strong><small>{t('personalization.optional')}</small></div></header>
-          <span className="personalizer-measure"><small>{t('personalization.textBox')}</small><b>{activeTextMeasurement}</b></span>
-          <PlacementSummary placement={activeTextPlacement} />
           <label>{t('personalization.yourText')}<textarea rows={2} maxLength={config.text_max_characters} value={activeDesign.text} onChange={(event) => { updateDesign(activeDesignKey, { text: event.target.value }); setSelected('text') }} placeholder={t('personalization.textPlaceholder')} /></label>
           <small>{activeDesign.text.length} / {config.text_max_characters}</small>
           <span className="personalizer-drag-hint"><Move /> {t('personalization.textDragHint')}</span>
@@ -409,15 +373,15 @@ export function ProductPersonalizer({ config, productMedia, onChange, previewOpe
       </div>
       <div className="personalizer-stage">
         {activeProductImage ? <div className="personalizer-canvas"><img className="personalizer-product" src={activeProductImage} alt={t('personalization.productPreviewAlt', { view: activeView.label })} />
-          <MeasurementGuides reference={activeView.articleReference} placement={selectedPlacement} />
           {printAreas.map((area) => {
             const key = designKey(activeView.id, area.id)
             const design = designs[key] ?? newDesign()
             const active = activeAreaId === area.id
-            return <div key={area.id} className={`personalizer-print-area${active ? ' personalizer-print-area--active' : ''}`} aria-label={t('personalization.printAreaLabel', { area: area.label, width: formatCm(area.physicalWidthCm, locale), height: formatCm(area.physicalHeightCm, locale) })} style={{ left: `${area.x}%`, top: `${area.y}%`, width: `${area.width}%`, height: `${area.height}%` }} onClick={() => setActiveAreaId(area.id)}>
-              <span className="personalizer-print-area-label">{area.label} · {formatCm(area.physicalWidthCm, locale)} × {formatCm(area.physicalHeightCm, locale)} cm</span>
-              {wantsPhoto && (active || design.mediaId) && <DesignElement frame={design.photoFrame} kind="photo" label={t('personalization.photoElement', { view: activeView.label, area: area.label })} measurement={physicalFrameSize(area, design.photoFrame, locale)} selected={active && selected === 'photo'} onSelect={() => { setActiveAreaId(area.id); setSelected('photo') }} onChange={(photoFrame) => updateDesign(key, { photoFrame })}>{design.photoUrl ? <img className="personalizer-photo" src={design.photoUrl} alt={t('personalization.uploadedPhotoAlt')} draggable={false} /> : <span className="personalizer-placeholder"><ImagePlus /> {t('personalization.photo')}</span>}</DesignElement>}
-              {wantsText && (active || design.text.trim()) && <DesignElement frame={design.textFrame} kind="text" label={t('personalization.textElement', { view: activeView.label, area: area.label })} measurement={physicalFrameSize(area, design.textFrame, locale)} selected={active && selected === 'text'} onSelect={() => { setActiveAreaId(area.id); setSelected('text') }} onChange={(textFrame) => updateDesign(key, { textFrame })}>{design.text.trim() ? <span className="personalizer-text" style={{ color: design.color, fontFamily: design.font, fontSize: `${design.size}px` }}>{design.text}</span> : <span className="personalizer-placeholder"><Type /> {t('personalization.text')}</span>}</DesignElement>}
+            const frame = area.previewFrame ?? area
+            return <div key={area.id} className={`personalizer-print-area${active ? ' personalizer-print-area--active' : ''}`} aria-label={area.label} style={{ left: `${frame.x}%`, top: `${frame.y}%`, width: `${frame.width}%`, height: `${frame.height}%` }} onClick={() => setActiveAreaId(area.id)}>
+              <span className="personalizer-print-area-label">{area.label}</span>
+              {wantsPhoto && (active || design.mediaId) && <DesignElement frame={design.photoFrame} kind="photo" label={t('personalization.photoElement', { view: activeView.label, area: area.label })} selected={active && selected === 'photo'} onSelect={() => { setActiveAreaId(area.id); setSelected('photo') }} onChange={(photoFrame) => updateDesign(key, { photoFrame })}>{design.photoUrl ? <img className="personalizer-photo" src={design.photoUrl} alt={t('personalization.uploadedPhotoAlt')} draggable={false} /> : <span className="personalizer-placeholder"><ImagePlus /> {t('personalization.photo')}</span>}</DesignElement>}
+              {wantsText && (active || design.text.trim()) && <DesignElement frame={design.textFrame} kind="text" label={t('personalization.textElement', { view: activeView.label, area: area.label })} selected={active && selected === 'text'} onSelect={() => { setActiveAreaId(area.id); setSelected('text') }} onChange={(textFrame) => updateDesign(key, { textFrame })}>{design.text.trim() ? <span className="personalizer-text" style={{ color: design.color, fontFamily: design.font, fontSize: `${design.size}px` }}>{design.text}</span> : <span className="personalizer-placeholder"><Type /> {t('personalization.text')}</span>}</DesignElement>}
             </div>
           })}
         </div> : <div className="personalizer-product-empty">{t('personalization.emptyView')}</div>}
@@ -426,7 +390,7 @@ export function ProductPersonalizer({ config, productMedia, onChange, previewOpe
     {previewOpen && <div className="personalization-final-preview-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onPreviewClose() }}>
       <section className="personalization-final-preview" role="dialog" aria-modal="true" aria-labelledby="final-preview-title" aria-describedby="final-preview-description">
         <header>
-          <div><span>{t('personalization.preview')}</span><h2 id="final-preview-title">{t('personalization.finalResult')}</h2><p id="final-preview-description">{t('personalization.previewDescription')}</p></div>
+          <div><span>{t('personalization.preview')}</span><h2 id="final-preview-title">{t('personalization.finalResult')}</h2><p id="final-preview-description">{t('personalization.previewDescription')}</p>{variantLabel && <p className="personalization-final-preview-option" aria-live="polite">{t('personalization.previewForOption', { option: variantLabel })}</p>}</div>
           {views.length > 1 && <div className="personalization-final-preview-tabs" role="tablist" aria-label={t('personalization.choosePreviewSide')}>{views.map((view, index) => <button key={view.id} type="button" role="tab" aria-selected={view.id === previewView.id} className={view.id === previewView.id ? 'selected' : ''} onClick={() => setPreviewViewId(view.id)}><b>{index + 1}</b>{view.label}</button>)}</div>}
         </header>
         <div className="personalization-final-preview-stage">
@@ -435,12 +399,14 @@ export function ProductPersonalizer({ config, productMedia, onChange, previewOpe
             {previewView.printAreas.map((area) => {
               const design = designs[designKey(previewView.id, area.id)] ?? newDesign()
               if (!design.photoUrl && !design.text.trim()) return null
-              return <div key={area.id} className="personalization-final-area" style={{ left: `${area.x}%`, top: `${area.y}%`, width: `${area.width}%`, height: `${area.height}%` }}>
+              const frame = area.previewFrame ?? area
+              return <div key={area.id} className="personalization-final-area" style={{ left: `${frame.x}%`, top: `${frame.y}%`, width: `${frame.width}%`, height: `${frame.height}%` }}>
                 {design.photoUrl && <div className="personalization-final-element" style={{ left: `${design.photoFrame.x}%`, top: `${design.photoFrame.y}%`, width: `${design.photoFrame.width}%`, height: `${design.photoFrame.height}%` }}><img className="personalization-final-photo" src={design.photoUrl} alt={t('personalization.customPhotoAlt')} /></div>}
                 {design.text.trim() && <div className="personalization-final-element personalization-final-element--text" style={{ left: `${design.textFrame.x}%`, top: `${design.textFrame.y}%`, width: `${design.textFrame.width}%`, height: `${design.textFrame.height}%` }}><span style={{ color: design.color, fontFamily: design.font, fontSize: `${design.size}px` }}>{design.text}</span></div>}
               </div>
             })}
           </div> : <p>{t('personalization.emptyView')}</p>}
+          {previewProductImage && previewHasDesign && <p className="personalization-final-preview-note" role="status">{t(previewIsPrintCapped ? 'personalization.previewPrintCapped' : 'personalization.previewScaleNote')}</p>}
         </div>
         <footer><span>{t('personalization.previewFooter')}</span><div className="personalization-final-preview-actions"><button className="button button--secondary" type="button" autoFocus onClick={onPreviewClose}>{t('personalization.continuePersonalizing')}</button><button className="button button--primary" type="button" disabled={addToCartDisabled} onClick={onAddToCart}><ShoppingBag />{addToCartLabel}</button></div></footer>
       </section>

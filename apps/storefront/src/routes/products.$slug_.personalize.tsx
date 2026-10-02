@@ -9,6 +9,7 @@ import { StorefrontAnnouncement, StorefrontHeader } from '../components/storefro
 import { useI18n } from '../i18n'
 
 export const Route = createFileRoute('/products/$slug_/personalize')({
+  validateSearch: (search: Record<string, unknown>) => ({ variant: typeof search.variant === 'string' ? search.variant : undefined }),
   loader: async ({ params }) => {
     const product = await publishedProduct(params.slug)
     if (!product || product.personalization.mode === 'none') throw notFound()
@@ -21,9 +22,18 @@ export const Route = createFileRoute('/products/$slug_/personalize')({
 function PersonalizeProductPage() {
   const { t } = useI18n()
   const product = Route.useLoaderData()
+  const search = Route.useSearch()
   const defaultVariant = preferredVariant(product)
-  const [variantId, setVariantId] = useState(defaultVariant?.id ?? '')
+  const [variantId, setVariantId] = useState(product.variants.some(({ id }) => id === search.variant) ? search.variant! : defaultVariant?.id ?? '')
   const variant = product.variants.find(({ id }) => id === variantId) ?? defaultVariant
+  const personalizationViews = Array.isArray(product.personalization.views) ? product.personalization.views : []
+  const hasMeasuredSide = personalizationViews.some((raw) => raw && typeof raw === 'object' && raw.article_reference?.configured === true)
+  const calibrationReady = !hasMeasuredSide || personalizationViews.every((raw) => {
+    if (!raw || typeof raw !== 'object' || raw.article_reference?.configured !== true) return false
+    const references = raw.variant_references
+    if (product.variants.length <= 1 && (!Array.isArray(references) || references.length === 0)) return true
+    return Array.isArray(references) && references.some((reference) => reference && typeof reference === 'object' && reference.variant_id === variant?.id && reference.configured === true)
+  })
   const [design, setDesign] = useState<{ customization: CustomerCustomization | null; mediaIds: string[]; ready: boolean; missing: string[] }>({ customization: null, mediaIds: [], ready: false, missing: [] })
   const [status, setStatus] = useState<'idle' | 'adding' | 'added' | 'error'>('idle')
   const [errorMessage, setErrorMessage] = useState('')
@@ -33,7 +43,7 @@ function PersonalizeProductPage() {
   const soldOut = !stock || stock.state === 'sold-out'
 
   async function addToCart() {
-    if (!variant) return
+    if (!variant || !calibrationReady) return
     setStatus('adding')
     setErrorMessage('')
     setConfirmingIncomplete(false)
@@ -52,7 +62,7 @@ function PersonalizeProductPage() {
   }
 
   function requestAddToCart() {
-    if (!variant || soldOut || status === 'adding') return
+    if (!variant || soldOut || !calibrationReady || status === 'adding') return
     setPreviewOpen(false)
     if (design.missing.length) { setConfirmingIncomplete(true); return }
     void addToCart()
@@ -78,11 +88,11 @@ function PersonalizeProductPage() {
         </div>
         <div className="personalization-page-intro"><p>{t('personalization.studio')}</p><h1>{creationTitle}</h1><span>{t('personalization.intro')}</span></div>
       </header>
-      <ProductPersonalizer config={product.personalization} productMedia={product.media.map((media) => ({ id: media.id, url: mediaUrl(media.detail_url) }))} onChange={setDesign} previewOpen={previewOpen} onPreviewClose={() => setPreviewOpen(false)} onAddToCart={requestAddToCart} addToCartDisabled={!variant || soldOut || status === 'adding'} addToCartLabel={addToCartLabel} />
+      <ProductPersonalizer config={product.personalization} variantId={variant?.id ?? ''} variantLabel={product.variants.length > 1 ? variant?.title : undefined} productMedia={product.media.map((media) => ({ id: media.id, url: mediaUrl(media.detail_url) }))} onChange={setDesign} previewOpen={previewOpen} onPreviewClose={() => setPreviewOpen(false)} onAddToCart={requestAddToCart} addToCartDisabled={!variant || soldOut || !calibrationReady || status === 'adding'} addToCartLabel={addToCartLabel} />
       <div className="personalization-checkout-bar">
-        <span>{t(soldOut ? 'personalization.soldOutDetail' : design.ready ? 'personalization.ready' : 'personalization.optionalReady')}</span>
-        <button className="button button--secondary personalization-preview-button" type="button" onClick={() => setPreviewOpen(true)}><Eye /> {t('personalization.previewResult')}</button>
-        <button className="button button--primary" type="button" disabled={!variant || soldOut || status === 'adding'} onClick={requestAddToCart}><ShoppingBag />{addToCartLabel}</button>
+        <span>{!calibrationReady ? t('personalization.sizeCalibrationPending') : t(soldOut ? 'personalization.soldOutDetail' : design.ready ? 'personalization.ready' : 'personalization.optionalReady')}</span>
+        <button className="button button--secondary personalization-preview-button" type="button" disabled={!calibrationReady} onClick={() => setPreviewOpen(true)}><Eye /> {t('personalization.previewResult')}</button>
+        <button className="button button--primary" type="button" disabled={!variant || soldOut || !calibrationReady || status === 'adding'} onClick={requestAddToCart}><ShoppingBag />{addToCartLabel}</button>
         {status === 'added' && <a className="text-link" href="/cart">{t('personalization.viewCart')}</a>}
         {status === 'error' && <strong role="alert">{errorMessage}</strong>}
       </div>
