@@ -16,6 +16,7 @@ import {
   productStock,
   publishedCategories,
   publishedProducts,
+  publishedSiteFeedback,
 } from '../catalog-api'
 import {
   StorefrontAnnouncement,
@@ -23,16 +24,18 @@ import {
   StorefrontHeader,
 } from '../components/storefront-shell'
 import { ContextualFaqs } from '../components/contextual-faqs'
+import { SiteFeedback } from '../components/site-feedback'
 import { useI18n } from '../i18n'
 import { useLocalizedCatalog } from '../i18n/catalog'
 
 export const Route = createFileRoute('/')({
   loader: async () => {
-    const [products, categories] = await Promise.all([
+    const [products, categories, feedback] = await Promise.all([
       publishedProducts(),
       publishedCategories(),
+      publishedSiteFeedback(),
     ])
-    return { products, categories }
+    return { products, categories, feedback }
   },
   component: HomePage,
 })
@@ -149,7 +152,7 @@ function ProductShelf({
 }
 
 function HomePage() {
-  const { products, categories } = Route.useLoaderData()
+  const { products, categories, feedback } = Route.useLoaderData()
   const { t } = useI18n()
   const [query, setQuery] = useState('')
   const categoryPlaceholders = useMemo(() => [
@@ -347,6 +350,8 @@ function HomePage() {
             </article>
           </div>
         </section>
+
+        <SiteFeedback summary={feedback} />
 
         <ContextualFaqs
           id="home-faqs"
