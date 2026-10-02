@@ -474,6 +474,10 @@ export function createApiClient(options: ApiClientOptions = {}) {
       }),
     deleteProduct: (productId: string) =>
       send<void>(`/api/admin/products/${productId}`, { method: 'DELETE' }),
+    deleteProductMedia: (productId: string, mediaId: string) =>
+      send<Product>(`/api/admin/products/${productId}/media/${mediaId}`, {
+        method: 'DELETE',
+      }),
     changeProductStatus: (
       productId: string,
       input: ChangeProductStatusRequest,

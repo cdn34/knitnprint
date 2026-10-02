@@ -493,6 +493,72 @@ pub async fn public_asset(
     response
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/admin/product-media/{media_id}/{variant}",
+    params(("media_id" = Uuid, Path), ("variant" = String, Path)),
+    tag = "admin catalog",
+    responses(
+        (status = 200, description = "Private product image for catalog administration"),
+        (status = 401, body = ErrorBody),
+        (status = 403, body = ErrorBody),
+        (status = 404, body = ErrorBody),
+        (status = 503, body = ErrorBody)
+    )
+)]
+pub async fn admin_product_asset(
+    State(state): State<AppState>,
+    actor: AuthenticatedStaff,
+    Path((media_id, variant)): Path<(Uuid, String)>,
+) -> Response {
+    if let Err(response) = require_capability(&actor, "catalog.read") {
+        return response.into_response();
+    }
+    if !matches!(variant.as_str(), "thumbnail" | "card" | "detail") {
+        return not_found();
+    }
+    let (Some(pool), Some(storage)) = (state.database, state.media_storage) else {
+        return unavailable();
+    };
+    let asset = sqlx::query_as::<_, (String, String)>(
+        r#"
+        SELECT mv.object_key, mv.content_type
+        FROM media_assets m
+        JOIN media_variants mv ON mv.media_asset_id = m.id
+        JOIN product_media pm ON pm.media_asset_id = m.id
+        WHERE m.id = $1 AND mv.kind = $2 AND m.status = 'ready'
+        LIMIT 1
+        "#,
+    )
+    .bind(media_id)
+    .bind(&variant)
+    .fetch_optional(&pool)
+    .await;
+    let (object_key, content_type) = match asset {
+        Ok(Some(asset)) => asset,
+        Ok(None) => return not_found(),
+        Err(_) => return unavailable(),
+    };
+    let object = storage.get(&object_key).await;
+    let Ok(object) = object else {
+        return not_found();
+    };
+    let mut response = Response::new(Body::from(object.bytes));
+    response.headers_mut().insert(
+        header::CONTENT_TYPE,
+        object
+            .content_type
+            .unwrap_or(content_type)
+            .parse()
+            .unwrap_or_else(|_| header::HeaderValue::from_static("image/webp")),
+    );
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        header::HeaderValue::from_static("private, no-store"),
+    );
+    response
+}
+
 #[utoipa::path(get, path = "/api/admin/personalization/media/{media_id}/{variant}", params(("media_id" = Uuid, Path), ("variant" = String, Path)), tag = "admin personalization", responses((status = 200, description = "Private customer personalization image or original file"), (status = 401, body = ErrorBody), (status = 403, body = ErrorBody), (status = 404, body = ErrorBody)))]
 pub async fn admin_personalization_asset(
     State(state): State<AppState>,

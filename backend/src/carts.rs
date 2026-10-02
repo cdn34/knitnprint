@@ -190,6 +190,7 @@ struct DeliveryRow {
 
 #[derive(FromRow)]
 struct VariantForCart {
+    id: Uuid,
     price_minor: i64,
     currency: String,
     personalization_mode: String,
@@ -1436,6 +1437,19 @@ fn customization_allowed(
         .and_then(|value| value.get("version"))
         .and_then(Value::as_i64)
         .unwrap_or(1);
+    let has_size_calibration = variant
+        .personalization_views
+        .as_array()
+        .is_some_and(|views| {
+            views.iter().any(|view| {
+                view.get("variant_references")
+                    .and_then(Value::as_array)
+                    .is_some_and(|references| !references.is_empty())
+            })
+        });
+    if customization.is_some() && has_size_calibration && version < 7 {
+        return false;
+    }
     if version >= 5 {
         return view_customization_allowed(variant, customization, media_ids);
     }
@@ -1573,6 +1587,14 @@ fn view_customization_allowed(
         else {
             return false;
         };
+        if configured_view
+            .get("variant_references")
+            .and_then(Value::as_array)
+            .is_some_and(|references| !references.is_empty())
+            && selected_variant_reference(configured_view, variant.id).is_none()
+        {
+            return false;
+        }
         let Some(configured_area) = configured_view
             .get("print_areas")
             .and_then(Value::as_array)
@@ -1584,10 +1606,13 @@ fn view_customization_allowed(
         else {
             return false;
         };
-        if version >= 6 && !valid_measurement_snapshot(area, configured_view, configured_area) {
+        if version >= 6
+            && !valid_measurement_snapshot(area, configured_view, configured_area, variant.id)
+        {
             return false;
         }
-        if version >= 7 && !valid_article_reference_snapshot(area, configured_view, configured_area)
+        if version >= 7
+            && !valid_article_reference_snapshot(area, configured_view, configured_area, variant.id)
         {
             return false;
         }
@@ -1625,9 +1650,24 @@ fn valid_measurement_snapshot(
     customization_area: &Value,
     configured_view: &Value,
     configured_area: &Value,
+    variant_id: Uuid,
 ) -> bool {
-    let configured_dimension =
-        |key: &str| configured_area.get(key).map_or(Some(20.0), Value::as_f64);
+    let configured_dimension = |key: &str| {
+        let base = configured_area.get(key).map_or(Some(20.0), Value::as_f64)?;
+        let dimension_key = if key == "physical_width_cm" {
+            "physical_width_cm"
+        } else {
+            "physical_height_cm"
+        };
+        let Some(variant_reference) = selected_variant_reference(configured_view, variant_id)
+        else {
+            return Some(base);
+        };
+        let article_reference = configured_view.get("article_reference")?;
+        let base_reference = article_reference.get(dimension_key)?.as_f64()?;
+        let selected_reference = variant_reference.get(dimension_key)?.as_f64()?;
+        Some((base.min(base * selected_reference / base_reference) * 100.0).round() / 100.0)
+    };
     let matches_dimension = |snapshot_key: &str, configured_key: &str| {
         customization_area
             .get(snapshot_key)
@@ -1647,6 +1687,7 @@ fn valid_article_reference_snapshot(
     customization_area: &Value,
     configured_view: &Value,
     configured_area: &Value,
+    variant_id: Uuid,
 ) -> bool {
     let configured_reference = configured_view
         .get("article_reference")
@@ -1671,20 +1712,39 @@ fn valid_article_reference_snapshot(
     else {
         return false;
     };
-    let Some((area_x, area_y)) = area("x").zip(area("y")) else {
-        return false;
-    };
-    let Some((physical_width, physical_height)) =
-        configured("physical_width_cm").zip(configured("physical_height_cm"))
+    let Some((area_x, area_y, area_width)) = area("x")
+        .zip(area("y"))
+        .zip(area("width"))
+        .map(|((x, y), width)| (x, y, width))
     else {
         return false;
     };
+    let selected = selected_variant_reference(configured_view, variant_id);
+    let physical_dimension = |key: &str| {
+        selected
+            .and_then(|reference| reference.get(key).and_then(Value::as_f64))
+            .or_else(|| configured(key))
+    };
+    let Some((physical_width, physical_height)) =
+        physical_dimension("physical_width_cm").zip(physical_dimension("physical_height_cm"))
+    else {
+        return false;
+    };
+    let available_width = physical_width * area_width / reference_width;
+    let Some(max_print_width) = configured_area
+        .get("physical_width_cm")
+        .and_then(Value::as_f64)
+    else {
+        return false;
+    };
+    let actual_print_width = available_width.min(max_print_width);
     let expected = [
         ("article_width_cm", physical_width),
         ("article_height_cm", physical_height),
         (
             "print_left_cm",
-            physical_width * (area_x - reference_x) / reference_width,
+            physical_width * (area_x - reference_x) / reference_width
+                + (available_width - actual_print_width).max(0.0) / 2.0,
         ),
         (
             "print_top_cm",
@@ -1697,6 +1757,20 @@ fn valid_article_reference_snapshot(
                 .get(*key)
                 .and_then(Value::as_f64)
                 .is_some_and(|actual| (actual - expected).abs() <= 0.05)
+        })
+}
+
+fn selected_variant_reference(view: &Value, variant_id: Uuid) -> Option<&Value> {
+    view.get("variant_references")?
+        .as_array()?
+        .iter()
+        .find(|reference| {
+            reference
+                .get("variant_id")
+                .and_then(Value::as_str)
+                .and_then(|id| Uuid::parse_str(id).ok())
+                == Some(variant_id)
+                && reference.get("configured").and_then(Value::as_bool) == Some(true)
         })
 }
 
@@ -1818,7 +1892,7 @@ async fn active_variant(
 ) -> Result<Option<VariantForCart>, sqlx::Error> {
     sqlx::query_as(
         r##"
-        SELECT variant.price_minor, variant.currency::text AS currency,
+        SELECT variant.id, variant.price_minor, variant.currency::text AS currency,
                COALESCE(personalization.mode, 'none') AS personalization_mode,
                COALESCE(personalization.print_areas, '[{"id":"area-1"}]'::jsonb) AS print_areas,
                COALESCE(personalization.views, '[{"id":"view-front","print_areas":[{"id":"area-1"}]}]'::jsonb) AS personalization_views,
@@ -2319,6 +2393,7 @@ mod personalization_tests {
 
     fn variant(mode: &str) -> VariantForCart {
         VariantForCart {
+            id: Uuid::nil(),
             price_minor: 1000,
             currency: "EUR".into(),
             personalization_mode: mode.into(),
@@ -2592,5 +2667,45 @@ mod personalization_tests {
             Some(&tampered),
             &[]
         ));
+    }
+
+    #[test]
+    fn size_specific_measurements_are_required_for_the_selected_variant() {
+        let mut shirt = variant("text");
+        shirt.personalization_views[0]["variant_references"] = serde_json::json!([{
+            "variant_id": shirt.id,
+            "physical_width_cm": 48,
+            "physical_height_cm": 60,
+            "configured": true
+        }]);
+        let valid = serde_json::json!({
+            "version": 7,
+            "areas": [{
+                "view_id": "view-front", "view_label": "Frente",
+                "area_id": "area-1", "area_label": "Peito",
+                "print_width_cm": 30, "print_height_cm": 35,
+                "article_reference": {"article_width_cm": 48, "article_height_cm": 60, "print_left_cm": 9, "print_top_cm": 7.5},
+                "text": {"content": "Olá", "font": "Roboto", "color": "#111111", "size": 24, "x": 10, "y": 20, "width": 80, "height": 40}
+            }]
+        });
+        assert!(customization_allowed(&shirt, Some(&valid), &[]));
+        let mut older_format = valid.clone();
+        older_format["version"] = serde_json::json!(6);
+        assert!(!customization_allowed(&shirt, Some(&older_format), &[]));
+        let mut old_size = valid.clone();
+        old_size["areas"][0]["article_reference"]["article_width_cm"] = serde_json::json!(40);
+        assert!(!customization_allowed(&shirt, Some(&old_size), &[]));
+        shirt.personalization_views[0]["variant_references"][0]["physical_width_cm"] =
+            serde_json::json!(32);
+        shirt.personalization_views[0]["variant_references"][0]["physical_height_cm"] =
+            serde_json::json!(40);
+        let mut smaller_size = valid.clone();
+        smaller_size["areas"][0]["print_width_cm"] = serde_json::json!(24);
+        smaller_size["areas"][0]["print_height_cm"] = serde_json::json!(28);
+        smaller_size["areas"][0]["article_reference"] = serde_json::json!({"article_width_cm": 32, "article_height_cm": 40, "print_left_cm": 4, "print_top_cm": 5});
+        assert!(customization_allowed(&shirt, Some(&smaller_size), &[]));
+        shirt.personalization_views[0]["variant_references"][0]["configured"] =
+            serde_json::json!(false);
+        assert!(!customization_allowed(&shirt, Some(&valid), &[]));
     }
 }

@@ -201,7 +201,7 @@ function ProductPage() {
             </div>
           )}
           {personalizable && stock?.state !== 'sold-out' ? <div className="product-purchase-actions">
-            <a className="button button--primary personalization-start-button" href={`/products/${product.slug}/personalize`}>{t('personalization.start')}</a>
+            <a className="button button--primary personalization-start-button" href={`/products/${product.slug}/personalize${variant ? `?variant=${encodeURIComponent(variant.id)}` : ''}`}>{t('personalization.start')}</a>
             {addToCartButton}
           </div> : addToCartButton}
           <div className="cart-action-status" aria-live="polite">

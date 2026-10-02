@@ -715,6 +715,248 @@ pub async fn delete(
 }
 
 #[utoipa::path(
+    delete,
+    path = "/api/admin/products/{product_id}/media/{media_id}",
+    params(("product_id" = Uuid, Path), ("media_id" = Uuid, Path)),
+    tag = "admin catalog",
+    responses(
+        (status = 200, body = Product),
+        (status = 401, body = ErrorBody),
+        (status = 403, body = ErrorBody),
+        (status = 404, body = ErrorBody),
+        (status = 409, body = ErrorBody),
+        (status = 503, body = ErrorBody)
+    )
+)]
+pub async fn delete_media(
+    State(state): State<AppState>,
+    actor: AuthenticatedStaff,
+    Path((product_id, media_id)): Path<(Uuid, Uuid)>,
+) -> Response {
+    if let Err(response) = require_capability(&actor, CATALOG_WRITE) {
+        return response.into_response();
+    }
+    let (Some(pool), Some(storage)) = (state.database, state.media_storage) else {
+        return unavailable();
+    };
+    let mut tx = match pool.begin().await {
+        Ok(tx) => tx,
+        Err(_) => return unavailable(),
+    };
+    let original_key = match sqlx::query_scalar::<_, String>(
+        r#"
+        SELECT asset.object_key
+        FROM product_media product_media
+        JOIN media_assets asset ON asset.id = product_media.media_asset_id
+        WHERE product_media.product_id = $1 AND product_media.media_asset_id = $2
+        FOR UPDATE OF product_media, asset
+        "#,
+    )
+    .bind(product_id)
+    .bind(media_id)
+    .fetch_optional(&mut *tx)
+    .await
+    {
+        Ok(Some(key)) => key,
+        Ok(None) => return not_found(),
+        Err(_) => return unavailable(),
+    };
+    let shared_with_other_products = sqlx::query_scalar::<_, bool>(
+        r#"
+        SELECT EXISTS(
+            SELECT 1 FROM product_media product_media
+            WHERE product_media.media_asset_id = $2
+              AND product_media.product_id <> $1
+        ) OR EXISTS(
+            SELECT 1
+            FROM variant_media variant_media
+            JOIN product_variants variant ON variant.id = variant_media.variant_id
+            WHERE variant_media.media_asset_id = $2
+              AND variant.product_id <> $1
+        )
+        "#,
+    )
+    .bind(product_id)
+    .bind(media_id)
+    .fetch_one(&mut *tx)
+    .await;
+    match shared_with_other_products {
+        Ok(true) => {
+            return (
+                StatusCode::CONFLICT,
+                Json(ErrorBody::new(
+                    "product_media_in_use",
+                    "This photo is used by another product and cannot be deleted here.",
+                )),
+            )
+                .into_response();
+        }
+        Ok(false) => {}
+        Err(_) => return unavailable(),
+    }
+    let retained_by_order = sqlx::query_scalar::<_, bool>(
+        r#"
+        SELECT EXISTS(
+            SELECT 1
+            FROM order_lines line
+            CROSS JOIN LATERAL jsonb_array_elements(
+                COALESCE(line.personalization_context->'views', '[]'::jsonb)
+            ) AS view
+            WHERE line.product_id = $1 AND view->>'media_id' = $2::text
+        ) OR EXISTS(
+            SELECT 1 FROM order_lines line
+            WHERE line.customization_media_asset_id = $2
+               OR $2 = ANY(line.customization_media_asset_ids)
+        ) OR EXISTS(
+            SELECT 1 FROM order_line_personalization_media retained
+            WHERE retained.media_asset_id = $2
+        )
+        "#,
+    )
+    .bind(product_id)
+    .bind(media_id)
+    .fetch_one(&mut *tx)
+    .await;
+    match retained_by_order {
+        Ok(true) => {
+            return (
+                StatusCode::CONFLICT,
+                Json(ErrorBody::new(
+                    "product_media_in_use",
+                    "This photo is retained by an existing order and cannot be deleted.",
+                )),
+            )
+                .into_response();
+        }
+        Ok(false) => {}
+        Err(_) => return unavailable(),
+    }
+    let mut object_keys = match sqlx::query_scalar::<_, String>(
+        "SELECT object_key FROM media_variants WHERE media_asset_id=$1",
+    )
+    .bind(media_id)
+    .fetch_all(&mut *tx)
+    .await
+    {
+        Ok(keys) => keys,
+        Err(_) => return unavailable(),
+    };
+    object_keys.push(original_key);
+    let used_by_cart = sqlx::query_scalar::<_, bool>(
+        r#"
+        SELECT EXISTS(
+            SELECT 1 FROM cart_lines line
+            WHERE line.customization_media_asset_id = $1
+               OR $1 = ANY(line.customization_media_asset_ids)
+        )
+        "#,
+    )
+    .bind(media_id)
+    .fetch_one(&mut *tx)
+    .await;
+    match used_by_cart {
+        Ok(true) => {
+            return (
+                StatusCode::CONFLICT,
+                Json(ErrorBody::new(
+                    "product_media_in_use",
+                    "This photo is referenced by a cart and cannot be deleted.",
+                )),
+            )
+                .into_response();
+        }
+        Ok(false) => {}
+        Err(_) => return unavailable(),
+    }
+    if sqlx::query(
+        r#"
+        UPDATE product_personalization
+        SET preview_media_asset_id = CASE
+                WHEN preview_media_asset_id = $2 THEN NULL
+                ELSE preview_media_asset_id
+            END,
+            views = COALESCE((
+                SELECT jsonb_agg(
+                    CASE
+                        WHEN item->>'media_id' = $2::text
+                            THEN jsonb_set(item, '{media_id}', 'null'::jsonb, true)
+                        ELSE item
+                    END
+                    ORDER BY ordinality
+                )
+                FROM jsonb_array_elements(views) WITH ORDINALITY AS entries(item, ordinality)
+            ), views),
+            updated_at = now()
+        WHERE product_id = $1
+        "#,
+    )
+    .bind(product_id)
+    .bind(media_id)
+    .execute(&mut *tx)
+    .await
+    .is_err()
+    {
+        return unavailable();
+    }
+    // A successful response requires every stored copy to have been removed.
+    // The transaction rolls back if storage fails, so the deletion can be retried.
+    for key in &object_keys {
+        if let Err(error) = storage.delete(key).await {
+            tracing::warn!(%error, object_key = %key, %media_id, "product media deletion from object storage failed");
+            return unavailable();
+        }
+    }
+    if audit_entity(
+        &mut tx,
+        actor.id,
+        "product.media.delete",
+        "media_asset",
+        media_id,
+        None,
+    )
+    .await
+    .is_err()
+    {
+        return unavailable();
+    }
+    match sqlx::query(
+        "DELETE FROM media_assets asset USING product_media product_media WHERE asset.id=$2 AND product_media.product_id=$1 AND product_media.media_asset_id=asset.id",
+    )
+    .bind(product_id)
+    .bind(media_id)
+    .execute(&mut *tx)
+    .await
+    {
+        Ok(result) if result.rows_affected() == 0 => return not_found(),
+        Ok(_) => {}
+        Err(_) => return unavailable(),
+    }
+    if sqlx::query(
+        r#"
+        WITH ranked AS (
+            SELECT media_asset_id, row_number() OVER (ORDER BY position, media_asset_id) - 1 AS next_position
+            FROM product_media
+            WHERE product_id = $1
+        )
+        UPDATE product_media product_media
+        SET position = ranked.next_position
+        FROM ranked
+        WHERE product_media.product_id = $1
+          AND product_media.media_asset_id = ranked.media_asset_id
+        "#,
+    )
+    .bind(product_id)
+    .execute(&mut *tx)
+    .await
+    .is_err()
+        || tx.commit().await.is_err()
+    {
+        return unavailable();
+    }
+    product_by_id(&pool, product_id).await
+}
+
+#[utoipa::path(
     post,
     path = "/api/admin/products/{product_id}/status",
     params(("product_id" = Uuid, Path)),
@@ -1878,7 +2120,48 @@ fn valid_personalization_views(value: &Value) -> bool {
             && media_valid
             && valid_print_areas(print_areas)
             && valid_article_reference(view.get("article_reference"), print_areas)
+            && valid_variant_references(
+                view.get("variant_references"),
+                view.get("article_reference"),
+            )
             && unique_area_ids
+    })
+}
+
+fn valid_variant_references(references: Option<&Value>, article_reference: Option<&Value>) -> bool {
+    let Some(references) = references else {
+        return true;
+    };
+    let Some(references) = references.as_array() else {
+        return false;
+    };
+    if references.len() > 100
+        || (!references.is_empty()
+            && !article_reference.is_some_and(|reference| {
+                reference.get("configured").and_then(Value::as_bool) == Some(true)
+            }))
+    {
+        return false;
+    }
+    let mut ids = BTreeSet::new();
+    references.iter().all(|reference| {
+        reference
+            .get("variant_id")
+            .and_then(Value::as_str)
+            .and_then(|id| Uuid::parse_str(id).ok())
+            .is_some_and(|id| ids.insert(id))
+            && ["physical_width_cm", "physical_height_cm"]
+                .iter()
+                .all(|key| {
+                    reference
+                        .get(*key)
+                        .and_then(Value::as_f64)
+                        .is_some_and(|value| (0.5..=300.0).contains(&value))
+                })
+            && reference
+                .get("configured")
+                .and_then(Value::as_bool)
+                .is_some()
     })
 }
 
@@ -2244,5 +2527,26 @@ mod personalization_calibration_tests {
         let mut inconsistent_scale = valid;
         inconsistent_scale[0]["print_areas"][0]["physical_width_cm"] = serde_json::json!(60);
         assert!(!valid_personalization_views(&inconsistent_scale));
+    }
+
+    #[test]
+    fn size_calibrations_require_confirmed_base_and_unique_variants() {
+        let variant_id = uuid::Uuid::now_v7();
+        let valid = serde_json::json!([{
+            "id": "front", "label": "Front",
+            "article_reference": {"configured": true, "x": 1000, "y": 1000, "width": 8000, "height": 8000, "physical_width_cm": 40, "physical_height_cm": 50},
+            "print_areas": [{"id": "chest", "label": "Chest", "x": 2000, "y": 2000, "width": 6000, "height": 5600, "physical_width_cm": 30, "physical_height_cm": 35}],
+            "variant_references": [{"variant_id": variant_id, "physical_width_cm": 42, "physical_height_cm": 54, "configured": true}]
+        }]);
+        assert!(valid_personalization_views(&valid));
+        let mut duplicate = valid.clone();
+        duplicate[0]["variant_references"]
+            .as_array_mut()
+            .unwrap()
+            .push(valid[0]["variant_references"][0].clone());
+        assert!(!valid_personalization_views(&duplicate));
+        let mut unconfirmed = valid;
+        unconfirmed[0]["article_reference"]["configured"] = serde_json::json!(false);
+        assert!(!valid_personalization_views(&unconfirmed));
     }
 }
