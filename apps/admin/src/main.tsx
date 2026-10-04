@@ -714,7 +714,7 @@ function OrderDetail({
             </header>
             {Boolean(line.customization) && <OrderPersonalizationProof line={line} />}
             {productionSpecs.length > 0 && <div className="order-customization-specs">{productionSpecs.map((spec) => <span className="order-customization-spec" key={spec.key}><strong>{spec.title}</strong>{spec.photo && <small>{spec.photo}</small>}{spec.text && <small>{spec.text}</small>}</span>)}</div>}
-            {mediaIds.length > 0 && <div className="order-originals"><span>Ficheiros originais no MinIO</span><div>{mediaIds.map((mediaId, index) => <a key={mediaId} href={`/api/admin/personalization/media/${mediaId}/original`}><img src={`/api/admin/personalization/media/${mediaId}/thumbnail`} alt="" />Descarregar original {index + 1}</a>)}</div></div>}
+            {mediaIds.length > 0 && <div className="order-originals"><span>Ficheiros originais</span><div>{mediaIds.map((mediaId, index) => <a key={mediaId} href={`/api/admin/personalization/media/${mediaId}/original`}><img src={`/api/admin/personalization/media/${mediaId}/thumbnail`} alt="" />Descarregar original {index + 1}</a>)}</div></div>}
           </article>
         })}
       </section>

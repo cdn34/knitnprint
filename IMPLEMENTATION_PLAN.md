@@ -210,7 +210,7 @@ No ORM or Drizzle is planned.
 - CloudFront for stable public media delivery
 - Stripe for payments
 - A transactional email provider
-- MinIO or another S3-compatible service for local development
+- SeaweedFS for S3-compatible storage in local development
 
 ## 4. Initial repository shape
 

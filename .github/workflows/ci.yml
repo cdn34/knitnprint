@@ -110,19 +110,9 @@ jobs:
       - run: npm ci
       - name: Start local object storage
         run: |
-          docker run --detach \
-            --name knitnprint-ci-s3 \
-            --publish 9100:5000 \
-            motoserver/moto:latest
-          for attempt in {1..30}; do
-            if curl --fail --silent --show-error --request PUT \
-              http://127.0.0.1:9100/knitnprint-media; then
-              exit 0
-            fi
-            sleep 1
-          done
-          docker logs knitnprint-ci-s3
-          exit 1
+          docker compose up -d --wait seaweedfs
+      - name: Verify S3 storage integration
+        run: cargo test -p knitnprint-api live_seaweedfs_round_trip -- --ignored
       - run: npm run db:migrate
       - run: npm run admin:create-owner
       - run: npx playwright install --with-deps chromium

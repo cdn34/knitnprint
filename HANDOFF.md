@@ -2,6 +2,23 @@
 
 Last updated: 2026-08-15
 
+## Local storage update — 2026-10-04
+
+Local storage now uses pinned SeaweedFS 4.48 in `mini` mode, with automatic
+bucket creation, authenticated S3 access, and local admin-origin CORS. The
+endpoint, bucket, and credentials remain unchanged. CI browser tests also
+use SeaweedFS, plus an explicit S3 round-trip regression check. MinIO volumes
+are preserved but are not readable by SeaweedFS; existing uploads require
+copying through S3. Earlier MinIO verification entries below are historical.
+
+Validation: six storage unit tests, the live S3 round-trip against native
+SeaweedFS 4.48, Rust formatting, Compose configuration, and strict Clippy
+passed. Restarting Docker Desktop resolved stalled container operations.
+The Compose service is healthy and the live S3 round-trip also passes against
+its Docker endpoint. The browser suite has not been run locally.
+`bash scripts/start-local-storage.sh` provides a native fallback; see
+`local-setup.md` for its binary and data-directory settings.
+
 ## Goal
 
 Build KnitNPrint as a deliberately simple ecommerce platform with:
@@ -23,7 +40,7 @@ apps/storefront/  TanStack Start SSR storefront
 apps/admin/       React/Vite admin SPA
 backend/          Rust/Axum API
 images/           original KnitNPrint source logo
-compose.yaml      PostgreSQL and MinIO for local development
+compose.yaml      PostgreSQL and SeaweedFS for local development
 ```
 
 The storefront includes:
@@ -97,7 +114,7 @@ Requirements:
 
 - Node.js 24;
 - Rust stable;
-- Docker for the local PostgreSQL and MinIO services.
+- Docker for the local PostgreSQL and SeaweedFS services.
 
 Setup and start commands are documented in `README.md`.
 

@@ -16,14 +16,14 @@ const DEFAULT_LOCAL_SECRET_KEY: &str = "knitnprint-local";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StorageProvider {
-    Minio,
+    SeaweedFs,
     AwsS3,
 }
 
 impl StorageProvider {
     pub const fn as_str(self) -> &'static str {
         match self {
-            Self::Minio => "minio",
+            Self::SeaweedFs => "seaweedfs",
             Self::AwsS3 => "aws_s3",
         }
     }
@@ -359,7 +359,7 @@ impl StorageSettings {
         }
 
         Ok(Self {
-            provider: StorageProvider::Minio,
+            provider: StorageProvider::SeaweedFs,
             endpoint: Some(endpoint.unwrap_or_else(|| DEFAULT_LOCAL_ENDPOINT.into())),
             region: region.unwrap_or_else(|| DEFAULT_LOCAL_REGION.into()),
             bucket: bucket.unwrap_or_else(|| DEFAULT_LOCAL_BUCKET.into()),
@@ -388,11 +388,11 @@ mod tests {
     };
 
     #[test]
-    fn development_defaults_to_minio() {
+    fn development_defaults_to_seaweedfs() {
         let settings =
             StorageSettings::from_values(Environment::Development, None, None, None, None, None)
                 .unwrap();
-        assert_eq!(settings.provider, StorageProvider::Minio);
+        assert_eq!(settings.provider, StorageProvider::SeaweedFs);
         assert_eq!(settings.endpoint.as_deref(), Some(DEFAULT_LOCAL_ENDPOINT));
         assert_eq!(settings.bucket, DEFAULT_LOCAL_BUCKET);
         assert!(settings.access_key.is_some());
@@ -422,10 +422,10 @@ mod tests {
     }
 
     #[test]
-    fn deployed_environments_reject_minio_and_static_credentials() {
+    fn deployed_environments_reject_seaweedfs_and_static_credentials() {
         let endpoint = StorageSettings::from_values(
             Environment::Production,
-            Some("http://minio:9000".into()),
+            Some("http://seaweedfs:8333".into()),
             Some("eu-west-1".into()),
             Some("knitnprint-production-media".into()),
             None,
@@ -491,7 +491,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn development_presigned_urls_target_minio() {
+    async fn development_presigned_urls_target_seaweedfs() {
         let settings =
             StorageSettings::from_values(Environment::Development, None, None, None, None, None)
                 .unwrap();
@@ -518,5 +518,73 @@ mod tests {
             assert!(url.contains("X-Amz-Algorithm=AWS4-HMAC-SHA256"));
             assert!(url.contains("X-Amz-Expires=300"));
         }
+    }
+
+    #[tokio::test]
+    #[ignore = "requires docker compose up -d --wait seaweedfs"]
+    async fn live_seaweedfs_round_trip() {
+        let storage = super::ObjectStorage::from_env(Environment::Development)
+            .await
+            .unwrap();
+        let key = format!("storage-smoke/{}.txt", uuid::Uuid::new_v4());
+        let body = b"SeaweedFS signed upload";
+        let origin = "http://127.0.0.1:3001";
+        let http = reqwest::Client::new();
+        let upload = storage
+            .presign_upload(
+                &key,
+                "text/plain",
+                body.len() as i64,
+                Duration::from_secs(300),
+            )
+            .await
+            .unwrap();
+        let preflight = http
+            .request(reqwest::Method::OPTIONS, &upload)
+            .header("Origin", origin)
+            .header("Access-Control-Request-Method", "PUT")
+            .header("Access-Control-Request-Headers", "content-type")
+            .send()
+            .await
+            .unwrap();
+        assert!(preflight.status().is_success());
+        assert_eq!(preflight.headers()["access-control-allow-origin"], origin);
+        let uploaded = http
+            .put(&upload)
+            .header("Origin", origin)
+            .header("Content-Type", "text/plain")
+            .body(body.to_vec())
+            .send()
+            .await
+            .unwrap();
+        assert!(
+            uploaded.status().is_success(),
+            "upload: {:?}",
+            uploaded.status()
+        );
+        assert_eq!(uploaded.headers()["access-control-allow-origin"], origin);
+        let metadata = storage.head(&key).await.unwrap();
+        assert_eq!(metadata.content_length, Some(body.len() as i64));
+        assert_eq!(metadata.content_type.as_deref(), Some("text/plain"));
+        assert_eq!(storage.get(&key).await.unwrap().bytes, body);
+        let download = storage
+            .presign_download(&key, Duration::from_secs(300))
+            .await
+            .unwrap();
+        let downloaded = http.get(&download).send().await.unwrap();
+        assert!(downloaded.status().is_success());
+        assert_eq!(downloaded.bytes().await.unwrap().as_ref(), body);
+        let unsigned = download.split('?').next().unwrap();
+        assert_eq!(
+            http.get(unsigned).send().await.unwrap().status(),
+            reqwest::StatusCode::FORBIDDEN
+        );
+        storage
+            .put(&key, "text/plain", b"replacement".to_vec())
+            .await
+            .unwrap();
+        assert_eq!(storage.get(&key).await.unwrap().bytes, b"replacement");
+        storage.delete(&key).await.unwrap();
+        assert!(storage.head(&key).await.is_err());
     }
 }

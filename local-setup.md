@@ -6,7 +6,38 @@ Run everything from the repository root:
 cd /home/carlosn34/projects/test-p
 ```
 
+## Switching from MinIO
+
+SeaweedFS uses a new `seaweedfs_data` volume; existing MinIO objects do not
+appear automatically. Keep the old volume if its uploads matter and copy
+objects through the S3 API from a working MinIO instance. Existing database
+media records still refer to those objects until copied. Start the replacement
+with `docker compose up -d seaweedfs`. The endpoint, bucket, and S3 credentials
+in `backend/.env.example` are unchanged. The SeaweedFS admin UI uses
+`knitnprint` / `knitnprint-local`.
+
 ## First-time setup
+
+### If Docker Desktop stalls
+
+If container startup and `docker inspect` both hang, restart Docker Desktop
+with `docker desktop restart`, then retry
+`docker compose up -d --wait seaweedfs`.
+
+SeaweedFS can also run natively. Download version 4.48 for your operating
+system from [the official releases](https://github.com/seaweedfs/seaweedfs/releases/tag/4.48),
+extract `weed`, and keep this running in a separate terminal:
+
+```bash
+SEAWEEDFS_BIN=/absolute/path/to/weed bash scripts/start-local-storage.sh
+```
+
+The native launcher uses the same S3 endpoint, admin UI, bucket, credentials,
+and CORS origins as Compose. Data is stored in `.local/seaweedfs` (override with
+`SEAWEEDFS_DATA_DIR`). Native and Docker data stores are separate; run only one
+at a time. PostgreSQL still needs Docker or a separate local installation.
+
+### Install and bootstrap
 
 ```bash
 npm ci
@@ -30,7 +61,7 @@ npm run admin:create-owner
 
 If this checkout reuses a Docker volume created before the `KnitNPrint` rename,
 or one containing migrations from another branch, recreate the disposable local
-database and MinIO volumes before running the setup commands above:
+database and SeaweedFS volumes before running the setup commands above:
 
 ```bash
 # Deletes local development data only. It does not affect AWS staging.
@@ -84,7 +115,7 @@ Open:
 - Customer account: http://127.0.0.1:3000/account
 - Admin: http://127.0.0.1:3001
 - API readiness: http://127.0.0.1:8080/api/ready
-- MinIO console: http://127.0.0.1:9101
+- SeaweedFS admin UI: http://127.0.0.1:9101
 
 Local admin credentials:
 
@@ -92,6 +123,16 @@ Local admin credentials:
 Email: owner@knitnprint.local
 Password: local-development-passphrase
 ```
+
+## Storage integration check
+
+```bash
+docker compose up -d --wait seaweedfs
+cargo test -p knitnprint-api live_seaweedfs_round_trip -- --ignored
+```
+
+This verifies browser CORS preflight, signed PUT/GET, private access, metadata,
+SDK writes, and deletion against the local media bucket.
 
 ## Quick checks
 
@@ -210,7 +251,7 @@ for the complete identity setup.
 
 After that one-time setup, stop the API, authenticate to AWS, and restart it
 with SES enabled. Repeat `aws sso login` whenever the cached SSO session
-expires. Keep `APP_ENV=development`; staging mode rejects local HTTP and MinIO
+expires. Keep `APP_ENV=development`; staging mode rejects local HTTP and SeaweedFS
 settings.
 
 ```bash
@@ -281,7 +322,7 @@ Stop the API, storefront, and admin with `Ctrl+C`, then preserve local data:
 docker compose down
 ```
 
-Delete all local PostgreSQL and MinIO data only when a full reset is intended:
+Delete all local PostgreSQL and SeaweedFS data only when a full reset is intended:
 
 ```bash
 docker compose down --volumes

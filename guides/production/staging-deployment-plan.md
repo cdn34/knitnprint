@@ -106,7 +106,7 @@ Before provisioning AWS:
   - Add `X-Robots-Tag: noindex, nofollow` and a restrictive `robots.txt`.
 - Add a shared object-storage strategy:
   - Keep the Vite development server for the admin SPA; upload staging and production admin builds to their private AWS S3 asset buckets.
-  - Use MinIO for uploaded business media in development and test.
+  - Use SeaweedFS for uploaded business media in development and test.
   - Require AWS S3 with task-role credentials in staging and production; reject custom endpoints and static access keys there.
   - Keep one storage API for presigned upload/download, metadata, read, write, and delete operations.
   - Route product images, category images, and future customer-customization objects through that API.
@@ -117,7 +117,7 @@ Before provisioning AWS:
   - Allow ECS task definitions to select the binary explicitly.
 - Correct scheduled-command privilege issues:
   - Remove migration execution from runtime cleanup and owner commands.
-  - Make media cleanup use staging AWS S3 configuration and its task role instead of local MinIO defaults.
+  - Make media cleanup use staging AWS S3 configuration and its task role instead of local SeaweedFS defaults.
 - Harden proxy IP handling:
   - Keep direct API access restricted to the ALB.
   - Add an explicit AWS ALB trusted-proxy mode that uses the ALB-observed rightmost forwarded address.

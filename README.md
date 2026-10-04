@@ -46,7 +46,7 @@ placing real credentials in committed files.
 - Storefront: http://localhost:3000
 - Admin: http://localhost:3001
 - API health: http://localhost:8080/api/health
-- MinIO console: http://localhost:9101
+- SeaweedFS admin UI: http://localhost:9101
 
 The API can start without PostgreSQL for development. `/api/health` will remain
 healthy while `/api/ready` reports `503` until a database connection is ready.
@@ -66,25 +66,32 @@ runtime/job database credentials. In staging and production, `cleanup_media`
 requires explicit `S3_REGION` and `S3_BUCKET` values and uses the standard AWS
 credential chain supplied by its task role. Deployed environments reject
 `S3_ENDPOINT`, `S3_ACCESS_KEY_ID`, and `S3_SECRET_ACCESS_KEY` so they cannot
-silently use MinIO or long-lived keys.
+silently use SeaweedFS or long-lived keys.
 
 There are two separate object-storage concerns:
 
 - The admin SPA is served by Vite during development. Its staging and
   production builds are uploaded to a dedicated private AWS S3 bucket and
-  served through CloudFront. MinIO does not replace Vite's development server,
+  served through CloudFront. SeaweedFS does not replace Vite's development server,
   because doing so would remove the normal module reload and proxy workflow.
 - Business media uploaded through the admin API—including product images and
   future category or customer-customization assets—uses a shared object-storage
-  interface. Development and test select the private `knitnprint-media` MinIO
+  interface. Development and test select the private `knitnprint-media` SeaweedFS
   bucket; staging and production select private AWS S3 using workload-role
   credentials. Those environments use separate buckets:
   `knitnprint-staging-media-<account-id>` and
   `knitnprint-production-media-<account-id>`. Startup rejects a bucket whose
   environment prefix does not match `APP_ENV`.
 
-`docker compose up -d` creates the local media bucket automatically. Browser
-uploads use five-minute presigned PUT URLs in both MinIO and AWS S3. The shared
+`docker compose up -d` starts SeaweedFS 4.48 in single-node `mini` mode and
+creates the private local media bucket automatically. Its S3 endpoint remains
+`http://127.0.0.1:9100`; the admin UI at port 9101 uses
+`knitnprint` / `knitnprint-local`. Browser CORS allows the local admin origins.
+SeaweedFS stores data in a new `seaweedfs_data` volume. Existing MinIO volumes
+are not reused or deleted; old objects must be copied through the S3 API from
+a working MinIO instance if they need to be retained.
+
+Browser uploads use five-minute presigned PUT URLs in both SeaweedFS and AWS S3. The shared
 storage API also supports short-lived presigned GET URLs for future private,
 authorization-checked assets. Published catalog images keep stable same-origin
 `/api/media/...` URLs so pages and CDNs can cache them; expiring S3 query strings
@@ -303,7 +310,7 @@ Uploaded media remains quarantined until its object metadata, declared type,
 file signature, decode limits, and malware scan pass. Production requires a
 ClamAV-compatible TCP INSTREAM service in `MEDIA_SCANNER_ADDRESS`; scanner
 failure or timeout fails closed and cannot publish the object. Development may
-provide the local MinIO `S3_ACCESS_KEY_ID`/`S3_SECRET_ACCESS_KEY` pair. Staging
+provide the local SeaweedFS `S3_ACCESS_KEY_ID`/`S3_SECRET_ACCESS_KEY` pair. Staging
 and production reject both variables and use the standard AWS SDK credential
 chain, ensuring that AWS S3 access comes from the ECS workload role.
 
@@ -338,7 +345,7 @@ and stale hashed staff login-limit buckets. Set `SESSION_RETENTION_DAYS` to a
 value from 1 to 365 to change the revoked-session retention period. Customer
 cleanup removes stale customer login-limit buckets.
 
-Clean abandoned product-image uploads from PostgreSQL and MinIO on the same
+Clean abandoned product-image uploads from PostgreSQL and SeaweedFS on the same
 daily schedule:
 
 ```bash
