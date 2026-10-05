@@ -18,6 +18,23 @@ export interface AdjustInventoryRequest {
   "reason": string
 }
 
+export interface AdminProductFeedback {
+  "comment": string
+  "created_at": string
+  "display_name": string
+  "id": string
+  "moderated_at"?: string | null
+  "moderated_by_name"?: string | null
+  "product_id"?: string | null
+  "product_slug"?: string | null
+  "product_title"?: string | null
+  "rating": number
+  "replied_at"?: string | null
+  "replied_by_name"?: string | null
+  "status": string
+  "store_reply"?: string | null
+}
+
 export interface AppliedDiscount {
   "amount_minor": number
   "code": string
@@ -183,6 +200,12 @@ export interface CreateFulfillmentRequest {
 
 export interface CreateOrderRequest {
   "payment_method": string
+}
+
+export interface CreateProductFeedbackRequest {
+  "comment": string
+  "display_name": string
+  "rating": number
 }
 
 export interface CreateProductRequest {
@@ -385,6 +408,11 @@ export interface ErrorDetail {
   "message": string
 }
 
+export interface FeedbackSettings {
+  "daily_submission_limit": number
+  "hourly_ip_limit": number
+}
+
 export interface ForgotPasswordRequest {
   "email": string
 }
@@ -490,6 +518,10 @@ export interface MediaRecord {
 export interface MetricDefinition {
   "description": string
   "key": string
+}
+
+export interface ModerateProductFeedbackRequest {
+  "status": string
 }
 
 export interface NotificationStatus {
@@ -728,6 +760,25 @@ export interface Product {
   "variants": Array<Variant>
 }
 
+export interface ProductFeedback {
+  "comment": string
+  "created_at": string
+  "display_name": string
+  "id": string
+  "product_slug"?: string | null
+  "product_title"?: string | null
+  "rating": number
+  "replied_at"?: string | null
+  "store_reply"?: string | null
+}
+
+export interface ProductFeedbackSummary {
+  "average_rating"?: number | null
+  "rating_counts": Array<RatingCount>
+  "reviews": Array<ProductFeedback>
+  "total_reviews": number
+}
+
 export interface ProductMedia {
   "alt_text": string
   "card_url": string
@@ -736,6 +787,11 @@ export interface ProductMedia {
   "position": number
   "thumbnail_url": string
   "url": string
+}
+
+export interface RatingCount {
+  "count": number
+  "rating": number
 }
 
 export interface Refund {
@@ -768,6 +824,10 @@ export interface RefundLine {
 
 export interface ReorderCategoriesRequest {
   "category_ids": Array<string>
+}
+
+export interface ReplyToProductFeedbackRequest {
+  "reply"?: string | null
 }
 
 export interface ResetPasswordRequest {
@@ -875,6 +935,11 @@ export interface StaffRecord {
   "email": string
   "id": string
   "role": string
+}
+
+export interface SubmittedProductFeedback {
+  "id": string
+  "status": string
 }
 
 export interface TaxRule {

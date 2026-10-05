@@ -1552,7 +1552,10 @@ async fn products_response(pool: &PgPool, rows: Vec<ProductRow>) -> Response {
     let mut products = Vec::with_capacity(rows.len());
     for row in rows {
         match hydrate_product(pool, row).await {
-            Ok(product) => products.push(product),
+            Ok(mut product) => {
+                use_admin_media_urls(&mut product);
+                products.push(product);
+            }
             Err(_) => return unavailable(),
         }
     }
@@ -1611,8 +1614,21 @@ async fn product_by_id(pool: &PgPool, id: Uuid) -> Response {
 
 async fn product_response(pool: &PgPool, row: ProductRow) -> Response {
     match hydrate_product(pool, row).await {
-        Ok(product) => Json(product).into_response(),
+        Ok(mut product) => {
+            use_admin_media_urls(&mut product);
+            Json(product).into_response()
+        }
         Err(_) => unavailable(),
+    }
+}
+
+fn use_admin_media_urls(product: &mut Product) {
+    for media in &mut product.media {
+        let prefix = format!("/api/admin/product-media/{}", media.id);
+        media.url = format!("{prefix}/detail");
+        media.thumbnail_url = format!("{prefix}/thumbnail");
+        media.card_url = format!("{prefix}/card");
+        media.detail_url = format!("{prefix}/detail");
     }
 }
 

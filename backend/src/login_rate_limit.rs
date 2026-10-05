@@ -30,6 +30,7 @@ pub enum AuthScope {
     Staff,
     Customer,
     AccountAction,
+    Feedback,
 }
 
 impl AuthScope {
@@ -38,8 +39,46 @@ impl AuthScope {
             Self::Staff => "staff",
             Self::Customer => "customer",
             Self::AccountAction => "account_action",
+            Self::Feedback => "feedback",
         }
     }
+}
+
+/// Shared by store and product feedback, with database locks for multi-instance safety.
+/// Check the global bucket first so rotating IPs cannot create unlimited bucket rows.
+pub async fn consume_feedback_submission(
+    pool: &PgPool,
+    client_ip: IpAddr,
+) -> Result<(), LoginLimitError> {
+    let scope = AuthScope::Feedback;
+    let global_hash = bucket_hash(scope, "global", "all");
+    let ip_hash = bucket_hash(scope, "ip", &client_ip.to_string());
+    let mut transaction = pool.begin().await?;
+    let (daily_limit, hourly_ip_limit): (i32, i32) = sqlx::query_as(
+        "SELECT daily_submission_limit, hourly_ip_limit FROM feedback_settings WHERE singleton=true"
+    ).fetch_one(&mut *transaction).await?;
+    for (dimension, hash, limit, minutes) in [
+        ("global", &global_hash, daily_limit, 1440),
+        ("ip", &ip_hash, hourly_ip_limit, 60),
+    ] {
+        advisory_lock(&mut transaction, hash).await?;
+        let retry_after: Option<i64> = sqlx::query_scalar(
+            "SELECT greatest(1, ceil(extract(epoch FROM (window_started_at + make_interval(mins => $4) - now())))::bigint) FROM auth_login_rate_limits WHERE auth_scope='feedback' AND dimension=$1 AND key_hash=$2 AND event_count >= $3 AND window_started_at > now() - make_interval(mins => $4)"
+        ).bind(dimension).bind(hash.as_slice()).bind(limit).bind(minutes)
+            .fetch_optional(&mut *transaction).await?;
+        if let Some(retry_after) = retry_after {
+            transaction.rollback().await?;
+            return Err(LoginLimitError::Limited(retry_after as u64));
+        }
+    }
+    for (dimension, hash, limit, minutes) in [
+        ("global", &global_hash, daily_limit, 1440),
+        ("ip", &ip_hash, hourly_ip_limit, 60),
+    ] {
+        record_event(&mut transaction, scope, dimension, hash, limit, minutes, 0).await?;
+    }
+    transaction.commit().await?;
+    Ok(())
 }
 
 pub async fn clear_customer_account_buckets(

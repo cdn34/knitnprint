@@ -1,7 +1,9 @@
 import {
   createApiClient,
   type Category,
+  type CreateProductFeedbackRequest,
   type Product,
+  type ProductFeedbackSummary,
   type Variant,
 } from '@knitnprint/api-client'
 import { createIsomorphicFn } from '@tanstack/react-start'
@@ -52,6 +54,37 @@ export async function publishedProduct(slug: string): Promise<Product | null> {
   } catch {
     return null
   }
+}
+
+const emptyFeedback: ProductFeedbackSummary = {
+  average_rating: null,
+  total_reviews: 0,
+  rating_counts: [5, 4, 3, 2, 1].map((rating) => ({ rating, count: 0 })),
+  reviews: [],
+}
+
+export async function publishedProductFeedback(slug: string): Promise<ProductFeedbackSummary> {
+  try {
+    return await api.productFeedback(slug)
+  } catch {
+    return emptyFeedback
+  }
+}
+
+export async function publishedSiteFeedback(): Promise<ProductFeedbackSummary> {
+  try {
+    return await api.siteFeedback()
+  } catch {
+    return emptyFeedback
+  }
+}
+
+export function submitProductFeedback(slug: string, input: CreateProductFeedbackRequest) {
+  return api.submitProductFeedback(slug, input)
+}
+
+export function submitSiteFeedback(input: CreateProductFeedbackRequest) {
+  return api.submitSiteFeedback(input)
 }
 
 export function productPrice(product: Product) {
