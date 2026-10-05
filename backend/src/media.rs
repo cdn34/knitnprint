@@ -551,6 +551,30 @@ pub async fn admin_personalization_asset(
     response
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/admin/product-media/{media_id}/{variant}",
+    params(("media_id" = Uuid, Path), ("variant" = String, Path)),
+    tag = "admin media",
+    responses(
+        (status = 200, description = "Private product image preview, including drafts"),
+        (status = 401, body = ErrorBody),
+        (status = 403, body = ErrorBody),
+        (status = 404, body = ErrorBody),
+        (status = 503, body = ErrorBody)
+    )
+)]
+pub async fn admin_product_asset(
+    State(state): State<AppState>,
+    actor: AuthenticatedStaff,
+    Path((media_id, variant)): Path<(Uuid, String)>,
+) -> Response {
+    if let Err(response) = require_capability(&actor, "catalog.read") {
+        return response.into_response();
+    }
+    private_product_asset(state, media_id, variant).await
+}
+
 #[utoipa::path(get, path = "/api/admin/order-product/media/{media_id}/{variant}", params(("media_id" = Uuid, Path), ("variant" = String, Path)), tag = "admin personalization", responses((status = 200, description = "Product image retained for an order personalization proof"), (status = 401, body = ErrorBody), (status = 403, body = ErrorBody), (status = 404, body = ErrorBody)))]
 pub async fn admin_order_product_asset(
     State(state): State<AppState>,
@@ -560,6 +584,10 @@ pub async fn admin_order_product_asset(
     if let Err(response) = require_capability(&actor, "orders.read") {
         return response.into_response();
     }
+    private_product_asset(state, media_id, variant).await
+}
+
+async fn private_product_asset(state: AppState, media_id: Uuid, variant: String) -> Response {
     if !matches!(variant.as_str(), "thumbnail" | "card" | "detail") {
         return not_found();
     }

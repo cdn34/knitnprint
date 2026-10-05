@@ -89,6 +89,10 @@ pub struct ObjectStorage {
 }
 
 impl ObjectStorage {
+    pub fn from_backend(backend: Arc<dyn StorageBackend>) -> Self {
+        Self { backend }
+    }
+
     pub async fn from_env(environment: Environment) -> Result<Self, String> {
         let settings = StorageSettings::from_values(
             environment,

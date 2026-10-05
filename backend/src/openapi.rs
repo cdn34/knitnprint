@@ -85,6 +85,7 @@ use crate::{
         media::initiate,
         media::complete,
         media::public_asset,
+        media::admin_product_asset,
         media::initiate_personalization,
         media::complete_personalization,
         media::admin_personalization_asset,

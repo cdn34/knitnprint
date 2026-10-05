@@ -215,6 +215,10 @@ pub fn app(state: AppState) -> Router {
             axum::routing::post(inventory::adjust),
         )
         .route(
+            "/api/admin/product-media/{media_id}/{variant}",
+            get(media::admin_product_asset),
+        )
+        .route(
             "/api/admin/media/uploads",
             axum::routing::post(media::initiate),
         )
