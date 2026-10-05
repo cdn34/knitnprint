@@ -139,6 +139,10 @@ pub fn app(state: AppState) -> Router {
             "/api/admin/categories/order",
             axum::routing::put(catalog::category_reorder),
         )
+        .route(
+            "/api/admin/feedback/settings",
+            get(feedback::settings).put(feedback::update_settings),
+        )
         .route("/api/admin/feedback", get(feedback::admin_list))
         .route(
             "/api/admin/feedback/{feedback_id}",

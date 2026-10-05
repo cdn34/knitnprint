@@ -1,6 +1,7 @@
 export type {
   AddCartItemRequest,
   AdminProductFeedback,
+  FeedbackSettings,
   AppliedDiscount,
   ApplyDiscountRequest,
   AccountTokenRequest,
@@ -104,6 +105,7 @@ export type {
 import type {
   AddCartItemRequest,
   AdminProductFeedback,
+  FeedbackSettings,
   ApplyDiscountRequest,
   AccountTokenRequest,
   ChangeProductStatusRequest,
@@ -471,8 +473,15 @@ export function createApiClient(options: ApiClientOptions = {}) {
       }),
     listAdminProducts: (query: { q?: string; status?: string } = {}) =>
       send<Array<Product>>(withQuery('/api/admin/products', query)),
-    listAdminFeedback: (status = 'pending') =>
-      send<Array<AdminProductFeedback>>(withQuery('/api/admin/feedback', { status })),
+    feedbackSettings: () => send<FeedbackSettings>('/api/admin/feedback/settings'),
+    updateFeedbackSettings: (input: FeedbackSettings) =>
+      send<FeedbackSettings>('/api/admin/feedback/settings', {
+        method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(input),
+      }),
+    listAdminFeedback: (status = 'pending', page: { limit?: number; offset?: number } = {}) =>
+      send<Array<AdminProductFeedback>>(withQuery('/api/admin/feedback', {
+        status, limit: page.limit?.toString(), offset: page.offset?.toString(),
+      })),
     moderateProductFeedback: (feedbackId: string, input: ModerateProductFeedbackRequest) =>
       send<AdminProductFeedback>(`/api/admin/feedback/${feedbackId}`, {
         method: 'PUT',

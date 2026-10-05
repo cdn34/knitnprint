@@ -196,6 +196,7 @@ export const en = {
   'feedback.commentPlaceholder': 'Tell us what you liked about this piece…',
   'feedback.submit': 'Submit review',
   'feedback.submitting': 'Submitting…',
+  'feedback.rateLimited': 'Too many reviews have been submitted. Please try again later.',
   'feedback.error': 'Please choose a rating and check the information before trying again.',
   'feedback.publishedReviews': 'Published reviews',
   'feedback.storeReply': 'Response from KnitnPrint',

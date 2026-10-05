@@ -197,6 +197,7 @@ export const es = {
   'feedback.commentPlaceholder': 'Cuéntanos qué te ha gustado de esta pieza…',
   'feedback.submit': 'Enviar opinión',
   'feedback.submitting': 'Enviando…',
+  'feedback.rateLimited': 'Se han enviado demasiadas reseñas. Vuelve a intentarlo más tarde.',
   'feedback.error': 'Elige una valoración y revisa los datos antes de intentarlo de nuevo.',
   'feedback.publishedReviews': 'Opiniones publicadas',
   'feedback.storeReply': 'Respuesta de KnitnPrint',

@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { Send, Star } from 'lucide-react'
-import type { CreateProductFeedbackRequest, ProductFeedback } from '@knitnprint/api-client'
+import { ApiError, type CreateProductFeedbackRequest, type ProductFeedback } from '@knitnprint/api-client'
 import { useI18n } from '../i18n'
 
 export function FeedbackStars({ rating, label }: Readonly<{ rating: number; label: string }>) {
@@ -27,17 +27,17 @@ export function FeedbackForm({
   const [hoveredRating, setHoveredRating] = useState(0)
   const [commentLength, setCommentLength] = useState(0)
   const [submitting, setSubmitting] = useState(false)
-  const [error, setError] = useState(false)
+  const [error, setError] = useState<'invalid' | 'limited' | null>(null)
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (rating === 0) {
-      setError(true)
+      setError('invalid')
       return
     }
     const form = new FormData(event.currentTarget)
     setSubmitting(true)
-    setError(false)
+    setError(null)
     try {
       await submitFeedback({
         display_name: String(form.get('display_name') ?? ''),
@@ -45,8 +45,8 @@ export function FeedbackForm({
         comment: String(form.get('comment') ?? ''),
       })
       onSuccess()
-    } catch {
-      setError(true)
+    } catch (error) {
+      setError(error instanceof ApiError && error.status === 429 ? 'limited' : 'invalid')
       setSubmitting(false)
     }
   }
@@ -80,7 +80,7 @@ export function FeedbackForm({
               onBlur={() => setHoveredRating(0)}
               onClick={() => {
                 setRating(star)
-                setError(false)
+                setError(null)
               }}
             >
               <Star aria-hidden="true" />
@@ -102,7 +102,7 @@ export function FeedbackForm({
       />
       <small className="feedback-character-count">{commentLength} / 1200</small>
 
-      {error && <p className="feedback-form-error" role="alert">{t('feedback.error')}</p>}
+      {error && <p className="feedback-form-error" role="alert">{t(error === 'limited' ? 'feedback.rateLimited' : 'feedback.error')}</p>}
       <button className="button button--primary" type="submit" disabled={submitting}>
         {submitting ? t('feedback.submitting') : t('feedback.submit')}
         {!submitting && <Send size={16} aria-hidden="true" />}

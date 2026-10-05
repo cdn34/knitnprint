@@ -2239,10 +2239,17 @@ const feedbackKey = ['product-feedback'] as const
 function FeedbackManagement({ canModerate }: Readonly<{ canModerate: boolean }>) {
   const client = useQueryClient()
   const [status, setStatus] = useState<'pending' | 'approved' | 'rejected' | 'all'>('pending')
+  const [page, setPage] = useState(0)
+  const pageSize = 50
   const feedback = useQuery({
-    queryKey: [...feedbackKey, status],
-    queryFn: () => api.listAdminFeedback(status),
+    queryKey: [...feedbackKey, status, page],
+    queryFn: () => api.listAdminFeedback(status, { limit: pageSize + 1, offset: page * pageSize }),
     refetchInterval: 30_000,
+  })
+  const limits = useQuery({ queryKey: ['feedback-settings'], queryFn: api.feedbackSettings })
+  const saveLimits = useMutation({
+    mutationFn: api.updateFeedbackSettings,
+    onSuccess: (next) => client.setQueryData(['feedback-settings'], next),
   })
   const moderation = useMutation({
     mutationFn: ({ id, nextStatus }: { id: string; nextStatus: 'approved' | 'rejected' }) =>
@@ -2269,7 +2276,7 @@ function FeedbackManagement({ canModerate }: Readonly<{ canModerate: boolean }>)
           <p>Community · Store and product reviews</p>
           <h2 id="feedback-management-heading">Feedback validation</h2>
         </div>
-        <span>{feedback.data?.length ?? 0} shown</span>
+        <span>{Math.min(feedback.data?.length ?? 0, pageSize)} shown · Page {page + 1}</span>
       </div>
       <div className="feedback-management-intro">
         <MessageSquareText aria-hidden="true" />
@@ -2278,13 +2285,31 @@ function FeedbackManagement({ canModerate }: Readonly<{ canModerate: boolean }>)
           <p>Read every submission before publishing it. Pending feedback is never visible on the storefront.</p>
         </div>
       </div>
+      {limits.data && (
+        <form className="feedback-response-form" key={`${limits.data.daily_submission_limit}-${limits.data.hourly_ip_limit}`} onSubmit={(event) => {
+          event.preventDefault()
+          const form = new FormData(event.currentTarget)
+          saveLimits.mutate({ daily_submission_limit: Number(form.get('daily_submission_limit')), hourly_ip_limit: Number(form.get('hourly_ip_limit')) })
+        }}>
+          <strong>Review submission limits</strong>
+          <p>Shared across homepage and product reviews. Daily windows run for 24 hours; IP windows run for one hour, starting with the first submission.</p>
+          <label htmlFor="feedback-daily-limit">Reviews per day site-wide</label>
+          <input id="feedback-daily-limit" name="daily_submission_limit" type="number" min={1} max={10000} required defaultValue={limits.data.daily_submission_limit} disabled={!canModerate} />
+          <label htmlFor="feedback-ip-limit">Reviews per hour per IP address</label>
+          <input id="feedback-ip-limit" name="hourly_ip_limit" type="number" min={1} max={1000} required defaultValue={limits.data.hourly_ip_limit} disabled={!canModerate} />
+          {canModerate && <button type="submit" disabled={saveLimits.isPending}>Save limits</button>}
+          {saveLimits.isSuccess && <p role="status">Submission limits saved.</p>}
+          {saveLimits.isError && <p role="alert">Submission limits could not be saved.</p>}
+        </form>
+      )}
+      {limits.isError && <p role="alert">Submission limits could not be loaded.</p>}
       <div className="feedback-status-tabs" aria-label="Filter feedback by status">
         {(['pending', 'approved', 'rejected', 'all'] as const).map((option) => (
           <button
             key={option}
             type="button"
             aria-pressed={status === option}
-            onClick={() => setStatus(option)}
+            onClick={() => { setStatus(option); setPage(0) }}
           >
             {option === 'all' ? 'All feedback' : option}
           </button>
@@ -2303,7 +2328,7 @@ function FeedbackManagement({ canModerate }: Readonly<{ canModerate: boolean }>)
         </div>
       )}
       <div className="feedback-management-list">
-        {feedback.data?.map((item: AdminProductFeedback) => (
+        {feedback.data?.slice(0, pageSize).map((item: AdminProductFeedback) => (
           <article key={item.id}>
             <div className="feedback-management-meta">
               <span className={`feedback-status feedback-status--${item.status}`}>{item.status}</span>
@@ -2391,6 +2416,10 @@ function FeedbackManagement({ canModerate }: Readonly<{ canModerate: boolean }>)
           </article>
         ))}
       </div>
+      <nav className="feedback-status-tabs" aria-label="Feedback pages">
+        <button type="button" disabled={page === 0 || feedback.isFetching} onClick={() => setPage((current) => current - 1)}>Previous</button>
+        <button type="button" disabled={feedback.isFetching || (feedback.data?.length ?? 0) <= pageSize} onClick={() => setPage((current) => current + 1)}>Next</button>
+      </nav>
     </section>
   )
 }

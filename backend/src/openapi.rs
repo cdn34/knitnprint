@@ -77,6 +77,8 @@ use crate::{
         feedback::create,
         feedback::public_site_list,
         feedback::create_site,
+        feedback::settings,
+        feedback::update_settings,
         feedback::admin_list,
         feedback::moderate,
         feedback::reply,
@@ -100,6 +102,7 @@ use crate::{
         staff::disable
     ),
     components(schemas(
+        feedback::FeedbackSettings,
         health::Health,
         error::ErrorBody,
         error::ErrorDetail,

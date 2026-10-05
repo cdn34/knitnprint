@@ -408,6 +408,11 @@ export interface ErrorDetail {
   "message": string
 }
 
+export interface FeedbackSettings {
+  "daily_submission_limit": number
+  "hourly_ip_limit": number
+}
+
 export interface ForgotPasswordRequest {
   "email": string
 }

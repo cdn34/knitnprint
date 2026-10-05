@@ -1,7 +1,7 @@
 use axum::{
     Json,
     extract::{Path, Query, State},
-    http::StatusCode,
+    http::{StatusCode, header},
     response::{IntoResponse, Response},
 };
 use serde::{Deserialize, Serialize};
@@ -13,6 +13,7 @@ use crate::{
     AppState,
     auth::{AuthenticatedStaff, require_capability},
     error::ErrorBody,
+    login_rate_limit::{ClientIp, LoginLimitError, consume_feedback_submission},
 };
 
 const CATALOG_READ: &str = "catalog.read";
@@ -85,6 +86,8 @@ pub struct AdminProductFeedback {
 #[derive(Deserialize)]
 pub struct AdminFeedbackQuery {
     pub status: Option<String>,
+    pub limit: Option<u32>,
+    pub offset: Option<u32>,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -95,6 +98,64 @@ pub struct ModerateProductFeedbackRequest {
 #[derive(Deserialize, ToSchema)]
 pub struct ReplyToProductFeedbackRequest {
     pub reply: Option<String>,
+}
+
+#[derive(Deserialize, Serialize, ToSchema, FromRow)]
+pub struct FeedbackSettings {
+    pub daily_submission_limit: i32,
+    pub hourly_ip_limit: i32,
+}
+
+#[utoipa::path(get, path = "/api/admin/feedback/settings", tag = "admin product feedback",
+    responses((status = 200, body = FeedbackSettings), (status = 401, body = ErrorBody), (status = 403, body = ErrorBody), (status = 503, body = ErrorBody)))]
+pub async fn settings(State(state): State<AppState>, actor: AuthenticatedStaff) -> Response {
+    if let Err(response) = require_capability(&actor, CATALOG_READ) {
+        return response.into_response();
+    }
+    let Some(pool) = state.database else {
+        return unavailable();
+    };
+    match sqlx::query_as::<_, FeedbackSettings>("SELECT daily_submission_limit, hourly_ip_limit FROM feedback_settings WHERE singleton=true").fetch_one(&pool).await {
+        Ok(settings) => Json(settings).into_response(),
+        Err(_) => unavailable(),
+    }
+}
+
+#[utoipa::path(put, path = "/api/admin/feedback/settings", tag = "admin product feedback", request_body = FeedbackSettings,
+    responses((status = 200, body = FeedbackSettings), (status = 401, body = ErrorBody), (status = 403, body = ErrorBody), (status = 422, body = ErrorBody), (status = 503, body = ErrorBody)))]
+pub async fn update_settings(
+    State(state): State<AppState>,
+    actor: AuthenticatedStaff,
+    Json(input): Json<FeedbackSettings>,
+) -> Response {
+    if let Err(response) = require_capability(&actor, CATALOG_WRITE) {
+        return response.into_response();
+    }
+    if !(1..=10000).contains(&input.daily_submission_limit)
+        || !(1..=1000).contains(&input.hourly_ip_limit)
+    {
+        return error(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "invalid_feedback_limits",
+            "Daily limit must be 1–10000 and hourly IP limit 1–1000.",
+        );
+    }
+    let Some(pool) = state.database else {
+        return unavailable();
+    };
+    let mut tx = match pool.begin().await {
+        Ok(tx) => tx,
+        Err(_) => return unavailable(),
+    };
+    if sqlx::query("UPDATE feedback_settings SET daily_submission_limit=$1, hourly_ip_limit=$2 WHERE singleton=true")
+        .bind(input.daily_submission_limit).bind(input.hourly_ip_limit).execute(&mut *tx).await.is_err() {
+        return unavailable();
+    }
+    if sqlx::query("INSERT INTO audit_log (actor_staff_user_id,action,entity_type,entity_id,metadata) VALUES ($1,'feedback.settings_update','feedback_settings','singleton',jsonb_build_object('daily_submission_limit',$2::int,'hourly_ip_limit',$3::int))")
+        .bind(actor.id).bind(input.daily_submission_limit).bind(input.hourly_ip_limit).execute(&mut *tx).await.is_err() || tx.commit().await.is_err() {
+        return unavailable();
+    }
+    Json(input).into_response()
 }
 
 #[utoipa::path(
@@ -193,6 +254,7 @@ pub async fn public_site_list(State(state): State<AppState>) -> Response {
         WHERE feedback.status='approved'
             AND (feedback.product_id IS NULL OR product.status='active')
         ORDER BY feedback.created_at DESC, feedback.id DESC
+        LIMIT 20
         "#,
     )
     .fetch_all(&pool)
@@ -264,12 +326,14 @@ fn rating_counts(counts: &[RatingCount]) -> Vec<RatingCount> {
         (status = 202, body = SubmittedProductFeedback),
         (status = 404, body = ErrorBody),
         (status = 422, body = ErrorBody),
+        (status = 429, body = ErrorBody),
         (status = 503, body = ErrorBody)
     )
 )]
 pub async fn create(
     State(state): State<AppState>,
     Path(slug): Path<String>,
+    ClientIp(client_ip): ClientIp,
     Json(input): Json<CreateProductFeedbackRequest>,
 ) -> Response {
     let display_name = input.display_name.trim();
@@ -288,6 +352,9 @@ pub async fn create(
         Ok(None) => return not_found(),
         Err(_) => return unavailable(),
     };
+    if let Err(error) = consume_feedback_submission(&pool, client_ip).await {
+        return submission_limit_error(error);
+    }
     let id = Uuid::now_v7();
     match sqlx::query(
         "INSERT INTO product_feedback (id,product_id,display_name,rating,comment) VALUES ($1,$2,$3,$4,$5)",
@@ -320,11 +387,13 @@ pub async fn create(
     responses(
         (status = 202, body = SubmittedProductFeedback),
         (status = 422, body = ErrorBody),
+        (status = 429, body = ErrorBody),
         (status = 503, body = ErrorBody)
     )
 )]
 pub async fn create_site(
     State(state): State<AppState>,
+    ClientIp(client_ip): ClientIp,
     Json(input): Json<CreateProductFeedbackRequest>,
 ) -> Response {
     let display_name = input.display_name.trim();
@@ -338,6 +407,9 @@ pub async fn create_site(
     let Some(pool) = state.database else {
         return unavailable();
     };
+    if let Err(error) = consume_feedback_submission(&pool, client_ip).await {
+        return submission_limit_error(error);
+    }
     let id = Uuid::now_v7();
     match sqlx::query(
         "INSERT INTO product_feedback (id,display_name,rating,comment) VALUES ($1,$2,$3,$4)",
@@ -365,7 +437,11 @@ pub async fn create_site(
     get,
     path = "/api/admin/feedback",
     tag = "admin product feedback",
-    params(("status" = Option<String>, Query)),
+    params(
+        ("status" = Option<String>, Query),
+        ("limit" = Option<u32>, Query, description = "Page size, 1–100; defaults to 50"),
+        ("offset" = Option<u32>, Query, description = "Number of records to skip")
+    ),
     responses(
         (status = 200, body = [AdminProductFeedback]),
         (status = 401, body = ErrorBody),
@@ -389,7 +465,15 @@ pub async fn admin_list(
     let Some(pool) = state.database else {
         return unavailable();
     };
-    match admin_records(&pool, status).await {
+    let limit = query.limit.unwrap_or(50);
+    if !(1..=100).contains(&limit) {
+        return error(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "invalid_feedback_page",
+            "Choose a page size between 1 and 100.",
+        );
+    }
+    match admin_records(&pool, status, limit, query.offset.unwrap_or(0)).await {
         Ok(records) => Json(records).into_response(),
         Err(_) => unavailable(),
     }
@@ -585,24 +669,19 @@ fn admin_select() -> &'static str {
 async fn admin_records(
     pool: &PgPool,
     status: &str,
+    limit: u32,
+    offset: u32,
 ) -> Result<Vec<AdminProductFeedback>, sqlx::Error> {
-    let sql = if status == "all" {
-        format!(
-            "{} ORDER BY feedback.created_at DESC LIMIT 300",
-            admin_select()
-        )
-    } else {
-        format!(
-            "{} WHERE feedback.status=$1 ORDER BY feedback.created_at DESC LIMIT 300",
-            admin_select()
-        )
-    };
-    let query = sqlx::query_as::<_, AdminProductFeedback>(&sql);
-    if status == "all" {
-        query.fetch_all(pool).await
-    } else {
-        query.bind(status).fetch_all(pool).await
-    }
+    let sql = format!(
+        "{} WHERE ($1 = 'all' OR feedback.status=$1) ORDER BY feedback.created_at DESC, feedback.id DESC LIMIT $2 OFFSET $3",
+        admin_select()
+    );
+    sqlx::query_as::<_, AdminProductFeedback>(&sql)
+        .bind(status)
+        .bind(i64::from(limit))
+        .bind(i64::from(offset))
+        .fetch_all(pool)
+        .await
 }
 
 async fn admin_record(
@@ -613,6 +692,27 @@ async fn admin_record(
         .bind(id)
         .fetch_optional(pool)
         .await
+}
+
+fn submission_limit_error(error: LoginLimitError) -> Response {
+    match error {
+        LoginLimitError::Limited(retry_after) => {
+            let mut response = self::error(
+                StatusCode::TOO_MANY_REQUESTS,
+                "feedback_rate_limited",
+                "Too many feedback submissions. Please try again later.",
+            );
+            response.headers_mut().insert(
+                header::RETRY_AFTER,
+                retry_after.to_string().parse().unwrap(),
+            );
+            response
+                .headers_mut()
+                .insert(header::CACHE_CONTROL, "no-store".parse().unwrap());
+            response
+        }
+        LoginLimitError::Database(_) => unavailable(),
+    }
 }
 
 fn invalid() -> Response {
