@@ -70,6 +70,7 @@ import {
   type StaffRecord,
 } from '@knitnprint/api-client'
 import { printAreaOffsets } from './personalization-measurements'
+import { uploadImagesWithProgress } from './product-image-uploads'
 import './styles.css'
 
 const api = createApiClient()
@@ -2766,9 +2767,11 @@ function CatalogManagement({
     ({ id }) => id === shippingPackageProfileId,
   )
 
-  async function uploadProductImages(product: Product, images: ProductImageUpload[]) {
-    const uploadedMediaIds = new Map<string, string>()
-    for (const { id, altText, file } of images) {
+  const completedProductImages = useRef(new Map<string, string>())
+
+  async function uploadProductImages(product: Product, images: ProductImageUpload[]): Promise<ProductSaveResult> {
+    const uploadedMediaIds = completedProductImages.current
+    const photosUploaded = await uploadImagesWithProgress(images, uploadedMediaIds, async ({ altText, file }) => {
       const upload = await api.initiateMediaUpload({
         filename: file.name,
         content_type: file.type,
@@ -2779,24 +2782,21 @@ function CatalogManagement({
         product_id: product.id,
         alt_text: altText,
       })
-      if (id) uploadedMediaIds.set(id, completed.id)
-    }
+      return completed.id
+    })
     return {
       product: await api.adminProduct(product.id),
-      uploadedMediaIds,
+      uploadedMediaIds: new Map(uploadedMediaIds),
+      photosUploaded,
     }
   }
 
   async function saveQueuedProductImages(product: Product, images: ProductImageUpload[]): Promise<ProductSaveResult> {
     if (images.length === 0) return { product, photosUploaded: true, uploadedMediaIds: new Map() }
     try {
-      const uploaded = await uploadProductImages(product, images)
-      return {
-        ...uploaded,
-        photosUploaded: true,
-      }
+      return await uploadProductImages(product, images)
     } catch {
-      return { product, photosUploaded: false, uploadedMediaIds: new Map() }
+      return { product, photosUploaded: false, uploadedMediaIds: new Map(completedProductImages.current) }
     }
   }
 
@@ -2813,19 +2813,23 @@ function CatalogManagement({
       const saved = await saveQueuedProductImages(await product, images)
       const variant = input.variants[0]
       if (!saved.photosUploaded || !input.personalization || !variant || saved.uploadedMediaIds.size === 0) return saved
-      const resolvedProduct = await api.updateProduct(saved.product.id, {
-        title: input.title,
-        slug: input.slug,
-        description: input.description,
-        search_keywords: input.search_keywords,
-        shipping: input.shipping,
-        sku: variant.sku,
-        price_minor: variant.price_minor,
-        currency: variant.currency,
-        available_quantity: variant.available_quantity ?? 0,
-        personalization: resolvePersonalizationMedia(input.personalization, pendingIds, saved.uploadedMediaIds),
-      })
-      return { ...saved, product: resolvedProduct }
+      try {
+        const resolvedProduct = await api.updateProduct(saved.product.id, {
+          title: input.title,
+          slug: input.slug,
+          description: input.description,
+          search_keywords: input.search_keywords,
+          shipping: input.shipping,
+          sku: variant.sku,
+          price_minor: variant.price_minor,
+          currency: variant.currency,
+          available_quantity: variant.available_quantity ?? 0,
+          personalization: resolvePersonalizationMedia(input.personalization, pendingIds, saved.uploadedMediaIds),
+        })
+        return { ...saved, product: resolvedProduct }
+      } catch {
+        return { ...saved, photosUploaded: false }
+      }
     },
     onMutate: async () => {
       await client.cancelQueries({ queryKey: productsKey })
@@ -2844,9 +2848,9 @@ function CatalogManagement({
         discardPendingProductImages()
         setPhotoUploadMessage('')
       } else {
-        setPhotoUploadMessage('The product was created, but its photos could not be uploaded. They are still ready here—save the product again to retry.')
+        setPhotoUploadMessage('The product was created, but its photos or photo selections could not be saved. Save again to retry; completed uploads will be reused.')
       }
-      loadProduct(product, activePersonalizationViewId, activePrintAreaId)
+      loadProduct(product, activePersonalizationViewId, activePrintAreaId, !photosUploaded)
     },
   })
   const updateProduct = useMutation({
@@ -2859,12 +2863,16 @@ function CatalogManagement({
       const product = await api.assignProductCategories(updatedProduct.id, { category_ids: categoryIds })
       const saved = await saveQueuedProductImages(product, images)
       if (!saved.photosUploaded || !input.personalization || saved.uploadedMediaIds.size === 0) return saved
-      return {
-        ...saved,
-        product: await api.updateProduct(id, {
-          ...input,
-          personalization: resolvePersonalizationMedia(input.personalization, pendingIds, saved.uploadedMediaIds),
-        }),
+      try {
+        return {
+          ...saved,
+          product: await api.updateProduct(id, {
+            ...input,
+            personalization: resolvePersonalizationMedia(input.personalization, pendingIds, saved.uploadedMediaIds),
+          }),
+        }
+      } catch {
+        return { ...saved, photosUploaded: false }
       }
     },
     onSuccess: ({ product, photosUploaded }) => {
@@ -2875,9 +2883,9 @@ function CatalogManagement({
         discardPendingProductImages()
         setPhotoUploadMessage('')
       } else {
-        setPhotoUploadMessage('The product was saved, but its new photos could not be uploaded. They are still ready here—save the product again to retry.')
+        setPhotoUploadMessage('The product was saved, but its photos or photo selections could not be saved. Save again to retry; completed uploads will be reused.')
       }
-      loadProduct(product, activePersonalizationViewId, activePrintAreaId)
+      loadProduct(product, activePersonalizationViewId, activePrintAreaId, !photosUploaded)
     },
   })
   const deleteProduct = useMutation({
@@ -2993,7 +3001,10 @@ function CatalogManagement({
     }: {
       images: Array<{ altText: string; file: File }>
       product: Product
-    }) => uploadProductImages(product, images).then(({ product: updatedProduct }) => updatedProduct),
+    }) => uploadProductImages(product, images).then(({ product: updatedProduct, photosUploaded }) => {
+      if (!photosUploaded) throw new Error('The photos could not be uploaded. Try again.')
+      return updatedProduct
+    }),
     onSuccess: (product) => {
       client.invalidateQueries({ queryKey: productsKey })
       loadProduct(product)
@@ -3046,6 +3057,7 @@ function CatalogManagement({
   }
 
   function discardPendingProductImages() {
+    completedProductImages.current.clear()
     setPendingProductImages((current) => {
       current.forEach(({ previewUrl }) => URL.revokeObjectURL(previewUrl))
       return []
@@ -3245,7 +3257,7 @@ function CatalogManagement({
     )
   }
 
-  function loadProduct(product: Product, preferredViewId?: string, preferredPrintAreaId?: string) {
+  function loadProduct(product: Product, preferredViewId?: string, preferredPrintAreaId?: string, preserveViews = false) {
     setVariantCalibrationDirty(false)
     const base = product.variants[0]
     setPreview(product)
@@ -3266,7 +3278,7 @@ function CatalogManagement({
     const fallbackArea = { ...DEFAULT_PRINT_AREA, ...printAreaFromBasisPoints([config.area_x, config.area_y, config.area_width, config.area_height], DEFAULT_PRINT_AREA) }
     const configuredViews = namedPersonalizationViews(config.views, fallbackArea, config.preview_media_id ?? product.media[0]?.id)
     const selectedView = configuredViews.find(({ id }) => id === preferredViewId) ?? configuredViews[0]
-    setPersonalizationViews(configuredViews)
+    if (!preserveViews) setPersonalizationViews(configuredViews)
     setActivePersonalizationViewId(selectedView.id)
     setActivePrintAreaId(selectedView.printAreas.find(({ id }) => id === preferredPrintAreaId)?.id ?? selectedView.printAreas[0].id)
     setEditingArticleReference(false)
