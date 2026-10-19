@@ -124,6 +124,7 @@ output "ecs_task_definitions" {
     application         = aws_ecs_task_definition.application.arn
     database_bootstrap  = aws_ecs_task_definition.database_bootstrap.arn
     database_migration  = aws_ecs_task_definition.database_migration.arn
+    media_cleanup       = aws_ecs_task_definition.cleanup_media_worker.arn
     notification_worker = aws_ecs_task_definition.notification_worker.arn
     owner_bootstrap     = aws_ecs_task_definition.owner_bootstrap.arn
   }
@@ -143,5 +144,15 @@ output "ecs_service" {
   value = {
     name          = aws_ecs_service.application.name
     desired_count = aws_ecs_service.application.desired_count
+  }
+}
+
+output "media_cleanup_schedule" {
+  description = "Hourly schedule that removes marked media assets and abandoned uploads in staging."
+  value = {
+    name                = aws_scheduler_schedule.cleanup_media_worker.name
+    group_name          = aws_scheduler_schedule.cleanup_media_worker.group_name
+    schedule_expression = aws_scheduler_schedule.cleanup_media_worker.schedule_expression
+    state               = aws_scheduler_schedule.cleanup_media_worker.state
   }
 }

@@ -16,6 +16,7 @@ pub mod health;
 pub mod inventory;
 pub mod login_rate_limit;
 pub mod media;
+pub mod media_cleanup;
 pub mod media_scanner;
 pub mod notifications;
 pub mod object_storage;
@@ -122,6 +123,10 @@ pub fn app(state: AppState) -> Router {
         .route(
             "/api/admin/products/{product_id}/status",
             axum::routing::post(catalog::change_status),
+        )
+        .route(
+            "/api/admin/products/{product_id}/media/{media_id}",
+            axum::routing::delete(catalog::delete_media),
         )
         .route(
             "/api/admin/products/{product_id}/variants",

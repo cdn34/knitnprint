@@ -29,7 +29,10 @@ use tower::ServiceExt;
 use uuid::Uuid;
 
 #[derive(Default)]
-struct MemoryStorage(Mutex<HashMap<String, (String, Vec<u8>)>>);
+struct MemoryStorage(
+    Mutex<HashMap<String, (String, Vec<u8>)>>,
+    Mutex<Option<String>>,
+);
 
 #[async_trait]
 impl StorageBackend for MemoryStorage {
@@ -76,6 +79,9 @@ impl StorageBackend for MemoryStorage {
         Ok(())
     }
     async fn delete(&self, key: &str) -> Result<(), StorageError> {
+        if self.1.lock().unwrap().as_deref() == Some(key) {
+            return Err(StorageError::Delete);
+        }
         self.0.lock().unwrap().remove(key);
         Ok(())
     }
@@ -107,7 +113,8 @@ async fn uploaded_draft_images_are_visible_only_to_catalog_staff_until_published
         .await
         .unwrap();
     sqlx::migrate!("../migrations").run(&pool).await.unwrap();
-    let storage = ObjectStorage::from_backend(Arc::new(MemoryStorage::default()));
+    let backend = Arc::new(MemoryStorage::default());
+    let storage = ObjectStorage::from_backend(backend.clone());
     let router = app(AppState {
         database: Some(pool.clone()),
         media_storage: Some(storage.clone()),
@@ -338,6 +345,139 @@ async fn uploaded_draft_images_are_visible_only_to_catalog_staff_until_published
         .await
         .status(),
         StatusCode::OK
+    );
+    assert_eq!(
+        request(
+            &router,
+            "POST",
+            &format!("/api/admin/products/{product_id}/status"),
+            Some(&owner_cookie),
+            Some(json!({"status":"active"}))
+        )
+        .await
+        .status(),
+        StatusCode::OK
+    );
+    // A database failure rolls back the deletion flag without touching files.
+    sqlx::raw_sql("CREATE FUNCTION reject_media_delete() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.action = 'product.media.delete' THEN RAISE EXCEPTION 'injected audit failure'; END IF; RETURN NEW; END $$; CREATE TRIGGER reject_media_delete BEFORE INSERT ON audit_log FOR EACH ROW EXECUTE FUNCTION reject_media_delete();")
+        .execute(&pool).await.unwrap();
+    let delete_path = format!("/api/admin/products/{product_id}/media/{media_id}");
+    assert_eq!(
+        request(&router, "DELETE", &delete_path, Some(&owner_cookie), None)
+            .await
+            .status(),
+        StatusCode::SERVICE_UNAVAILABLE
+    );
+    assert!(storage.get(&key).await.is_ok());
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT count(*) FROM media_assets WHERE status = 'pending_deletion'"
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap(),
+        0
+    );
+    assert_eq!(
+        request(
+            &router,
+            "GET",
+            &format!("/api/admin/product-media/{media_id}/detail"),
+            Some(&owner_cookie),
+            None
+        )
+        .await
+        .status(),
+        StatusCode::OK
+    );
+    sqlx::query("DROP TRIGGER reject_media_delete ON audit_log")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        request(&router, "DELETE", &delete_path, Some(&owner_cookie), None)
+            .await
+            .status(),
+        StatusCode::OK
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT count(*) FROM media_assets WHERE status = 'pending_deletion'"
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap(),
+        1
+    );
+    assert!(storage.get(&key).await.is_ok());
+    assert_eq!(
+        request(
+            &router,
+            "GET",
+            &format!("/api/admin/product-media/{media_id}/detail"),
+            Some(&owner_cookie),
+            None
+        )
+        .await
+        .status(),
+        StatusCode::NOT_FOUND
+    );
+
+    assert_eq!(
+        request(
+            &router,
+            "GET",
+            &format!("/api/media/{media_id}/detail"),
+            None,
+            None
+        )
+        .await
+        .status(),
+        StatusCode::NOT_FOUND
+    );
+    let hidden_detail = response_json(
+        request(
+            &router,
+            "GET",
+            &format!("/api/admin/products/{product_id}"),
+            Some(&owner_cookie),
+            None,
+        )
+        .await,
+    )
+    .await;
+    assert_eq!(hidden_detail["media"].as_array().unwrap().len(), 0);
+    // A storage failure keeps the hidden asset and all stored keys for retry.
+    *backend.1.lock().unwrap() = Some(key.clone());
+    assert_eq!(
+        knitnprint_api::media_cleanup::cleanup_media(&pool, &storage, 24)
+            .await
+            .unwrap(),
+        (0, 1)
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, String>(
+            "SELECT object_key FROM media_assets WHERE status = 'pending_deletion'"
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap(),
+        key
+    );
+    *backend.1.lock().unwrap() = None;
+    assert_eq!(
+        knitnprint_api::media_cleanup::cleanup_media(&pool, &storage, 24)
+            .await
+            .unwrap(),
+        (1, 0)
+    );
+    assert!(backend.0.lock().unwrap().is_empty());
+    assert_eq!(
+        knitnprint_api::media_cleanup::cleanup_media(&pool, &storage, 24)
+            .await
+            .unwrap(),
+        (0, 0)
     );
     pool.close().await;
     sqlx::query(&format!(r#"DROP SCHEMA "{schema}" CASCADE"#))

@@ -2,13 +2,12 @@ use std::{env, process::ExitCode};
 
 use knitnprint_api::{config::Environment, object_storage::ObjectStorage};
 use sqlx::postgres::PgPoolOptions;
-use uuid::Uuid;
 
 #[tokio::main]
 async fn main() -> ExitCode {
     match cleanup().await {
         Ok((removed, failed)) => {
-            println!("removed {removed} abandoned media uploads; {failed} require retry");
+            println!("removed {removed} media assets; {failed} require retry");
             if failed == 0 {
                 ExitCode::SUCCESS
             } else {
@@ -33,92 +32,9 @@ async fn cleanup() -> Result<(u64, u64), String> {
         .map_err(|error| format!("database connection failed: {error}"))?;
     let storage = ObjectStorage::from_env(environment).await?;
 
-    let claimed = sqlx::query_as::<_, (Uuid, String)>(
-        r#"
-        WITH candidates AS (
-            SELECT id
-            FROM media_assets
-            WHERE (status = 'pending' AND created_at < now() - make_interval(hours => $1))
-               OR status = 'failed'
-               OR (
-                    status = 'ready'
-                    AND created_by_staff_user_id IS NULL
-                    AND personalization_cart_id IS NULL
-                    AND NOT EXISTS (
-                        SELECT 1 FROM cart_lines AS line
-                        WHERE media_assets.id = line.customization_media_asset_id
-                           OR media_assets.id = ANY(line.customization_media_asset_ids)
-                    )
-                    AND NOT EXISTS (
-                        SELECT 1 FROM order_lines AS line
-                        WHERE media_assets.id = line.customization_media_asset_id
-                           OR media_assets.id = ANY(line.customization_media_asset_ids)
-                    )
-               )
-            ORDER BY created_at, id
-            LIMIT 100
-            FOR UPDATE SKIP LOCKED
-        )
-        UPDATE media_assets AS media
-        SET status = 'failed'
-        FROM candidates
-        WHERE media.id = candidates.id
-        RETURNING media.id, media.object_key
-        "#,
-    )
-    .bind(max_age_hours)
-    .fetch_all(&pool)
-    .await
-    .map_err(|error| format!("could not claim stale media: {error}"))?;
-
-    let mut removed = 0;
-    let mut failed = 0;
-    for (id, original_key) in claimed {
-        let keys = [
-            original_key,
-            variant_key(id, "thumbnail"),
-            variant_key(id, "card"),
-            variant_key(id, "detail"),
-        ];
-        let mut storage_failed = false;
-        for key in keys {
-            if storage.delete(&key).await.is_err() {
-                storage_failed = true;
-            }
-        }
-        if storage_failed {
-            failed += 1;
-            continue;
-        }
-        let mut transaction = pool
-            .begin()
-            .await
-            .map_err(|error| format!("cleanup transaction failed: {error}"))?;
-        sqlx::query(
-            r#"
-            INSERT INTO audit_log (action, entity_type, entity_id, reason)
-            VALUES ('media.abandoned_cleanup', 'media_asset', $1, $2)
-            "#,
-        )
-        .bind(id.to_string())
-        .bind(format!(
-            "Upload was abandoned or remained incomplete for more than {max_age_hours} hours"
-        ))
-        .execute(&mut *transaction)
+    knitnprint_api::media_cleanup::cleanup_media(&pool, &storage, max_age_hours)
         .await
-        .map_err(|error| format!("cleanup audit failed: {error}"))?;
-        sqlx::query("DELETE FROM media_assets WHERE id = $1 AND status = 'failed'")
-            .bind(id)
-            .execute(&mut *transaction)
-            .await
-            .map_err(|error| format!("media record cleanup failed: {error}"))?;
-        transaction
-            .commit()
-            .await
-            .map_err(|error| format!("cleanup commit failed: {error}"))?;
-        removed += 1;
-    }
-    Ok((removed, failed))
+        .map_err(|error| format!("media cleanup failed: {error}"))
 }
 
 fn parse_max_age(value: Option<String>) -> Result<i32, String> {
@@ -129,10 +45,6 @@ fn parse_max_age(value: Option<String>) -> Result<i32, String> {
         },
         None => Ok(24),
     }
-}
-
-fn variant_key(media_id: Uuid, kind: &str) -> String {
-    format!("media-public/{media_id}/{kind}.webp")
 }
 
 #[cfg(test)]
