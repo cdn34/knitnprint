@@ -35,6 +35,7 @@ test('keeps navigation visible during scroll and opens the mobile menu', async (
     await expect(toggle).toHaveAccessibleName('Open menu')
     await toggle.click()
     await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    await expect(toggle).toHaveAccessibleName('Close menu')
     await expect(page.locator('#mobile-primary-nav').getByRole('link')).toHaveCount(4)
     await toggle.press('Escape')
     await expect(toggle).toHaveAttribute('aria-expanded', 'false')
@@ -47,7 +48,8 @@ test('keeps the mobile menu usable on narrow screens', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 700 })
   await page.goto('/returns')
 
-  const toggle = page.getByRole('button', { name: 'Open menu' })
+  const toggle = page.locator('button[aria-controls="mobile-primary-nav"]')
+  await expect(toggle).toHaveAccessibleName('Open menu')
   const bounds = await toggle.boundingBox()
   expect(bounds).not.toBeNull()
   expect(bounds!.x).toBeGreaterThanOrEqual(0)
@@ -56,6 +58,7 @@ test('keeps the mobile menu usable on narrow screens', async ({ page }) => {
 
   await toggle.click()
   await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+  await expect(toggle).toHaveAccessibleName('Close menu')
   await expect(page.locator('#mobile-primary-nav')).toBeVisible()
 })
 

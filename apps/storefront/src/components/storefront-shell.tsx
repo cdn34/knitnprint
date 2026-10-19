@@ -24,6 +24,7 @@ export function StorefrontHeader() {
   const { locale, setLocale, t } = useI18n()
   const [cartCount, setCartCount] = useState(0)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [interactive, setInteractive] = useState(false)
   const menuButtonRef = useRef<HTMLButtonElement>(null)
   const navigationLinks = [
     { href: '/products', label: t('shell.shop') },
@@ -33,6 +34,7 @@ export function StorefrontHeader() {
   ]
 
   useEffect(() => {
+    setInteractive(true)
     let active = true
     const updateCount = (event: Event) => setCartCount((event as CustomEvent<number>).detail)
     window.addEventListener(CART_COUNT_UPDATED, updateCount)
@@ -99,7 +101,7 @@ export function StorefrontHeader() {
             {cartCount > 0 && <span className="cart-count-badge" aria-hidden="true">{cartCount > 999 ? '999+' : cartCount}</span>}
           </a>
           <span className="mobile-action">
-            <button ref={menuButtonRef} className="icon-button" type="button" aria-label={t(menuOpen ? 'shell.closeMenu' : 'shell.openMenu')} aria-controls="mobile-primary-nav" aria-expanded={menuOpen} onClick={() => setMenuOpen((open) => !open)}>
+            <button ref={menuButtonRef} className="icon-button" type="button" disabled={!interactive} aria-label={t(menuOpen ? 'shell.closeMenu' : 'shell.openMenu')} aria-controls="mobile-primary-nav" aria-expanded={menuOpen} onClick={() => setMenuOpen((open) => !open)}>
               {menuOpen ? <X /> : <Menu />}
             </button>
           </span>
