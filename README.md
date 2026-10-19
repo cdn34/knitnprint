@@ -345,8 +345,8 @@ and stale hashed staff login-limit buckets. Set `SESSION_RETENTION_DAYS` to a
 value from 1 to 365 to change the revoked-session retention period. Customer
 cleanup removes stale customer login-limit buckets.
 
-Clean abandoned product-image uploads from PostgreSQL and SeaweedFS on the same
-daily schedule:
+In local development, clean abandoned product-image uploads and marked photo
+deletions from PostgreSQL and SeaweedFS manually:
 
 ```bash
 DATABASE_URL=postgres://knitnprint:knitnprint@localhost:5432/knitnprint \
@@ -357,6 +357,13 @@ Pending uploads older than 24 hours are removed by default. Set
 `MEDIA_PENDING_MAX_HOURS` from 1 to 168 to adjust that window. Cleanup claims
 at most 100 records per run with row locking, removes storage objects first,
 and retains an immutable system audit entry.
+
+Deleting a saved product photo atomically marks its `media_assets` record as
+`pending_deletion` and clears its product/personalization links. Image reads only
+serve `ready` assets, so the photo disappears immediately. Cleanup deletes its
+files first and removes the retained media record only after every deletion
+succeeds. A storage failure leaves the hidden record and its keys for retry.
+Migration 0049 adds this status and an index; it creates no new table.
 
 Run customer-retention cleanup from a daily scheduler as well:
 

@@ -736,16 +736,16 @@ pub async fn delete_media(
     if let Err(response) = require_capability(&actor, CATALOG_WRITE) {
         return response.into_response();
     }
-    let (Some(pool), Some(storage)) = (state.database, state.media_storage) else {
+    let Some(pool) = state.database else {
         return unavailable();
     };
     let mut tx = match pool.begin().await {
         Ok(tx) => tx,
         Err(_) => return unavailable(),
     };
-    let original_key = match sqlx::query_scalar::<_, String>(
+    match sqlx::query_scalar::<_, Uuid>(
         r#"
-        SELECT asset.object_key
+        SELECT asset.id
         FROM product_media product_media
         JOIN media_assets asset ON asset.id = product_media.media_asset_id
         WHERE product_media.product_id = $1 AND product_media.media_asset_id = $2
@@ -757,10 +757,10 @@ pub async fn delete_media(
     .fetch_optional(&mut *tx)
     .await
     {
-        Ok(Some(key)) => key,
+        Ok(Some(_)) => {}
         Ok(None) => return not_found(),
         Err(_) => return unavailable(),
-    };
+    }
     let shared_with_other_products = sqlx::query_scalar::<_, bool>(
         r#"
         SELECT EXISTS(
@@ -831,17 +831,6 @@ pub async fn delete_media(
         Ok(false) => {}
         Err(_) => return unavailable(),
     }
-    let mut object_keys = match sqlx::query_scalar::<_, String>(
-        "SELECT object_key FROM media_variants WHERE media_asset_id=$1",
-    )
-    .bind(media_id)
-    .fetch_all(&mut *tx)
-    .await
-    {
-        Ok(keys) => keys,
-        Err(_) => return unavailable(),
-    };
-    object_keys.push(original_key);
     let used_by_cart = sqlx::query_scalar::<_, bool>(
         r#"
         SELECT EXISTS(
@@ -898,13 +887,15 @@ pub async fn delete_media(
     {
         return unavailable();
     }
-    // A successful response requires every stored copy to have been removed.
-    // The transaction rolls back if storage fails, so the deletion can be retried.
-    for key in &object_keys {
-        if let Err(error) = storage.delete(key).await {
-            tracing::warn!(%error, object_key = %key, %media_id, "product media deletion from object storage failed");
-            return unavailable();
-        }
+    // Keep the asset and its storage keys until cleanup succeeds. All image reads
+    // require status='ready', so marking it hides the photo immediately.
+    if sqlx::query("UPDATE media_assets SET status = 'pending_deletion' WHERE id = $1")
+        .bind(media_id)
+        .execute(&mut *tx)
+        .await
+        .is_err()
+    {
+        return unavailable();
     }
     if audit_entity(
         &mut tx,
@@ -919,17 +910,24 @@ pub async fn delete_media(
     {
         return unavailable();
     }
-    match sqlx::query(
-        "DELETE FROM media_assets asset USING product_media product_media WHERE asset.id=$2 AND product_media.product_id=$1 AND product_media.media_asset_id=asset.id",
-    )
-    .bind(product_id)
-    .bind(media_id)
-    .execute(&mut *tx)
-    .await
+    match sqlx::query("DELETE FROM product_media WHERE product_id = $1 AND media_asset_id = $2")
+        .bind(product_id)
+        .bind(media_id)
+        .execute(&mut *tx)
+        .await
     {
         Ok(result) if result.rows_affected() == 0 => return not_found(),
         Ok(_) => {}
         Err(_) => return unavailable(),
+    }
+    if sqlx::query("DELETE FROM variant_media USING product_variants variant WHERE variant_media.variant_id = variant.id AND variant.product_id = $1 AND variant_media.media_asset_id = $2")
+        .bind(product_id)
+        .bind(media_id)
+        .execute(&mut *tx)
+        .await
+        .is_err()
+    {
+        return unavailable();
     }
     if sqlx::query(
         r#"

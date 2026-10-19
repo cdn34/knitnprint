@@ -16,6 +16,7 @@ pub mod health;
 pub mod inventory;
 pub mod login_rate_limit;
 pub mod media;
+pub mod media_cleanup;
 pub mod media_scanner;
 pub mod notifications;
 pub mod object_storage;
