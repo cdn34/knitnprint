@@ -50,6 +50,8 @@ placing real credentials in committed files.
 
 For PR check status, CI logs, and isolated local test runs, see the
 [CI debugging guide](guides/ci-debugging.md).
+For the equivalent workflow on GitLab-hosted projects, see the
+[GitLab CI debugging guide](guides/gitlab-ci-debugging.md).
 
 The API can start without PostgreSQL for development. `/api/health` will remain
 healthy while `/api/ready` reports `503` until a database connection is ready.
