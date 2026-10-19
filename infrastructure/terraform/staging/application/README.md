@@ -78,3 +78,9 @@ reviewed API image and runtime database secret. EventBridge Scheduler launches
 it every five minutes to drain queued order-confirmation and fulfillment emails.
 The task reuses the API workload role for SES access and the application
 security group for private RDS connectivity; it does not run continuously.
+
+The media cleanup worker in `cleanup-media-worker.tf` runs hourly
+using the API image, a dedicated S3 deletion role, and the runtime database
+secret. Its output is `media_cleanup_schedule`. Apply migration 0049 and deploy
+the soft-deletion-aware API image before enabling the schedule; see
+[scheduled workers](../../../../guides/production/staging-scheduled-workers.md#media-cleanup-worker).

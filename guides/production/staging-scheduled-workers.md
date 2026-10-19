@@ -165,3 +165,63 @@ expect `No changes`.
 For a temporary pause, set the Terraform schedule state to `DISABLED`, review a
 saved plan, and apply it. To remove a worker, review the destroy list carefully;
 do not manually delete Terraform-managed AWS resources.
+
+## Media cleanup worker
+
+`cleanup-media-worker.tf` defines `knitnprint-staging-cleanup-media` in the
+`knitnprint-staging-media-cleanup` schedule group. Every hour it launches
+one Fargate task running `/usr/local/bin/cleanup_media` from the digest-pinned API
+image. Each run handles up to 100 marked media assets and abandoned uploads.
+Deleted photos are hidden immediately by the `pending_deletion` status on their
+existing `media_assets` record. Cleanup deletes the files and then the record;
+failures retain the hidden record and its keys for the next run.
+
+The worker receives the runtime database URL through Secrets Manager, plus
+`APP_ENV=staging`, `S3_REGION`, `S3_BUCKET`, and `MEDIA_PENDING_MAX_HOURS=24`.
+Its dedicated task role permits only `s3:DeleteObject` on the staging media
+bucket. Image pulls, log writes, and secret injection use the existing ECS
+execution role. Logs are retained for 14 days at
+`/aws/ecs/knitnprint-staging/cleanup-media`.
+
+Roll out in this order:
+
+1. Build and publish an API image containing the soft-deletion-aware `cleanup_media`
+   binary and migration 0049. Update `api_image_digest` to that image.
+2. Run the reviewed database migration task to allow the `pending_deletion` media status.
+3. Review and apply the application Terraform plan, including the new worker,
+   roles, log group, schedule group, and enabled schedule.
+4. Inspect the first stopped task's exit code and its cleanup summary in logs.
+
+The schedule is enabled in configuration; it does not run until Terraform is
+applied. Terraform cannot enforce migration completion, so complete step 2 before
+activating it. Scheduler retries failed launch requests; an application failure
+is retried by the next scheduled run, using the retained hidden media records.
+
+Use `terraform output media_cleanup_schedule` and
+`terraform output ecs_task_definitions` to inspect the configured names and task
+revision. To inspect the live schedule:
+
+```bash
+aws scheduler get-schedule \
+  --name knitnprint-staging-cleanup-media \
+  --group-name knitnprint-staging-media-cleanup \
+  --profile knitnprint-administrator \
+  --region eu-west-1 \
+  --no-cli-pager
+```
+
+For task and log verification, use the commands above with
+`WORKER_SLUG=cleanup-media`. A quiet run should report zero failures; a non-zero
+exit code or pending keys needs investigation even if Scheduler launched the
+task successfully.
+
+Cost estimate: with 0.25 vCPU, 0.5 GiB memory, and one minute of billed runtime
+per invocation, a 30-day month has 720 launches and costs approximately USD 0.21
+for Fargate and public IPv4, plus logging. At two billed minutes per run that
+becomes approximately USD 0.42; image download time, longer batches, and retries
+increase runtime charges. This uses the Ireland Linux/x86 rates of
+USD 0.04048/vCPU-hour and USD 0.004445/GiB-hour from the
+[AWS public price list](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonECS/current/eu-west-1/index.json),
+plus USD 0.005/public-IPv4-hour from
+[VPC pricing](https://aws.amazon.com/vpc/pricing/). Scheduler invocations fit within
+its monthly free allowance at this volume. Estimates exclude taxes and discounts.

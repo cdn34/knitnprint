@@ -365,6 +365,12 @@ files first and removes the retained media record only after every deletion
 succeeds. A storage failure leaves the hidden record and its keys for retry.
 Migration 0049 adds this status and an index; it creates no new table.
 
+Staging Terraform defines an hourly (`rate(1 hour)`) Fargate worker running the
+same command. It becomes active after the updated API image, migration 0049, and
+Terraform configuration are deployed. See
+[the scheduled-worker guide](guides/production/staging-scheduled-workers.md#media-cleanup-worker)
+for rollout order and verification.
+
 Run customer-retention cleanup from a daily scheduler as well:
 
 ```bash

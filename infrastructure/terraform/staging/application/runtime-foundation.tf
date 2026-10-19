@@ -2,6 +2,7 @@ locals {
   ecs_log_groups = toset([
     "api",
     "clamav",
+    "cleanup-media",
     "database-bootstrap",
     "notification-worker",
     "storefront",
