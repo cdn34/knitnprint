@@ -165,10 +165,8 @@ test('shows an accessible persistent cart surface', async ({ page }) => {
   await page.goto('/cart')
 
   await expect(page).toHaveTitle(/Your cart/)
-  await expect(page.getByRole('heading', { level: 1, name: 'Cart' })).toBeVisible()
-  await expect(
-    page.getByRole('heading', { name: 'Your cart is waiting for its first piece.' }),
-  ).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Your studio starts with an account' })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Go to account' })).toBeVisible()
 
   const results = await new AxeBuilder({ page })
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
@@ -179,6 +177,22 @@ test('shows an accessible persistent cart surface', async ({ page }) => {
 test('adds an available product, captures delivery, and creates an order', async ({
   page,
 }) => {
+  const email = `browser-cart-${Date.now()}-${Math.random().toString(36).slice(2)}@example.test`
+  const password = 'browser-cart-passphrase'
+  const registration = await page.request.post('/api/account/register', { data: {
+    email, password, first_name: 'Browser', last_name: 'Cart',
+  } })
+  expect(registration.status()).toBe(201)
+  const emailResponse = await page.request.get(`/api/development/emails/latest?to=${encodeURIComponent(email)}&kind=email_verification`)
+  expect(emailResponse.ok()).toBe(true)
+  const verificationEmail = await emailResponse.json() as { action_url: string }
+  const token = new URL(verificationEmail.action_url).searchParams.get('verify')
+  expect(token).toBeTruthy()
+  const confirmation = await page.request.post('/api/account/verification/confirm', { data: { token } })
+  expect(confirmation.status()).toBe(204)
+  const login = await page.request.post('/api/account/login', { data: { email, password } })
+  expect(login.ok()).toBe(true)
+
   await page.goto('/')
   const card = page.locator('.product-card:not(.product-card--placeholder)').first()
   if ((await card.count()) === 0) return
@@ -191,7 +205,7 @@ test('adds an available product, captures delivery, and creates an order', async
   await page.getByRole('link', { name: 'View your cart' }).click()
 
   await expect(page.locator('.cart-item')).toHaveCount(1)
-  await page.getByLabel('Email').fill('browser-cart@example.com')
+  await page.getByLabel('Email').fill(email)
   await page.getByLabel('First name').fill('Browser')
   await page.getByLabel('Last name').fill('Cart')
   await page.getByLabel('Recipient').fill('Browser Cart')

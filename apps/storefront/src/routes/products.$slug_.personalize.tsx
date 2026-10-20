@@ -5,6 +5,7 @@ import { useState } from 'react'
 import { announceCartUpdate, cartApi, cartMutationKey } from '../cart-api'
 import { mediaUrl, preferredVariant, publishedProduct, variantStock } from '../catalog-api'
 import { ProductPersonalizer, type CustomerCustomization } from '../components/product-personalizer'
+import { VerifiedCustomerGate } from '../components/verified-customer-gate'
 import { StorefrontAnnouncement, StorefrontHeader } from '../components/storefront-shell'
 import { useI18n } from '../i18n'
 
@@ -20,6 +21,10 @@ export const Route = createFileRoute('/products/$slug_/personalize')({
 })
 
 function PersonalizeProductPage() {
+  return <VerifiedCustomerGate><PersonalizeProductContent /></VerifiedCustomerGate>
+}
+
+function PersonalizeProductContent() {
   const { t } = useI18n()
   const product = Route.useLoaderData()
   const search = Route.useSearch()

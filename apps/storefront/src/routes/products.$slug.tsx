@@ -12,6 +12,7 @@ import { useEffect, useState } from 'react'
 import { announceCartUpdate, cartApi, cartMutationKey } from '../cart-api'
 import { ContextualFaqs } from '../components/contextual-faqs'
 import { ProductFeedback } from '../components/product-feedback'
+import { customerAccess } from '../components/verified-customer-gate'
 import { StorefrontAnnouncement, StorefrontFooter, StorefrontHeader } from '../components/storefront-shell'
 import {
   mediaUrl,
@@ -78,6 +79,10 @@ function ProductPage() {
     if (!variant || !stock || stock.state === 'sold-out') return
     setCartState('adding')
     try {
+      if (await customerAccess() !== 'verified') {
+        window.location.assign('/account')
+        return
+      }
       const cart = await cartApi.addCartItem(
         { variant_id: variant.id, quantity: 1 },
         cartMutationKey(),
