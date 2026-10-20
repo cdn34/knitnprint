@@ -43,7 +43,7 @@ Owner creation is intentionally idempotent by email and requires a password of
 at least 12 characters. Use environment or secret-manager injection rather than
 placing real credentials in committed files.
 
-- Storefront: http://localhost:3000
+- Storefront: http://127.0.0.1:3000
 - Admin: http://localhost:3001
 - API health: http://localhost:8080/api/health
 - SeaweedFS admin UI: http://localhost:9101
@@ -124,12 +124,19 @@ disallows all crawlers. These are defense in depth; the CloudFront header is
 the authoritative indexing policy. Keep the admin S3 bucket private and grant
 read access only through CloudFront Origin Access Control.
 
-The storefront also proxies `/api` to the local Rust API and provides optional
-registered customer accounts at http://localhost:3000/account. Customers can
-register, sign in, preserve their session across reloads, view their contact
-details and owned delivery addresses, add an address, and sign out. Customer
-sessions and staff sessions are separate, and guest checkout data remains
-independent of registered accounts.
+The storefront also proxies `/api` to the local Rust API and provides customer
+accounts at http://127.0.0.1:3000/account. Registration sends an email link;
+customers cannot sign in until they verify that address. Public catalog pages
+remain available, while personalization, cart and checkout endpoints require a
+verified customer session. The registration form asks for password confirmation,
+and customers can resend a verification link from the account page. Customer
+sessions and staff sessions remain separate.
+Verified customers can edit their name, phone and saved delivery addresses.
+Changing the account email sends a 24-hour single-use confirmation link to the
+new address; the previous address remains active until confirmation. The account
+page shows paginated in-progress orders separately from completed or cancelled
+orders. Customer order lists and details are restricted to the signed-in
+account, even if a cart cookie belongs to someone else.
 
 For a production storefront build, set `API_BASE_URL` at runtime to the API's
 internal origin, including its scheme and port but no `/api` suffix. It is used
@@ -156,7 +163,7 @@ docker run --rm -p 3000:3000 \
 Do not pass secrets as Docker build arguments. `API_BASE_URL` is runtime
 configuration and should resolve only from the storefront container or task.
 
-The storefront cart at http://localhost:3000/cart persists for 30 days. Its
+The storefront cart at http://127.0.0.1:3000/cart persists for 30 days. Its
 opaque browser token is stored only as a SHA-256 hash, every mutation requires
 an idempotency key, and prices, publication state, and available stock are
 reconciled by the API. Delivery capture creates or updates the guest
@@ -224,7 +231,7 @@ are present:
 ```bash
 STRIPE_SECRET_KEY=sk_test_...
 STRIPE_WEBHOOK_SECRET=whsec_...
-STOREFRONT_BASE_URL=http://localhost:3000
+STOREFRONT_BASE_URL=http://127.0.0.1:3000
 ```
 
 Production requires an `sk_live_` key and an HTTPS storefront URL. Configure a
@@ -244,8 +251,9 @@ restocking decision and support private internal notes. Stripe refunds use the
 verified payment-intent reference; manual refunds remain available only in
 development/test.
 
-Registration sends a 24-hour email-verification link, and forgotten-password
-requests send a one-hour single-use reset link. Development and test processes
+Registration sends a 24-hour email-verification link, email changes send a
+24-hour confirmation link, and forgotten-password requests send a one-hour
+single-use reset link. Development and test processes
 keep these messages in an in-memory mailbox used by browser automation; no
 external email is sent by default. To send real email through SES while keeping
 the rest of the application in development mode, export:
@@ -308,7 +316,7 @@ Production also requires `WEB_ORIGINS` containing the exact HTTPS storefront
 and admin origins. Unsafe browser requests from any other origin are rejected,
 credentialed CORS is restricted to that list, request bodies are capped at 1
 MiB, and API responses receive defensive browser headers. Registration,
-verification-email, and password-reset requests have persistent hashed
+verification-email, email-change, and password-reset requests have persistent hashed
 account/IP/global abuse limits in addition to the login limiter.
 
 Uploaded media remains quarantined until its object metadata, declared type,
