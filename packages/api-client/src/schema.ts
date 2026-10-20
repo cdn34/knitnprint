@@ -299,6 +299,25 @@ export interface CustomerLoginRequest {
   "password": string
 }
 
+export interface CustomerOrderPage {
+  "orders": Array<CustomerOrderSummary>
+  "page": number
+  "page_size": number
+  "total": number
+}
+
+export interface CustomerOrderSummary {
+  "created_at": string
+  "currency": string
+  "fulfillment_status": string
+  "id": string
+  "item_count": number
+  "order_number": string
+  "order_status": string
+  "payment_status": string
+  "total_minor": number
+}
+
 export interface CustomerRegisterRequest {
   "email": string
   "first_name": string
@@ -830,6 +849,10 @@ export interface ReplyToProductFeedbackRequest {
   "reply"?: string | null
 }
 
+export interface RequestEmailChangeRequest {
+  "email": string
+}
+
 export interface ResetPasswordRequest {
   "password": string
   "token": string
@@ -965,6 +988,12 @@ export interface TaxSelection {
   "taxable_amount_minor": number
 }
 
+export interface UpdateAccountProfileRequest {
+  "first_name": string
+  "last_name": string
+  "phone"?: string
+}
+
 export interface UpdateCartItemRequest {
   "quantity": number
 }
@@ -1015,4 +1044,8 @@ export interface Variant {
   "price_minor": number
   "sku": string
   "title": string
+}
+
+export interface VerificationRequest {
+  "email": string
 }

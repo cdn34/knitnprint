@@ -78,7 +78,7 @@ async fn guest_capture_and_private_customer_inspection_enforce_privacy_rules() {
         Some("invalid-customer-fixture-001"),
     )
     .await;
-    assert_eq!(invalid.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(invalid.status(), StatusCode::UNAUTHORIZED);
 
     let missing_key = request(
         &router,
@@ -89,7 +89,7 @@ async fn guest_capture_and_private_customer_inspection_enforce_privacy_rules() {
         None,
     )
     .await;
-    assert_eq!(missing_key.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(missing_key.status(), StatusCode::UNAUTHORIZED);
 
     let created = request(
         &router,
@@ -100,10 +100,15 @@ async fn guest_capture_and_private_customer_inspection_enforce_privacy_rules() {
         Some("guest-customer-fixture-001"),
     )
     .await;
-    assert_eq!(created.status(), StatusCode::CREATED);
-    let created_body = response_json(created).await;
-    assert_eq!(created_body.as_object().unwrap().len(), 2);
-    let customer_id = Uuid::parse_str(created_body["customer_id"].as_str().unwrap()).unwrap();
+    assert_eq!(created.status(), StatusCode::UNAUTHORIZED);
+    let customer_id = Uuid::now_v7();
+    let address_id = Uuid::now_v7();
+    sqlx::query("INSERT INTO customers (id, customer_type, email, first_name, last_name, phone) VALUES ($1, 'guest', 'ada@example.com', 'Ada', 'Lovelace', '+351 210 000 000')")
+        .bind(customer_id).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO customer_addresses (id, customer_id, recipient_name, line1, city, postal_code, country_code) VALUES ($1, $2, 'Ada Lovelace', '12 Loom Lane', 'Lisbon', '1000-001', 'PT')")
+        .bind(address_id).bind(customer_id).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO audit_log (action, entity_type, entity_id) VALUES ('customer.guest_create', 'customer', $1)")
+        .bind(customer_id.to_string()).execute(&pool).await.unwrap();
     let duplicate = request(
         &router,
         "POST",
@@ -113,8 +118,7 @@ async fn guest_capture_and_private_customer_inspection_enforce_privacy_rules() {
         Some("guest-customer-fixture-001"),
     )
     .await;
-    assert_eq!(duplicate.status(), StatusCode::OK);
-    assert_eq!(response_json(duplicate).await, created_body);
+    assert_eq!(duplicate.status(), StatusCode::UNAUTHORIZED);
     let customer_count: i64 = sqlx::query_scalar("SELECT count(*) FROM customers")
         .fetch_one(&pool)
         .await

@@ -16,6 +16,7 @@ use crate::{AppState, config::Environment, customers::valid_email, error::ErrorB
 pub enum AccountEmailKind {
     Verification,
     PasswordReset,
+    EmailChange,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -62,6 +63,7 @@ impl AccountEmailKind {
         match self {
             Self::Verification => "email_verification",
             Self::PasswordReset => "password_reset",
+            Self::EmailChange => "email_change",
         }
     }
 
@@ -69,6 +71,7 @@ impl AccountEmailKind {
         match self {
             Self::Verification => "verify",
             Self::PasswordReset => "reset",
+            Self::EmailChange => "confirm_email",
         }
     }
 
@@ -76,6 +79,7 @@ impl AccountEmailKind {
         match self {
             Self::Verification => "Verify your KnitNPrint email",
             Self::PasswordReset => "Reset your KnitNPrint password",
+            Self::EmailChange => "Confirm your new KnitNPrint email",
         }
     }
 
@@ -83,6 +87,7 @@ impl AccountEmailKind {
         match self {
             Self::Verification => "Verify email address",
             Self::PasswordReset => "Reset password",
+            Self::EmailChange => "Confirm new email address",
         }
     }
 
@@ -90,6 +95,7 @@ impl AccountEmailKind {
         match self {
             Self::Verification => "24 hours",
             Self::PasswordReset => "one hour",
+            Self::EmailChange => "24 hours",
         }
     }
 }

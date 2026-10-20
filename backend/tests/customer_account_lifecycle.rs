@@ -21,6 +21,361 @@ const CUSTOMER_SESSION_COOKIE: &str = "knitnprint_customer";
 const CUSTOMER_PASSWORD: &str = "integration-customer-passphrase";
 
 #[tokio::test]
+async fn customer_can_edit_profile_confirm_new_email_and_view_only_own_orders() {
+    let Some(database_url) = env::var("DATABASE_URL").ok() else {
+        eprintln!("skipping PostgreSQL integration test because DATABASE_URL is not set");
+        return;
+    };
+    let schema = format!("customer_profile_test_{}", Uuid::new_v4().simple());
+    let admin = PgPoolOptions::new()
+        .max_connections(1)
+        .connect(&database_url)
+        .await
+        .unwrap();
+    sqlx::query(&format!(r#"CREATE SCHEMA "{schema}""#))
+        .execute(&admin)
+        .await
+        .unwrap();
+    let pool = isolated_pool(&database_url, &schema).await;
+    sqlx::migrate!("../migrations").run(&pool).await.unwrap();
+    let email = knitnprint_api::email::EmailService::development("http://127.0.0.1:3000");
+    let router = app(AppState {
+        database: Some(pool.clone()),
+        email,
+        ..AppState::default()
+    });
+
+    let mut identities = Vec::new();
+    for address in ["marta@example.test", "other@example.test"] {
+        let id = Uuid::now_v7();
+        let token = format!("customer-session-{id}");
+        let token_hash = Sha256::digest(token.as_bytes());
+        sqlx::query("INSERT INTO customers (id, customer_type, email, first_name, last_name) VALUES ($1, 'registered', $2, 'Marta', 'Silva')")
+            .bind(id).bind(address).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO customer_accounts (customer_id, password_hash, email_verified_at) VALUES ($1, $2, now())")
+            .bind(id).bind(hash_password(CUSTOMER_PASSWORD).unwrap()).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO customer_sessions (id, customer_id, token_hash, expires_at) VALUES ($1, $2, $3, now() + interval '1 day')")
+            .bind(Uuid::now_v7()).bind(id).bind(token_hash.as_slice()).execute(&pool).await.unwrap();
+        identities.push((id, format!("{CUSTOMER_SESSION_COOKIE}={token}"), address));
+    }
+    let (customer_id, customer_cookie, original_email) = &identities[0];
+    let (_, other_cookie, _) = &identities[1];
+
+    for (owner_id, status, number) in [
+        (*customer_id, "confirmed", "KNP-ACTIVE"),
+        (*customer_id, "completed", "KNP-HISTORY"),
+        (identities[1].0, "confirmed", "KNP-OTHER"),
+    ] {
+        let cart_id = Uuid::now_v7();
+        let order_id = Uuid::now_v7();
+        sqlx::query("INSERT INTO carts (id, token_hash, customer_id, status, currency) VALUES ($1, $2, $3, 'converted', 'EUR')")
+            .bind(cart_id).bind(Sha256::digest(cart_id.as_bytes()).as_slice()).bind(owner_id).execute(&pool).await.unwrap();
+        sqlx::query(r#"INSERT INTO orders (id, order_number, cart_id, customer_id, checkout_idempotency_hash, order_status, currency, subtotal_minor, total_minor, customer_email, customer_first_name, customer_last_name, shipping_recipient_name, shipping_line1, shipping_city, shipping_postal_code, shipping_country_code)
+            VALUES ($1, $2, $3, $4, $5, $6, 'EUR', 2500, 2500, $7, 'Marta', 'Silva', 'Marta Silva', '1 Main St', 'Lisbon', '1000-001', 'PT')"#)
+            .bind(order_id).bind(number).bind(cart_id).bind(owner_id).bind(Sha256::digest(order_id.as_bytes()).as_slice())
+            .bind(status).bind(if owner_id == *customer_id { *original_email } else { "other@example.test" }).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO order_payments (id, order_id, provider, amount_minor, currency) VALUES ($1, $2, 'manual', 2500, 'EUR')")
+            .bind(Uuid::now_v7()).bind(order_id).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO order_shipping_snapshots (order_id, zone_name, method_name, country_code, amount_minor, currency) VALUES ($1, 'Portugal', 'Standard', 'PT', 0, 'EUR')")
+            .bind(order_id).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO order_tax_snapshots (order_id, rule_name, country_code, rate_basis_points, taxable_amount_minor, amount_minor, behavior) VALUES ($1, 'No tax', 'PT', 0, 2500, 0, 'disabled')")
+            .bind(order_id).execute(&pool).await.unwrap();
+    }
+
+    assert_eq!(
+        request(
+            &router,
+            "GET",
+            "/api/account/orders?kind=active",
+            None,
+            None
+        )
+        .await
+        .status(),
+        StatusCode::UNAUTHORIZED
+    );
+    let active = request(
+        &router,
+        "GET",
+        "/api/account/orders?kind=active",
+        Some(customer_cookie),
+        None,
+    )
+    .await;
+    assert_eq!(active.status(), StatusCode::OK);
+    assert_private_no_store(&active);
+    let active_body = response_json(active).await;
+    assert_eq!(active_body["total"], 1);
+    assert_eq!(active_body["orders"][0]["order_number"], "KNP-ACTIVE");
+    assert_eq!(
+        request(
+            &router,
+            "GET",
+            "/api/account/orders?kind=active&page=0",
+            Some(customer_cookie),
+            None
+        )
+        .await
+        .status(),
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    assert_eq!(
+        request(
+            &router,
+            "GET",
+            "/api/account/orders?kind=history&page=2",
+            Some(customer_cookie),
+            None
+        )
+        .await
+        .status(),
+        StatusCode::OK
+    );
+    let history = response_json(
+        request(
+            &router,
+            "GET",
+            "/api/account/orders?kind=history",
+            Some(customer_cookie),
+            None,
+        )
+        .await,
+    )
+    .await;
+    assert_eq!(history["total"], 1);
+    assert_eq!(history["orders"][0]["order_number"], "KNP-HISTORY");
+    let other_active = response_json(
+        request(
+            &router,
+            "GET",
+            "/api/account/orders?kind=active",
+            Some(other_cookie),
+            None,
+        )
+        .await,
+    )
+    .await;
+    assert_eq!(other_active["orders"][0]["order_number"], "KNP-OTHER");
+    let other_order_id: Uuid =
+        sqlx::query_scalar("SELECT id FROM orders WHERE order_number = 'KNP-OTHER'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        request(
+            &router,
+            "GET",
+            &format!("/api/orders/{other_order_id}"),
+            Some(customer_cookie),
+            None
+        )
+        .await
+        .status(),
+        StatusCode::NOT_FOUND
+    );
+    let own_order_id: Uuid =
+        sqlx::query_scalar("SELECT id FROM orders WHERE order_number = 'KNP-ACTIVE'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        request(
+            &router,
+            "GET",
+            &format!("/api/orders/{own_order_id}"),
+            Some(customer_cookie),
+            None
+        )
+        .await
+        .status(),
+        StatusCode::OK
+    );
+
+    let updated = request(&router, "PUT", "/api/account/me", Some(customer_cookie), Some(json!({"first_name":"  Maria  ", "last_name":" Lopes ", "phone":"  +351 210 123 456  "}))).await;
+    assert_eq!(updated.status(), StatusCode::OK);
+    let updated_body = response_json(updated).await;
+    assert_eq!(updated_body["first_name"], "Maria");
+    assert_eq!(updated_body["last_name"], "Lopes");
+    assert_eq!(updated_body["phone"], "+351 210 123 456");
+    assert_eq!(updated_body["email"], *original_email);
+    let saved_profile = request(
+        &router,
+        "GET",
+        "/api/account/me",
+        Some(customer_cookie),
+        None,
+    )
+    .await;
+    assert_eq!(saved_profile.status(), StatusCode::OK);
+    let saved_profile = response_json(saved_profile).await;
+    assert_eq!(saved_profile["first_name"], "Maria");
+    assert_eq!(saved_profile["last_name"], "Lopes");
+    assert_eq!(saved_profile["phone"], "+351 210 123 456");
+    assert_eq!(
+        request(
+            &router,
+            "PUT",
+            "/api/account/me",
+            Some(customer_cookie),
+            Some(json!({"first_name":" ", "last_name":"Lopes"}))
+        )
+        .await
+        .status(),
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+
+    let address = request(
+        &router,
+        "POST",
+        "/api/account/addresses",
+        Some(customer_cookie),
+        Some(address_fixture()),
+    )
+    .await;
+    assert_eq!(address.status(), StatusCode::CREATED);
+    let address_id = response_json(address).await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let mut address_changes = address_fixture();
+    address_changes["city"] = json!("Porto");
+    let updated_address = request(
+        &router,
+        "PUT",
+        &format!("/api/account/addresses/{address_id}"),
+        Some(customer_cookie),
+        Some(address_changes.clone()),
+    )
+    .await;
+    assert_eq!(updated_address.status(), StatusCode::OK);
+    assert_eq!(response_json(updated_address).await["city"], "Porto");
+    assert_eq!(
+        request(
+            &router,
+            "PUT",
+            &format!("/api/account/addresses/{address_id}"),
+            Some(other_cookie),
+            Some(address_changes)
+        )
+        .await
+        .status(),
+        StatusCode::NOT_FOUND
+    );
+
+    assert_eq!(
+        request(
+            &router,
+            "POST",
+            "/api/account/email/change",
+            Some(customer_cookie),
+            Some(json!({"email":"other@example.test"}))
+        )
+        .await
+        .status(),
+        StatusCode::CONFLICT
+    );
+    let change = request(
+        &router,
+        "POST",
+        "/api/account/email/change",
+        Some(customer_cookie),
+        Some(json!({"email":"maria@example.test"})),
+    )
+    .await;
+    assert_eq!(change.status(), StatusCode::NO_CONTENT);
+    assert_private_no_store(&change);
+    let unchanged = response_json(
+        request(
+            &router,
+            "GET",
+            "/api/account/me",
+            Some(customer_cookie),
+            None,
+        )
+        .await,
+    )
+    .await;
+    assert_eq!(unchanged["email"], *original_email);
+    let message = response_json(
+        request(
+            &router,
+            "GET",
+            "/api/development/emails/latest?to=maria@example.test&kind=email_change",
+            None,
+            None,
+        )
+        .await,
+    )
+    .await;
+    let url = message["action_url"].as_str().unwrap();
+    let token = url.split("confirm_email=").nth(1).unwrap();
+    let confirmed = request(
+        &router,
+        "POST",
+        "/api/account/email/confirm",
+        None,
+        Some(json!({"token":token})),
+    )
+    .await;
+    assert_eq!(confirmed.status(), StatusCode::NO_CONTENT);
+    let now_updated = response_json(
+        request(
+            &router,
+            "GET",
+            "/api/account/me",
+            Some(customer_cookie),
+            None,
+        )
+        .await,
+    )
+    .await;
+    assert_eq!(now_updated["email"], "maria@example.test");
+    assert_eq!(
+        request(
+            &router,
+            "POST",
+            "/api/account/email/confirm",
+            None,
+            Some(json!({"token":token}))
+        )
+        .await
+        .status(),
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    assert_eq!(
+        request(
+            &router,
+            "POST",
+            "/api/account/login",
+            None,
+            Some(json!({"email":original_email, "password":CUSTOMER_PASSWORD}))
+        )
+        .await
+        .status(),
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        request(
+            &router,
+            "POST",
+            "/api/account/login",
+            None,
+            Some(json!({"email":"maria@example.test", "password":CUSTOMER_PASSWORD}))
+        )
+        .await
+        .status(),
+        StatusCode::OK
+    );
+
+    pool.close().await;
+    sqlx::query(&format!(r#"DROP SCHEMA "{schema}" CASCADE"#))
+        .execute(&admin)
+        .await
+        .unwrap();
+    admin.close().await;
+}
+
+#[tokio::test]
 async fn customer_account_authentication_and_address_ownership_lifecycle() {
     let Some(database_url) = env::var("DATABASE_URL").ok() else {
         eprintln!("skipping PostgreSQL integration test because DATABASE_URL is not set");
@@ -135,10 +490,7 @@ async fn customer_account_authentication_and_address_ownership_lifecycle() {
     .await;
     assert_eq!(registered.status(), StatusCode::CREATED);
     assert_private_no_store(&registered);
-    assert_development_customer_cookie(&registered);
-    let customer_cookie = response_cookie(&registered, CUSTOMER_SESSION_COOKIE);
-    let raw_customer_token = cookie_value(&customer_cookie);
-    let registered_body = response_json(registered).await;
+    let mut registered_body = response_json(registered).await;
     let customer_id = profile_id(&registered_body);
     assert_eq!(registered_body["email"], "ada.account@example.com");
     assert_eq!(registered_body["first_name"], "Ada");
@@ -177,13 +529,59 @@ async fn customer_account_authentication_and_address_ownership_lifecycle() {
     assert_ne!(account_row.2, CUSTOMER_PASSWORD);
     assert!(account_row.2.starts_with("$argon2"));
 
+    let registration_session_count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM customer_sessions WHERE customer_id = $1")
+            .bind(customer_id)
+            .fetch_one(&pool)
+            .await
+            .expect("registration sessions should be inspectable");
+    assert_eq!(registration_session_count, 0);
+    let unverified_login = request(
+        &router,
+        "POST",
+        "/api/account/login",
+        None,
+        Some(json!({
+            "email": "ada.account@example.com", "password": CUSTOMER_PASSWORD
+        })),
+    )
+    .await;
+    assert_eq!(unverified_login.status(), StatusCode::FORBIDDEN);
+    let unverified_address = request(
+        &router,
+        "POST",
+        "/api/account/addresses",
+        None,
+        Some(address_fixture()),
+    )
+    .await;
+    assert_eq!(unverified_address.status(), StatusCode::UNAUTHORIZED);
+    sqlx::query("UPDATE customer_accounts SET email_verified_at = now() WHERE customer_id = $1")
+        .bind(customer_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let initial_login = request(
+        &router,
+        "POST",
+        "/api/account/login",
+        None,
+        Some(json!({
+            "email": "ada.account@example.com", "password": CUSTOMER_PASSWORD
+        })),
+    )
+    .await;
+    assert_eq!(initial_login.status(), StatusCode::OK);
+    let customer_cookie = response_cookie(&initial_login, CUSTOMER_SESSION_COOKIE);
+    let raw_customer_token = cookie_value(&customer_cookie);
+    registered_body["email_verified"] = json!(true);
     let session_hash: Vec<u8> = sqlx::query_scalar(
         "SELECT token_hash FROM customer_sessions WHERE customer_id = $1 AND revoked_at IS NULL",
     )
     .bind(customer_id)
     .fetch_one(&pool)
     .await
-    .expect("registration should create a session");
+    .expect("login should create a session");
     assert_eq!(session_hash.len(), 32);
     assert_ne!(session_hash, raw_customer_token.as_bytes());
     let raw_token_match: i64 = sqlx::query_scalar(
@@ -281,15 +679,31 @@ async fn customer_account_authentication_and_address_ownership_lifecycle() {
     .await;
     assert_eq!(other_registration.status(), StatusCode::CREATED);
     assert_private_no_store(&other_registration);
-    assert_development_customer_cookie(&other_registration);
-    let other_cookie = response_cookie(&other_registration, CUSTOMER_SESSION_COOKIE);
+    let other_registration_body = response_json(other_registration).await;
+    let other_customer_id = profile_id(&other_registration_body);
+    sqlx::query("UPDATE customer_accounts SET email_verified_at = now() WHERE customer_id = $1")
+        .bind(other_customer_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let other_login = request(
+        &router,
+        "POST",
+        "/api/account/login",
+        None,
+        Some(json!({
+            "email": "grace.account@example.com", "password": CUSTOMER_PASSWORD
+        })),
+    )
+    .await;
+    assert_eq!(other_login.status(), StatusCode::OK);
+    let other_cookie = response_cookie(&other_login, CUSTOMER_SESSION_COOKIE);
     let other_me = request(&router, "GET", "/api/account/me", Some(&other_cookie), None).await;
     assert_eq!(other_me.status(), StatusCode::OK);
     assert_private_no_store(&other_me);
     let other_body = response_json(other_me).await;
     assert_eq!(other_body["email"], "grace.account@example.com");
     assert_eq!(other_body["addresses"], json!([]));
-    let other_customer_id = profile_id(&other_body);
     let test_cart_id = Uuid::now_v7();
     sqlx::query("INSERT INTO carts (id, token_hash, customer_id) VALUES ($1, $2, $3)")
         .bind(test_cart_id)
@@ -602,6 +1016,11 @@ async fn customer_account_authentication_and_address_ownership_lifecycle() {
                 Some(customer_id),
                 "customer.register".into(),
                 "customer".into()
+            ),
+            (
+                Some(customer_id),
+                "customer.login".into(),
+                "customer_session".into()
             ),
             (
                 Some(customer_id),

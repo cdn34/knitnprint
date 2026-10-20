@@ -102,6 +102,11 @@ pub async fn clear_customer_account_buckets(
             "account",
             &format!("password_reset\0{email}"),
         ),
+        bucket_hash(
+            AuthScope::AccountAction,
+            "account",
+            &format!("email_change\0{email}"),
+        ),
     ];
     let mut removed = 0;
     for hash in hashes {

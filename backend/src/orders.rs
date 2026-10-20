@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use axum::{
     Json,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::{HeaderMap, HeaderValue, StatusCode, header},
     response::{IntoResponse, Response},
 };
@@ -18,6 +18,7 @@ use crate::{
     AppState,
     auth::{AuthenticatedStaff, require_capability},
     cancellations::{OrderOperations, Refund, load_operations, load_refunds},
+    customer_auth::AuthenticatedCustomer,
     discounts::{
         EvaluationError as DiscountEvaluationError, OrderDiscount, evaluate_in_transaction,
         load_order_discount, record_usage,
@@ -154,6 +155,38 @@ pub struct OrderSummary {
     pub created_at: String,
 }
 
+#[derive(Serialize, ToSchema, FromRow)]
+pub struct CustomerOrderSummary {
+    pub id: Uuid,
+    pub order_number: String,
+    pub order_status: String,
+    pub payment_status: String,
+    pub fulfillment_status: String,
+    pub item_count: i64,
+    pub total_minor: i64,
+    pub currency: String,
+    pub created_at: String,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct CustomerOrderPage {
+    pub orders: Vec<CustomerOrderSummary>,
+    pub total: i64,
+    pub page: i64,
+    pub page_size: i64,
+}
+
+#[derive(Deserialize)]
+pub struct CustomerOrdersQuery {
+    pub kind: String,
+    #[serde(default = "first_page")]
+    pub page: i64,
+}
+
+fn first_page() -> i64 {
+    1
+}
+
 #[derive(FromRow)]
 struct CheckoutCart {
     id: Uuid,
@@ -254,6 +287,8 @@ struct OrderHead {
     responses(
         (status = 200, body = Order, description = "Idempotent replay"),
         (status = 201, body = Order),
+        (status = 401, body = ErrorBody),
+        (status = 403, body = ErrorBody),
         (status = 409, body = ErrorBody),
         (status = 422, body = ErrorBody),
         (status = 503, body = ErrorBody)
@@ -261,6 +296,7 @@ struct OrderHead {
 )]
 pub async fn create(
     State(state): State<AppState>,
+    customer: AuthenticatedCustomer,
     jar: CookieJar,
     headers: HeaderMap,
     Json(input): Json<CreateOrderRequest>,
@@ -288,6 +324,7 @@ pub async fn create(
     };
     match create_order(
         pool,
+        customer.id,
         token_hash,
         idempotency_hash,
         provider,
@@ -324,33 +361,33 @@ pub async fn create(
     params(("order_id" = Uuid, Path)),
     responses(
         (status = 200, body = Order),
+        (status = 401, body = ErrorBody),
+        (status = 403, body = ErrorBody),
         (status = 404, body = ErrorBody),
         (status = 503, body = ErrorBody)
     )
 )]
 pub async fn customer_detail(
     State(state): State<AppState>,
-    jar: CookieJar,
+    customer: AuthenticatedCustomer,
     Path(order_id): Path<Uuid>,
 ) -> Response {
-    let Some(cookie) = jar.get(CART_COOKIE) else {
+    if !customer.email_verified {
         return not_found();
-    };
+    }
     let Some(pool) = state.database else {
         return unavailable();
     };
-    let token_hash: [u8; 32] = Sha256::digest(cookie.value().as_bytes()).into();
     let owned = sqlx::query_scalar::<_, bool>(
         r#"
         SELECT EXISTS (
-            SELECT 1 FROM orders order_record
-            JOIN carts cart ON cart.id = order_record.cart_id
-            WHERE order_record.id = $1 AND cart.token_hash = $2
+            SELECT 1 FROM orders
+            WHERE id = $1 AND customer_id = $2
         )
         "#,
     )
     .bind(order_id)
-    .bind(token_hash.as_slice())
+    .bind(customer.id)
     .fetch_one(&pool)
     .await;
     match owned {
@@ -365,6 +402,81 @@ pub async fn customer_detail(
             Err(_) => unavailable(),
         },
         Ok(false) => not_found(),
+        Err(_) => unavailable(),
+    }
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/account/orders",
+    tag = "customer account",
+    params(
+        ("kind" = String, Query, description = "active or history"),
+        ("page" = i64, Query, description = "One-based page number")
+    ),
+    responses(
+        (status = 200, body = CustomerOrderPage),
+        (status = 401, body = ErrorBody),
+        (status = 403, body = ErrorBody),
+        (status = 422, body = ErrorBody),
+        (status = 503, body = ErrorBody)
+    )
+)]
+pub async fn customer_list(
+    State(state): State<AppState>,
+    customer: AuthenticatedCustomer,
+    Query(query): Query<CustomerOrdersQuery>,
+) -> Response {
+    if !customer.email_verified {
+        return error(
+            StatusCode::FORBIDDEN,
+            "email_verification_required",
+            "Verify your email address to view orders.",
+        );
+    }
+    if !matches!(query.kind.as_str(), "active" | "history")
+        || !(1..=1_000_000).contains(&query.page)
+    {
+        return error(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "invalid_order_page",
+            "Choose active or history and a valid page number.",
+        );
+    }
+    let Some(pool) = state.database else {
+        return unavailable();
+    };
+    let history = query.kind == "history";
+    let total = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM orders WHERE customer_id = $1 AND (order_status IN ('completed', 'cancelled')) = $2")
+        .bind(customer.id).bind(history).fetch_one(&pool).await;
+    let total = match total {
+        Ok(total) => total,
+        Err(_) => return unavailable(),
+    };
+    let orders = sqlx::query_as::<_, CustomerOrderSummary>(r#"
+        SELECT order_record.id, order_record.order_number, order_record.order_status,
+               order_record.payment_status, order_record.fulfillment_status,
+               COALESCE(sum(line.quantity), 0)::bigint AS item_count,
+               order_record.total_minor, order_record.currency::text AS currency,
+               to_char(order_record.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at
+        FROM orders order_record
+        LEFT JOIN order_lines line ON line.order_id = order_record.id
+        WHERE order_record.customer_id = $1
+          AND (order_record.order_status IN ('completed', 'cancelled')) = $2
+        GROUP BY order_record.id
+        ORDER BY order_record.created_at DESC, order_record.id DESC
+        LIMIT 10 OFFSET $3
+    "#).bind(customer.id).bind(history).bind((query.page - 1) * 10).fetch_all(&pool).await;
+    match orders {
+        Ok(orders) => no_store(
+            Json(CustomerOrderPage {
+                orders,
+                total,
+                page: query.page,
+                page_size: 10,
+            })
+            .into_response(),
+        ),
         Err(_) => unavailable(),
     }
 }
@@ -507,6 +619,7 @@ enum CreateError {
 
 async fn create_order(
     pool: &PgPool,
+    customer_id: Uuid,
     token_hash: [u8; 32],
     idempotency_hash: [u8; 32],
     provider: &str,
@@ -527,6 +640,10 @@ async fn create_order(
     .await
     .map_err(|_| CreateError::Database)?
     .ok_or(CreateError::NotReady)?;
+
+    if cart.customer_id != Some(customer_id) {
+        return Err(CreateError::NotReady);
+    }
 
     if cart.status == "converted" {
         let existing: (Uuid, Vec<u8>, String) = sqlx::query_as(

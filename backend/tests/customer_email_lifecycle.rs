@@ -60,10 +60,40 @@ async fn verification_and_password_recovery_tokens_are_private_single_use_and_se
     )
     .await;
     assert_eq!(registered.status(), StatusCode::CREATED);
-    let cookie = response_cookie(&registered, CUSTOMER_COOKIE);
     let profile = response_json(registered).await;
     assert_eq!(profile["email_verified"], false);
     let customer_id = Uuid::parse_str(profile["id"].as_str().unwrap()).unwrap();
+    let registration_sessions: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM customer_sessions WHERE customer_id = $1")
+            .bind(customer_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(registration_sessions, 0);
+
+    let blocked_cart = request(&router, "GET", "/api/cart", None, None).await;
+    assert_eq!(blocked_cart.status(), StatusCode::UNAUTHORIZED);
+    for path in [
+        "/api/cart/items",
+        "/api/orders",
+        "/api/personalization/uploads",
+    ] {
+        let blocked_action = request(&router, "POST", path, None, Some(json!({}))).await;
+        assert_eq!(blocked_action.status(), StatusCode::UNAUTHORIZED, "{path}");
+    }
+    let blocked_login = request(
+        &router,
+        "POST",
+        "/api/account/login",
+        None,
+        Some(json!({ "email": email, "password": OLD_PASSWORD })),
+    )
+    .await;
+    assert_eq!(blocked_login.status(), StatusCode::FORBIDDEN);
+    assert_eq!(
+        response_json(blocked_login).await["error"]["code"],
+        "email_verification_required"
+    );
 
     let verification_email = latest_email(&router, email, "email_verification").await;
     assert_eq!(
@@ -77,8 +107,8 @@ async fn verification_and_password_recovery_tokens_are_private_single_use_and_se
         &router,
         "POST",
         "/api/account/verification/request",
-        Some(&cookie),
         None,
+        Some(json!({ "email": email })),
     )
     .await;
     assert_eq!(suppressed_resend.status(), StatusCode::NO_CONTENT);
@@ -119,6 +149,16 @@ async fn verification_and_password_recovery_tokens_are_private_single_use_and_se
     )
     .await;
     assert_eq!(confirmed.status(), StatusCode::NO_CONTENT);
+    let verified_login = request(
+        &router,
+        "POST",
+        "/api/account/login",
+        None,
+        Some(json!({ "email": email, "password": OLD_PASSWORD })),
+    )
+    .await;
+    assert_eq!(verified_login.status(), StatusCode::OK);
+    let cookie = response_cookie(&verified_login, CUSTOMER_COOKIE);
     let verified_profile = request(&router, "GET", "/api/account/me", Some(&cookie), None).await;
     assert_eq!(verified_profile.status(), StatusCode::OK);
     assert_eq!(
@@ -268,6 +308,98 @@ async fn verification_and_password_recovery_tokens_are_private_single_use_and_se
     )
     .await;
     assert_eq!(expired_reset.status(), StatusCode::UNPROCESSABLE_ENTITY);
+
+    let pending_email = "pending-verification@example.test";
+    let pending_registration = request(
+        &router,
+        "POST",
+        "/api/account/register",
+        None,
+        Some(json!({
+            "email": pending_email,
+            "password": OLD_PASSWORD,
+            "first_name": "Pending",
+            "last_name": "Customer"
+        })),
+    )
+    .await;
+    assert_eq!(pending_registration.status(), StatusCode::CREATED);
+    let pending_profile = response_json(pending_registration).await;
+    let pending_id = Uuid::parse_str(pending_profile["id"].as_str().unwrap()).unwrap();
+    let legacy_token = "legacy-unverified-session";
+    let legacy_hash = Sha256::digest(legacy_token.as_bytes());
+    sqlx::query("INSERT INTO customer_sessions (id, customer_id, token_hash, expires_at) VALUES ($1, $2, $3, now() + interval '1 day')")
+        .bind(Uuid::now_v7()).bind(pending_id).bind(legacy_hash.as_slice()).execute(&pool).await.unwrap();
+    let legacy_cookie = format!("{CUSTOMER_COOKIE}={legacy_token}");
+    let blocked_legacy_cart =
+        request(&router, "GET", "/api/cart", Some(&legacy_cookie), None).await;
+    assert_eq!(blocked_legacy_cart.status(), StatusCode::FORBIDDEN);
+    for path in [
+        "/api/cart/items",
+        "/api/orders",
+        "/api/personalization/uploads",
+    ] {
+        let blocked_action =
+            request(&router, "POST", path, Some(&legacy_cookie), Some(json!({}))).await;
+        assert_eq!(blocked_action.status(), StatusCode::FORBIDDEN, "{path}");
+    }
+    let blocked_legacy_address = request(
+        &router,
+        "POST",
+        "/api/account/addresses",
+        Some(&legacy_cookie),
+        Some(json!({})),
+    )
+    .await;
+    assert_eq!(blocked_legacy_address.status(), StatusCode::FORBIDDEN);
+    let pending_verification_token = action_token(
+        &latest_email(&router, pending_email, "email_verification").await,
+        "verify",
+    );
+    let pending_forgot = request(
+        &router,
+        "POST",
+        "/api/account/password/forgot",
+        None,
+        Some(json!({ "email": pending_email })),
+    )
+    .await;
+    assert_eq!(pending_forgot.status(), StatusCode::NO_CONTENT);
+    let pending_reset_token = action_token(
+        &latest_email(&router, pending_email, "password_reset").await,
+        "reset",
+    );
+    let pending_reset = request(
+        &router,
+        "POST",
+        "/api/account/password/reset",
+        None,
+        Some(json!({
+            "token": pending_reset_token,
+            "password": NEW_PASSWORD
+        })),
+    )
+    .await;
+    assert_eq!(pending_reset.status(), StatusCode::NO_CONTENT);
+    assert_eq!(
+        login(&router, pending_email, NEW_PASSWORD).await.status(),
+        StatusCode::FORBIDDEN
+    );
+    let pending_verification = request(
+        &router,
+        "POST",
+        "/api/account/verification/confirm",
+        None,
+        Some(json!({
+            "token": pending_verification_token
+        })),
+    )
+    .await;
+    assert_eq!(pending_verification.status(), StatusCode::NO_CONTENT);
+    assert_eq!(
+        login(&router, pending_email, NEW_PASSWORD).await.status(),
+        StatusCode::OK
+    );
 
     let actions: Vec<String> =
         sqlx::query_scalar("SELECT action FROM audit_log WHERE entity_id = $1 ORDER BY id")

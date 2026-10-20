@@ -1,7 +1,8 @@
 use axum::{
     Json,
-    extract::{FromRequestParts, State},
+    extract::{FromRequestParts, Path, Request, State},
     http::{HeaderValue, StatusCode, header, request::Parts},
+    middleware::Next,
     response::{IntoResponse, Response},
 };
 use axum_extra::extract::cookie::{Cookie, CookieJar, SameSite};
@@ -49,6 +50,11 @@ pub struct AccountTokenRequest {
 }
 
 #[derive(Deserialize, ToSchema)]
+pub struct VerificationRequest {
+    pub email: String,
+}
+
+#[derive(Deserialize, ToSchema)]
 pub struct ForgotPasswordRequest {
     pub email: String,
 }
@@ -57,6 +63,19 @@ pub struct ForgotPasswordRequest {
 pub struct ResetPasswordRequest {
     pub token: String,
     pub password: String,
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct UpdateAccountProfileRequest {
+    pub first_name: String,
+    pub last_name: String,
+    #[serde(default)]
+    pub phone: String,
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct RequestEmailChangeRequest {
+    pub email: String,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -117,6 +136,35 @@ pub struct AuthenticatedCustomer {
     pub email_verified: bool,
 }
 
+pub async fn require_verified_actions(
+    State(state): State<AppState>,
+    request: Request,
+    next: Next,
+) -> Response {
+    let path = request.uri().path();
+    let protected = [
+        "/api/cart",
+        "/api/orders",
+        "/api/personalization",
+        "/api/customers/guest",
+        "/api/account/addresses",
+    ]
+    .iter()
+    .any(|prefix| path == *prefix || path.starts_with(&format!("{prefix}/")));
+    if !protected {
+        return next.run(request).await;
+    }
+    let (mut parts, body) = request.into_parts();
+    let customer = match AuthenticatedCustomer::from_request_parts(&mut parts, &state).await {
+        Ok(customer) => customer,
+        Err(response) => return response,
+    };
+    if !customer.email_verified {
+        return email_verification_required();
+    }
+    next.run(Request::from_parts(parts, body)).await
+}
+
 #[utoipa::path(
     post,
     path = "/api/account/register",
@@ -150,9 +198,6 @@ pub async fn register(
         Err(_) => return unavailable(),
     };
     let customer_id = Uuid::now_v7();
-    let session_id = Uuid::now_v7();
-    let token = new_session_token();
-    let token_hash = hash_token(&token);
     let email_token_id = Uuid::now_v7();
     let email_token = new_session_token();
     let email_token_hash = hash_token(&email_token);
@@ -183,9 +228,6 @@ pub async fn register(
         .execute(&mut *transaction)
         .await
         .is_err()
-        || insert_session(&mut transaction, session_id, customer_id, &token_hash)
-            .await
-            .is_err()
         || insert_account_token(
             &mut transaction,
             email_token_id,
@@ -223,7 +265,7 @@ pub async fn register(
     no_store(
         (
             StatusCode::CREATED,
-            jar.add(session_cookie(token, state.secure_cookies)),
+            jar.remove(removal_cookie()),
             Json(CustomerAccountProfile {
                 id: customer_id,
                 email,
@@ -246,6 +288,7 @@ pub async fn register(
     responses(
         (status = 200, body = CustomerAccountProfile),
         (status = 401, body = ErrorBody),
+        (status = 403, body = ErrorBody),
         (status = 429, body = ErrorBody),
         (status = 503, body = ErrorBody)
     )
@@ -312,6 +355,12 @@ pub async fn login(
             return unavailable();
         }
         return invalid_credentials();
+    }
+    if !credentials.email_verified {
+        if guard.record_success().await.is_err() {
+            return unavailable();
+        }
+        return email_verification_required();
     }
     let session_id = Uuid::now_v7();
     let token = new_session_token();
@@ -424,6 +473,234 @@ pub async fn me(State(state): State<AppState>, customer: AuthenticatedCustomer) 
 }
 
 #[utoipa::path(
+    put,
+    path = "/api/account/me",
+    tag = "customer account",
+    request_body = UpdateAccountProfileRequest,
+    responses(
+        (status = 200, body = CustomerAccountProfile),
+        (status = 401, body = ErrorBody),
+        (status = 403, body = ErrorBody),
+        (status = 422, body = ErrorBody),
+        (status = 503, body = ErrorBody)
+    )
+)]
+pub async fn update_profile(
+    State(state): State<AppState>,
+    customer: AuthenticatedCustomer,
+    Json(input): Json<UpdateAccountProfileRequest>,
+) -> Response {
+    if !customer.email_verified {
+        return email_verification_required();
+    }
+    if !valid_required(&input.first_name, 100)
+        || !valid_required(&input.last_name, 100)
+        || input.phone.trim().len() > 40
+    {
+        return error_response(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "invalid_customer_profile",
+            "Provide a valid name and phone number.",
+        );
+    }
+    let Some(pool) = state.database else {
+        return unavailable();
+    };
+    let mut transaction = match pool.begin().await {
+        Ok(transaction) => transaction,
+        Err(_) => return unavailable(),
+    };
+    if lock_active_account(&mut transaction, customer.id).await.is_err()
+        || sqlx::query("UPDATE customers SET first_name = $2, last_name = $3, phone = $4, updated_at = now() WHERE id = $1")
+            .bind(customer.id).bind(input.first_name.trim()).bind(input.last_name.trim()).bind(input.phone.trim())
+            .execute(&mut *transaction).await.is_err()
+        || refresh_retention(&mut transaction, customer.id).await.is_err()
+        || audit(&mut transaction, customer.id, "customer.profile_update", "customer", customer.id).await.is_err()
+        || transaction.commit().await.is_err()
+    { return unavailable() }
+    match profile_for(
+        &pool,
+        AuthenticatedCustomer {
+            first_name: input.first_name.trim().into(),
+            last_name: input.last_name.trim().into(),
+            phone: input.phone.trim().into(),
+            ..customer
+        },
+    )
+    .await
+    {
+        Ok(profile) => no_store(Json(profile).into_response()),
+        Err(_) => unavailable(),
+    }
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/account/email/change",
+    tag = "customer account",
+    request_body = RequestEmailChangeRequest,
+    responses(
+        (status = 204, description = "Confirmation link sent to the proposed address"),
+        (status = 401, body = ErrorBody),
+        (status = 403, body = ErrorBody),
+        (status = 409, body = ErrorBody),
+        (status = 422, body = ErrorBody),
+        (status = 429, body = ErrorBody),
+        (status = 503, body = ErrorBody)
+    )
+)]
+pub async fn request_email_change(
+    State(state): State<AppState>,
+    ClientIp(client_ip): ClientIp,
+    customer: AuthenticatedCustomer,
+    Json(input): Json<RequestEmailChangeRequest>,
+) -> Response {
+    if !customer.email_verified {
+        return email_verification_required();
+    }
+    let email = input.email.trim().to_ascii_lowercase();
+    if !valid_email(&email) {
+        return error_response(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "invalid_customer_email",
+            "Provide a valid email address.",
+        );
+    }
+    if email == customer.email {
+        return error_response(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "unchanged_customer_email",
+            "Choose a different email address.",
+        );
+    }
+    let Some(pool) = state.database else {
+        return unavailable();
+    };
+    if let Err(error) =
+        consume_account_action(&pool, "email_change", &customer.email, client_ip).await
+    {
+        return account_action_limit_error(error);
+    }
+    let in_use = sqlx::query_scalar::<_, bool>("SELECT EXISTS (SELECT 1 FROM customers WHERE email = $1 AND customer_type = 'registered' AND anonymized_at IS NULL)")
+        .bind(&email).fetch_one(&pool).await;
+    match in_use {
+        Ok(true) => {
+            return error_response(
+                StatusCode::CONFLICT,
+                "customer_email_exists",
+                "A customer account with that email already exists.",
+            );
+        }
+        Ok(false) => {}
+        Err(_) => return unavailable(),
+    }
+    let token = new_session_token();
+    let token_hash = hash_token(&token);
+    let mut transaction = match pool.begin().await {
+        Ok(transaction) => transaction,
+        Err(_) => return unavailable(),
+    };
+    if lock_active_account(&mut transaction, customer.id).await.is_err()
+        || use_account_tokens(&mut transaction, customer.id, AccountEmailKind::EmailChange).await.is_err()
+        || sqlx::query("INSERT INTO customer_account_tokens (id, customer_id, token_kind, token_hash, target_email, expires_at) VALUES ($1, $2, 'email_change', $3, $4, now() + interval '24 hours')")
+            .bind(Uuid::now_v7()).bind(customer.id).bind(token_hash.as_slice()).bind(&email)
+            .execute(&mut *transaction).await.is_err()
+        || audit(&mut transaction, customer.id, "customer.email_change_requested", "customer", customer.id).await.is_err()
+        || transaction.commit().await.is_err()
+    { return unavailable() }
+    if let Err(error) = state
+        .email
+        .send_account_action(
+            &email,
+            &customer.first_name,
+            AccountEmailKind::EmailChange,
+            &token,
+        )
+        .await
+    {
+        log_delivery_failure(&error, AccountEmailKind::EmailChange);
+    }
+    no_store(StatusCode::NO_CONTENT.into_response())
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/account/email/confirm",
+    tag = "customer account",
+    request_body = AccountTokenRequest,
+    responses(
+        (status = 204, description = "New email address confirmed"),
+        (status = 409, body = ErrorBody),
+        (status = 422, body = ErrorBody),
+        (status = 503, body = ErrorBody)
+    )
+)]
+pub async fn confirm_email_change(
+    State(state): State<AppState>,
+    Json(input): Json<AccountTokenRequest>,
+) -> Response {
+    let Some(token_hash) = valid_action_token(&input.token) else {
+        return invalid_action_token();
+    };
+    let Some(pool) = state.database else {
+        return unavailable();
+    };
+    let mut transaction = match pool.begin().await {
+        Ok(transaction) => transaction,
+        Err(_) => return unavailable(),
+    };
+    let proposed = sqlx::query_as::<_, (Uuid, String)>(
+        r#"
+        SELECT token.customer_id, token.target_email::text
+        FROM customer_account_tokens token
+        JOIN customer_accounts account ON account.customer_id = token.customer_id
+        JOIN customers customer ON customer.id = token.customer_id
+        WHERE token.token_hash = $1 AND token.token_kind = 'email_change'
+          AND token.used_at IS NULL AND token.expires_at > now()
+          AND account.disabled_at IS NULL AND account.email_verified_at IS NOT NULL
+          AND customer.anonymized_at IS NULL AND customer.retention_expires_at > now()
+        FOR UPDATE OF token, account, customer
+    "#,
+    )
+    .bind(token_hash.as_slice())
+    .fetch_optional(&mut *transaction)
+    .await;
+    let (customer_id, email) = match proposed {
+        Ok(Some(value)) => value,
+        Ok(None) => return invalid_action_token(),
+        Err(_) => return unavailable(),
+    };
+    let updated = sqlx::query("UPDATE customers SET email = $2, updated_at = now() WHERE id = $1")
+        .bind(customer_id)
+        .bind(&email)
+        .execute(&mut *transaction)
+        .await;
+    if let Err(error) = updated {
+        return registration_write_error(error);
+    }
+    if use_account_tokens(&mut transaction, customer_id, AccountEmailKind::EmailChange)
+        .await
+        .is_err()
+        || refresh_retention(&mut transaction, customer_id)
+            .await
+            .is_err()
+        || audit(
+            &mut transaction,
+            customer_id,
+            "customer.email_changed",
+            "customer",
+            customer_id,
+        )
+        .await
+        .is_err()
+        || transaction.commit().await.is_err()
+    {
+        return unavailable();
+    }
+    no_store(StatusCode::NO_CONTENT.into_response())
+}
+
+#[utoipa::path(
     post,
     path = "/api/account/addresses",
     tag = "customer account",
@@ -431,6 +708,7 @@ pub async fn me(State(state): State<AppState>, customer: AuthenticatedCustomer) 
     responses(
         (status = 201, body = CustomerAddress),
         (status = 401, body = ErrorBody),
+        (status = 403, body = ErrorBody),
         (status = 422, body = ErrorBody),
         (status = 503, body = ErrorBody)
     )
@@ -440,6 +718,9 @@ pub async fn add_address(
     customer: AuthenticatedCustomer,
     Json(input): Json<CreateAccountAddressRequest>,
 ) -> Response {
+    if !customer.email_verified {
+        return email_verification_required();
+    }
     if !valid_address(&input) {
         return invalid_address();
     }
@@ -507,34 +788,35 @@ pub async fn add_address(
 }
 
 #[utoipa::path(
-    post,
-    path = "/api/account/verification/request",
+    put,
+    path = "/api/account/addresses/{address_id}",
     tag = "customer account",
+    params(("address_id" = Uuid, Path)),
+    request_body = CreateAccountAddressRequest,
     responses(
-        (status = 204, description = "Verification email requested or recently sent"),
+        (status = 200, body = CustomerAddress),
         (status = 401, body = ErrorBody),
+        (status = 403, body = ErrorBody),
+        (status = 404, body = ErrorBody),
+        (status = 422, body = ErrorBody),
         (status = 503, body = ErrorBody)
     )
 )]
-pub async fn request_verification(
+pub async fn update_address(
     State(state): State<AppState>,
-    ClientIp(client_ip): ClientIp,
     customer: AuthenticatedCustomer,
+    Path(address_id): Path<Uuid>,
+    Json(input): Json<CreateAccountAddressRequest>,
 ) -> Response {
-    if customer.email_verified {
-        return no_store(StatusCode::NO_CONTENT.into_response());
+    if !customer.email_verified {
+        return email_verification_required();
+    }
+    if !valid_address(&input) {
+        return invalid_address();
     }
     let Some(pool) = state.database else {
         return unavailable();
     };
-    if let Err(error) =
-        consume_account_action(&pool, "verification", &customer.email, client_ip).await
-    {
-        return account_action_limit_error(error);
-    }
-    let token = new_session_token();
-    let token_hash = hash_token(&token);
-    let token_id = Uuid::now_v7();
     let mut transaction = match pool.begin().await {
         Ok(transaction) => transaction,
         Err(_) => return unavailable(),
@@ -545,12 +827,113 @@ pub async fn request_verification(
     {
         return unavailable();
     }
-    match recently_issued_token(
-        &mut transaction,
-        customer.id,
-        AccountEmailKind::Verification,
+    let updated = sqlx::query_as::<_, CustomerAddress>(
+        r#"
+        UPDATE customer_addresses SET address_type = $3, recipient_name = $4,
+            line1 = $5, line2 = $6, city = $7, region = $8, postal_code = $9,
+            country_code = $10, phone = $11, updated_at = now()
+        WHERE id = $1 AND customer_id = $2
+        RETURNING id, address_type, recipient_name, line1, line2, city, region,
+                  postal_code, country_code::text AS country_code, phone
+    "#,
     )
+    .bind(address_id)
+    .bind(customer.id)
+    .bind(input.address_type.trim())
+    .bind(input.recipient_name.trim())
+    .bind(input.line1.trim())
+    .bind(input.line2.trim())
+    .bind(input.city.trim())
+    .bind(input.region.trim())
+    .bind(input.postal_code.trim())
+    .bind(input.country_code.trim().to_ascii_uppercase())
+    .bind(input.phone.trim())
+    .fetch_optional(&mut *transaction)
+    .await;
+    let address = match updated {
+        Ok(Some(address)) => address,
+        Ok(None) => {
+            return error_response(
+                StatusCode::NOT_FOUND,
+                "customer_address_not_found",
+                "Address not found.",
+            );
+        }
+        Err(_) => return unavailable(),
+    };
+    if refresh_retention(&mut transaction, customer.id)
+        .await
+        .is_err()
+        || audit(
+            &mut transaction,
+            customer.id,
+            "customer.address_update",
+            "customer_address",
+            address_id,
+        )
+        .await
+        .is_err()
+        || transaction.commit().await.is_err()
+    {
+        return unavailable();
+    }
+    no_store(Json(address).into_response())
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/account/verification/request",
+    tag = "customer account",
+    request_body = VerificationRequest,
+    responses(
+        (status = 204, description = "Verification email requested or recently sent"),
+        (status = 422, body = ErrorBody),
+        (status = 429, body = ErrorBody),
+        (status = 503, body = ErrorBody)
+    )
+)]
+pub async fn request_verification(
+    State(state): State<AppState>,
+    ClientIp(client_ip): ClientIp,
+    Json(input): Json<VerificationRequest>,
+) -> Response {
+    let email = input.email.trim().to_ascii_lowercase();
+    if !valid_email(&email) {
+        return invalid_registration();
+    }
+    let Some(pool) = state.database else {
+        return unavailable();
+    };
+    if let Err(error) = consume_account_action(&pool, "verification", &email, client_ip).await {
+        return account_action_limit_error(error);
+    }
+    let token = new_session_token();
+    let token_hash = hash_token(&token);
+    let token_id = Uuid::now_v7();
+    let mut transaction = match pool.begin().await {
+        Ok(transaction) => transaction,
+        Err(_) => return unavailable(),
+    };
+    let customer = match sqlx::query_as::<_, (Uuid, String)>(
+        r#"
+        SELECT customer.id, customer.first_name
+        FROM customers customer
+        JOIN customer_accounts account ON account.customer_id = customer.id
+        WHERE customer.email = $1 AND customer.customer_type = 'registered'
+          AND customer.anonymized_at IS NULL AND customer.retention_expires_at > now()
+          AND account.disabled_at IS NULL AND account.email_verified_at IS NULL
+        FOR UPDATE OF customer, account
+        "#,
+    )
+    .bind(&email)
+    .fetch_optional(&mut *transaction)
     .await
+    {
+        Ok(Some(customer)) => customer,
+        Ok(None) => return no_store(StatusCode::NO_CONTENT.into_response()),
+        Err(_) => return unavailable(),
+    };
+    match recently_issued_token(&mut transaction, customer.0, AccountEmailKind::Verification).await
     {
         Ok(true) => {
             return if transaction.commit().await.is_ok() {
@@ -565,7 +948,7 @@ pub async fn request_verification(
     if replace_account_token(
         &mut transaction,
         token_id,
-        customer.id,
+        customer.0,
         AccountEmailKind::Verification,
         &token_hash,
     )
@@ -573,10 +956,10 @@ pub async fn request_verification(
     .is_err()
         || audit(
             &mut transaction,
-            customer.id,
+            customer.0,
             "customer.email_verification_requested",
             "customer",
-            customer.id,
+            customer.0,
         )
         .await
         .is_err()
@@ -586,12 +969,7 @@ pub async fn request_verification(
     }
     if let Err(error) = state
         .email
-        .send_account_action(
-            &customer.email,
-            &customer.first_name,
-            AccountEmailKind::Verification,
-            &token,
-        )
+        .send_account_action(&email, &customer.1, AccountEmailKind::Verification, &token)
         .await
     {
         log_delivery_failure(&error, AccountEmailKind::Verification);
@@ -817,7 +1195,7 @@ pub async fn reset_password(
         Err(_) => return unavailable(),
     };
     if sqlx::query(
-        "UPDATE customer_accounts SET password_hash = $2, email_verified_at = COALESCE(email_verified_at, now()), updated_at = now() WHERE customer_id = $1",
+        "UPDATE customer_accounts SET password_hash = $2, updated_at = now() WHERE customer_id = $1",
     )
     .bind(customer_id)
     .bind(password_hash)
@@ -828,13 +1206,6 @@ pub async fn reset_password(
             &mut transaction,
             customer_id,
             AccountEmailKind::PasswordReset,
-        )
-        .await
-        .is_err()
-        || use_account_tokens(
-            &mut transaction,
-            customer_id,
-            AccountEmailKind::Verification,
         )
         .await
         .is_err()
@@ -952,6 +1323,7 @@ async fn insert_account_token(
     let expires_at = match kind {
         AccountEmailKind::Verification => "24 hours",
         AccountEmailKind::PasswordReset => "1 hour",
+        AccountEmailKind::EmailChange => "24 hours",
     };
     sqlx::query(
         r#"
@@ -1255,6 +1627,14 @@ fn invalid_credentials() -> Response {
         "invalid_customer_credentials",
         "The email or password is incorrect.",
     )
+}
+
+fn email_verification_required() -> Response {
+    no_store(error_response(
+        StatusCode::FORBIDDEN,
+        "email_verification_required",
+        "Verify your email address before using your account or placing an order.",
+    ))
 }
 
 fn invalid_action_token() -> Response {

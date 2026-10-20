@@ -33,6 +33,8 @@ export type {
   CustomerAddress,
   CustomerAddressInput,
   CustomerAccountProfile,
+  CustomerOrderPage,
+  CustomerOrderSummary,
   CustomerDetail,
   CustomerLoginRequest,
   CustomerRegisterRequest,
@@ -80,6 +82,7 @@ export type {
   Refund,
   RefundLine,
   ResetPasswordRequest,
+  RequestEmailChangeRequest,
   SelectShippingMethodRequest,
   ShippingMethod,
   ShippingMethodInput,
@@ -95,6 +98,7 @@ export type {
   TaxRuleInput,
   TaxSelection,
   UpdateCommercialSettingsRequest,
+  UpdateAccountProfileRequest,
   UpdateDiscountRequest,
   UpdateProductRequest,
   ModerateProductFeedbackRequest,
@@ -132,6 +136,7 @@ import type {
   CustomerDetail,
   CustomerLoginRequest,
   CustomerRegisterRequest,
+  CustomerOrderPage,
   CustomerSummary,
   DeleteCustomerAccountRequest,
   Discount,
@@ -158,6 +163,7 @@ import type {
   ReorderCategoriesRequest,
   ReplyToProductFeedbackRequest,
   ResetPasswordRequest,
+  RequestEmailChangeRequest,
   SelectShippingMethodRequest,
   ShippingPackageProfile,
   ShippingPackageProfileRequest,
@@ -165,6 +171,7 @@ import type {
   StaffRecord,
   SubmittedProductFeedback,
   UpdateCommercialSettingsRequest,
+  UpdateAccountProfileRequest,
   UpdateDiscountRequest,
   UpdateProductRequest,
   ModerateProductFeedbackRequest,
@@ -237,6 +244,26 @@ export function createApiClient(options: ApiClientOptions = {}) {
     dashboard: () => send<OperationalDashboard>('/api/admin/dashboard'),
     customerAccount: () =>
       send<CustomerAccountProfile>('/api/account/me'),
+    updateCustomerProfile: (input: UpdateAccountProfileRequest) =>
+      send<CustomerAccountProfile>('/api/account/me', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(input),
+      }),
+    customerAccountOrders: (kind: 'active' | 'history', page = 1) =>
+      send<CustomerOrderPage>(`/api/account/orders?kind=${kind}&page=${page}`),
+    requestCustomerEmailChange: (input: RequestEmailChangeRequest) =>
+      send<void>('/api/account/email/change', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(input),
+      }),
+    confirmCustomerEmailChange: (input: AccountTokenRequest) =>
+      send<void>('/api/account/email/confirm', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(input),
+      }),
     registerCustomer: (input: CustomerRegisterRequest) =>
       send<CustomerAccountProfile>('/api/account/register', {
         method: 'POST',
@@ -257,8 +284,18 @@ export function createApiClient(options: ApiClientOptions = {}) {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(input),
       }),
-    requestCustomerVerification: () =>
-      send<void>('/api/account/verification/request', { method: 'POST' }),
+    updateCustomerAddress: (addressId: string, input: CreateAccountAddressRequest) =>
+      send<CustomerAddress>(`/api/account/addresses/${encodeURIComponent(addressId)}`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(input),
+      }),
+    requestCustomerVerification: (email: string) =>
+      send<void>('/api/account/verification/request', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email }),
+      }),
     confirmCustomerVerification: (input: AccountTokenRequest) =>
       send<void>('/api/account/verification/confirm', {
         method: 'POST',

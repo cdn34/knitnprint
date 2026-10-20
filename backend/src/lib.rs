@@ -85,7 +85,19 @@ pub fn app(state: AppState) -> Router {
             "/api/account/logout",
             axum::routing::post(customer_auth::logout),
         )
-        .route("/api/account/me", get(customer_auth::me))
+        .route(
+            "/api/account/me",
+            get(customer_auth::me).put(customer_auth::update_profile),
+        )
+        .route("/api/account/orders", get(orders::customer_list))
+        .route(
+            "/api/account/email/change",
+            axum::routing::post(customer_auth::request_email_change),
+        )
+        .route(
+            "/api/account/email/confirm",
+            axum::routing::post(customer_auth::confirm_email_change),
+        )
         .route(
             "/api/development/emails/latest",
             get(email::development_latest),
@@ -93,6 +105,10 @@ pub fn app(state: AppState) -> Router {
         .route(
             "/api/account/addresses",
             axum::routing::post(customer_auth::add_address),
+        )
+        .route(
+            "/api/account/addresses/{address_id}",
+            axum::routing::put(customer_auth::update_address),
         )
         .route(
             "/api/account/verification/request",
@@ -306,7 +322,11 @@ pub fn app(state: AppState) -> Router {
         )
         .route("/api/media/{media_id}/{variant}", get(media::public_asset))
         .fallback(error::not_found)
-        .with_state(state)
+        .with_state(state.clone())
+        .layer(middleware::from_fn_with_state(
+            state,
+            customer_auth::require_verified_actions,
+        ))
         .layer(DefaultBodyLimit::max(1024 * 1024))
         .layer(PropagateRequestIdLayer::new(request_id.clone()))
         .layer(SetRequestIdLayer::new(request_id, MakeRequestUuid))

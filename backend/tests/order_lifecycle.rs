@@ -1,4 +1,4 @@
-use std::{env, str::FromStr, sync::Arc};
+use std::{cell::RefCell, env, str::FromStr, sync::Arc};
 
 use axum::{
     body::{Body, to_bytes},
@@ -17,13 +17,17 @@ use knitnprint_api::{
     },
 };
 use serde_json::{Value, json};
-use sha2::Sha256;
+use sha2::{Digest, Sha256};
 use sqlx::{
     PgPool,
     postgres::{PgConnectOptions, PgPoolOptions},
 };
 use tower::ServiceExt;
 use uuid::Uuid;
+
+thread_local! {
+    static VERIFIED_CUSTOMER_COOKIE: RefCell<Option<String>> = const { RefCell::new(None) };
+}
 
 struct FakeStripe;
 
@@ -125,6 +129,7 @@ async fn checkout_snapshots_reserves_and_manual_payment_are_idempotent() {
         manual_payments_enabled: true,
         ..AppState::default()
     });
+    create_verified_customer(&pool).await;
     assert_eq!(
         request(&router, "GET", "/api/admin/dashboard", None, None, None)
             .await
@@ -1004,6 +1009,7 @@ async fn stripe_webhooks_are_signed_idempotent_and_drive_inventory() {
         payments: PaymentService::with_provider(Arc::new(FakeStripe), webhook_secret),
         ..AppState::default()
     });
+    create_verified_customer(&pool).await;
 
     let (cart_cookie, order_id) = create_stripe_order(&router, variant_id, "paid", None).await;
     let checkout = request(
@@ -1298,6 +1304,7 @@ async fn concurrent_checkout_cannot_exceed_a_discount_usage_limit() {
         manual_payments_enabled: true,
         ..AppState::default()
     });
+    create_verified_customer(&pool).await;
     let first_cookie =
         prepare_discount_cart(&router, variant_id, "first", "first@example.com").await;
     let second_cookie =
@@ -1595,6 +1602,20 @@ async fn isolated_pool(database_url: &str, schema: &str) -> PgPool {
         .unwrap()
 }
 
+async fn create_verified_customer(pool: &PgPool) {
+    let customer_id = Uuid::now_v7();
+    let token = format!("order-test-customer-{customer_id}");
+    let token_hash = sha2::Sha256::digest(token.as_bytes());
+    sqlx::query("INSERT INTO customers (id, customer_type, email, first_name, last_name) VALUES ($1, 'registered', 'order@example.com', 'Ada', 'Loom')")
+        .bind(customer_id).execute(pool).await.unwrap();
+    sqlx::query("INSERT INTO customer_accounts (customer_id, password_hash, email_verified_at) VALUES ($1, 'test-fixture', now())")
+        .bind(customer_id).execute(pool).await.unwrap();
+    sqlx::query("INSERT INTO customer_sessions (id, customer_id, token_hash, expires_at) VALUES ($1, $2, $3, now() + interval '1 day')")
+        .bind(Uuid::now_v7()).bind(customer_id).bind(token_hash.as_slice()).execute(pool).await.unwrap();
+    VERIFIED_CUSTOMER_COOKIE
+        .with(|cookie| *cookie.borrow_mut() = Some(format!("knitnprint_customer={token}")));
+}
+
 async fn request(
     router: &axum::Router,
     method: &str,
@@ -1604,6 +1625,15 @@ async fn request(
     idempotency_key: Option<&str>,
 ) -> axum::response::Response {
     let mut builder = Request::builder().method(method).uri(path);
+    let cookie = VERIFIED_CUSTOMER_COOKIE.with(|verified| {
+        let verified = verified.borrow();
+        match (verified.as_deref(), cookie) {
+            (Some(account), Some(other)) => Some(format!("{account}; {other}")),
+            (Some(account), None) => Some(account.to_owned()),
+            (None, Some(other)) => Some(other.to_owned()),
+            _ => None,
+        }
+    });
     if let Some(cookie) = cookie {
         builder = builder.header(header::COOKIE, cookie);
     }

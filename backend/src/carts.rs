@@ -2073,6 +2073,7 @@ async fn optional_customer_id(pool: &PgPool, jar: &CookieJar) -> Result<Option<U
         JOIN customers customer ON customer.id = account.customer_id
         WHERE session.token_hash = $1 AND session.revoked_at IS NULL
           AND session.expires_at > now() AND account.disabled_at IS NULL
+          AND account.email_verified_at IS NOT NULL
           AND customer.anonymized_at IS NULL AND customer.retention_expires_at > now()
         "#,
     )
