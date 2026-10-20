@@ -63,7 +63,7 @@ function CartPage() {
 }
 
 function CartContent() {
-  const { t, formatCurrency } = useI18n()
+  const { t, formatCurrency, locale } = useI18n()
   const [cart, setCart] = useState<Cart | null>(null)
   const [loading, setLoading] = useState(true)
   const [busyLine, setBusyLine] = useState<string | null>(null)
@@ -312,7 +312,7 @@ function CartContent() {
       if (!paymentOptions) return
       const method = paymentOptions.stripe ? 'stripe' : 'manual'
       const nextOrder = await cartApi.createOrder(
-        { payment_method: method },
+        { payment_method: method, locale },
         cartMutationKey(),
       )
       setOrder(nextOrder)

@@ -16,7 +16,6 @@ use crate::{
     AppState,
     auth::{AuthenticatedStaff, require_capability},
     error::ErrorBody,
-    notifications::enqueue_fulfillment,
     orders::{Order, load_order},
 };
 
@@ -399,9 +398,6 @@ async fn create_fulfillment(
     .execute(&mut *transaction)
     .await
     .map_err(|_| CreateError::Database)?;
-    enqueue_fulfillment(&mut transaction, order_id, fulfillment_id)
-        .await
-        .map_err(|_| CreateError::Database)?;
     transaction
         .commit()
         .await

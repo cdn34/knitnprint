@@ -9,7 +9,7 @@ use knitnprint_api::{
     AppState, app,
     auth::hash_password,
     email::EmailService,
-    notifications::deliver_due,
+    notifications::deliver_due_with_storage,
     payments::{
         PaymentProvider, PaymentProviderError, PaymentService, ProviderCancelFuture,
         ProviderCheckout, ProviderCheckoutRequest, ProviderFuture, ProviderRefund,
@@ -86,9 +86,11 @@ async fn checkout_snapshots_reserves_and_manual_payment_are_idempotent() {
             .unwrap();
     let product_media_id = Uuid::now_v7();
     let customer_media_id = Uuid::now_v7();
+    let preview_media_id = Uuid::now_v7();
     for (media_id, object_key) in [
         (product_media_id, "tests/order-product.png"),
         (customer_media_id, "tests/customer-original.png"),
+        (preview_media_id, "tests/saved-preview.png"),
     ] {
         sqlx::query("INSERT INTO media_assets (id, object_key, content_type, byte_size, status, completed_at, scan_status, scanned_at) VALUES ($1, $2, 'image/png', 1, 'ready', now(), 'clean', now())")
             .bind(media_id)
@@ -97,6 +99,10 @@ async fn checkout_snapshots_reserves_and_manual_payment_are_idempotent() {
             .await
             .unwrap();
     }
+    sqlx::query("INSERT INTO media_variants (media_asset_id, kind, object_key, byte_size, width, height) VALUES ($1, 'card', 'tests/saved-preview.png', 1, 600, 600)")
+        .bind(preview_media_id).execute(&pool).await.unwrap();
+    let storage =
+        knitnprint_api::object_storage::ObjectStorage::from_backend(Arc::new(PreviewStorage));
     sqlx::query("INSERT INTO product_media (product_id, media_asset_id, alt_text, position) VALUES ($1, $2, 'Order product', 0)")
         .bind(product_id)
         .bind(product_media_id)
@@ -218,6 +224,12 @@ async fn checkout_snapshots_reserves_and_manual_payment_are_idempotent() {
         .execute(&pool)
         .await
         .unwrap();
+    sqlx::query("UPDATE media_assets SET personalization_cart_id=$1 WHERE id=$2")
+        .bind(cart_id)
+        .bind(preview_media_id)
+        .execute(&pool)
+        .await
+        .unwrap();
     let added = request(
         &router,
         "POST",
@@ -227,6 +239,7 @@ async fn checkout_snapshots_reserves_and_manual_payment_are_idempotent() {
             "variant_id": variant_id,
             "quantity": 2,
             "customization_media_asset_ids": [customer_media_id],
+            "personalization_previews": [{"view_id":"view-front", "view_label":"Frente", "media_id":preview_media_id}],
             "customization": {
                 "version": 7,
                 "areas": [{
@@ -333,12 +346,20 @@ async fn checkout_snapshots_reserves_and_manual_payment_are_idempotent() {
         created_body["lines"][0]["personalization_context"]["views"][0]["media_id"],
         product_media_id.to_string()
     );
-    let retained_media: (Uuid, i32) =
-        sqlx::query_as("SELECT media_asset_id, position FROM order_line_personalization_media")
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-    assert_eq!(retained_media, (customer_media_id, 0));
+    let retained_media: Vec<(Uuid, i32)> = sqlx::query_as(
+        "SELECT media_asset_id, position FROM order_line_personalization_media ORDER BY position",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        retained_media,
+        vec![(customer_media_id, 0), (preview_media_id, 1)]
+    );
+    assert_eq!(
+        created_body["lines"][0]["personalization_previews"][0]["media_id"],
+        preview_media_id.to_string()
+    );
     assert_eq!(created_body["shipping_address"]["line1"], "9 Thread Street");
     let order_id = created_body["id"].as_str().unwrap();
 
@@ -613,7 +634,7 @@ async fn checkout_snapshots_reserves_and_manual_payment_are_idempotent() {
     assert_eq!(partial_body["fulfillment_status"], "partially_fulfilled");
     assert_eq!(partial_body["lines"][0]["fulfilled_quantity"], 1);
     assert_eq!(partial_body["fulfillments"][0]["carrier"], "CTT");
-    assert_eq!(partial_body["notifications"].as_array().unwrap().len(), 2);
+    assert_eq!(partial_body["notifications"].as_array().unwrap().len(), 1);
 
     let replay = request(
         &router,
@@ -656,10 +677,11 @@ async fn checkout_snapshots_reserves_and_manual_payment_are_idempotent() {
     .await;
     assert_eq!(conflict.status(), StatusCode::CONFLICT);
 
-    let failed_delivery = deliver_due(&pool, &EmailService::default(), 25)
-        .await
-        .unwrap();
-    assert_eq!(failed_delivery.failed, 2);
+    let failed_delivery =
+        deliver_due_with_storage(&pool, &EmailService::default(), 25, Some(&storage))
+            .await
+            .unwrap();
+    assert_eq!(failed_delivery.failed, 1);
     let status: (String, String) =
         sqlx::query_as("SELECT order_status, fulfillment_status FROM orders WHERE id = $1")
             .bind(Uuid::parse_str(order_id).unwrap())
@@ -671,8 +693,10 @@ async fn checkout_snapshots_reserves_and_manual_payment_are_idempotent() {
         .execute(&pool)
         .await
         .unwrap();
-    let delivered = deliver_due(&pool, &email, 25).await.unwrap();
-    assert_eq!(delivered.sent, 2);
+    let delivered = deliver_due_with_storage(&pool, &email, 25, Some(&storage))
+        .await
+        .unwrap();
+    assert_eq!(delivered.sent, 1);
     let fulfillment_email = request(
         &router,
         "GET",
@@ -682,11 +706,57 @@ async fn checkout_snapshots_reserves_and_manual_payment_are_idempotent() {
         None,
     )
     .await;
-    assert_eq!(fulfillment_email.status(), StatusCode::OK);
-    assert_eq!(
-        response_json(fulfillment_email).await["subject"],
-        "Your KnitNPrint order is on its way"
-    );
+    assert_eq!(fulfillment_email.status(), StatusCode::NOT_FOUND);
+    for (locale, title, total) in [
+        ("en", "Your order is confirmed.", "€81.91"),
+        ("pt", "A tua encomenda está confirmada.", "81,91 €"),
+        ("es", "Tu pedido está confirmado.", "81,91 €"),
+    ] {
+        sqlx::query("UPDATE orders SET email_locale=$2, customer_first_name='<img src=x onerror=alert(1)>' WHERE id=$1")
+            .bind(Uuid::parse_str(order_id).unwrap()).bind(locale).execute(&pool).await.unwrap();
+        sqlx::query("UPDATE notification_jobs SET status='pending', sent_at=NULL, next_attempt_at=now() WHERE order_id=$1")
+            .bind(Uuid::parse_str(order_id).unwrap()).execute(&pool).await.unwrap();
+        assert_eq!(
+            deliver_due_with_storage(&pool, &email, 25, Some(&storage))
+                .await
+                .unwrap()
+                .sent,
+            1
+        );
+        let confirmation = response_json(
+            request(
+                &router,
+                "GET",
+                "/api/development/emails/latest?to=order%40example.com&kind=order_confirmation",
+                None,
+                None,
+                None,
+            )
+            .await,
+        )
+        .await;
+        let html = confirmation["html"].as_str().unwrap();
+        assert!(html.contains(title));
+        assert!(html.contains(&format!("lang=\"{locale}\"")));
+        assert!(html.contains("Order Loom"));
+        assert!(html.contains(total));
+        assert!(html.contains("ORDER10"));
+        assert!(html.contains("&lt;img src=x onerror=alert(1)&gt;"));
+        assert!(!html.contains("<img src=x"));
+        assert!(html.contains(&format!("cid:preview-{preview_media_id}@knitnprint")));
+        assert!(html.contains("source=account"));
+        assert!(!html.contains("payment method"));
+        assert!(!html.contains("We will email you again"));
+        assert!(
+            confirmation["text"]
+                .as_str()
+                .unwrap()
+                .contains("Order Loom")
+        );
+        if locale == "en" && std::env::var_os("WRITE_EMAIL_PREVIEW").is_some() {
+            std::fs::write("/tmp/knitnprint-order-email.html", html).unwrap();
+        }
+    }
 
     let completed = request(
         &router,
@@ -1667,4 +1737,68 @@ fn response_cookie(response: &axum::response::Response) -> String {
 async fn response_json(response: axum::response::Response) -> Value {
     let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
     serde_json::from_slice(&bytes).unwrap()
+}
+
+struct PreviewStorage;
+#[async_trait::async_trait]
+impl knitnprint_api::object_storage::StorageBackend for PreviewStorage {
+    fn provider(&self) -> knitnprint_api::object_storage::StorageProvider {
+        knitnprint_api::object_storage::StorageProvider::SeaweedFs
+    }
+    fn bucket(&self) -> &str {
+        "test-previews"
+    }
+    async fn presign_upload(
+        &self,
+        _: &str,
+        _: &str,
+        _: i64,
+        _: std::time::Duration,
+    ) -> Result<String, knitnprint_api::object_storage::StorageError> {
+        Err(knitnprint_api::object_storage::StorageError::Presign)
+    }
+    async fn presign_download(
+        &self,
+        _: &str,
+        _: std::time::Duration,
+    ) -> Result<String, knitnprint_api::object_storage::StorageError> {
+        Err(knitnprint_api::object_storage::StorageError::Presign)
+    }
+    async fn head(
+        &self,
+        _: &str,
+    ) -> Result<
+        knitnprint_api::object_storage::ObjectMetadata,
+        knitnprint_api::object_storage::StorageError,
+    > {
+        Err(knitnprint_api::object_storage::StorageError::Head)
+    }
+    async fn get(
+        &self,
+        key: &str,
+    ) -> Result<
+        knitnprint_api::object_storage::StoredObject,
+        knitnprint_api::object_storage::StorageError,
+    > {
+        assert_eq!(
+            key, "tests/saved-preview.png",
+            "worker must read the saved composite, not original customer photos"
+        );
+        Ok(knitnprint_api::object_storage::StoredObject {
+            bytes: include_bytes!("../assets/wordmark.webp").to_vec(),
+            content_type: Some("image/webp".into()),
+            etag: None,
+        })
+    }
+    async fn put(
+        &self,
+        _: &str,
+        _: &str,
+        _: Vec<u8>,
+    ) -> Result<(), knitnprint_api::object_storage::StorageError> {
+        Err(knitnprint_api::object_storage::StorageError::Write)
+    }
+    async fn delete(&self, _: &str) -> Result<(), knitnprint_api::object_storage::StorageError> {
+        Err(knitnprint_api::object_storage::StorageError::Delete)
+    }
 }

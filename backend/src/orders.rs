@@ -44,7 +44,13 @@ const ORDERS_FULFILL: &str = "orders.fulfill";
 
 #[derive(Deserialize, ToSchema)]
 pub struct CreateOrderRequest {
+    #[serde(default = "default_email_locale")]
+    pub locale: String,
     pub payment_method: String,
+}
+
+fn default_email_locale() -> String {
+    "en".into()
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -115,6 +121,8 @@ pub struct OrderLine {
     pub customization_media_asset_id: Option<Uuid>,
     pub customization_media_asset_ids: Vec<Uuid>,
     pub personalization_context: Option<Value>,
+    pub personalization_previews: Value,
+    pub variant_options: Value,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -224,6 +232,8 @@ struct CheckoutLine {
     customization_media_asset_id: Option<Uuid>,
     customization_media_asset_ids: Vec<Uuid>,
     personalization_context: Option<Value>,
+    personalization_previews: Value,
+    variant_options: Value,
 }
 
 #[derive(FromRow)]
@@ -322,6 +332,13 @@ pub async fn create(
     let Some(pool) = state.database.as_ref() else {
         return unavailable();
     };
+    if !matches!(input.locale.as_str(), "en" | "pt" | "es") {
+        return error(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "invalid_locale",
+            "Choose en, pt, or es.",
+        );
+    }
     match create_order(
         pool,
         customer.id,
@@ -329,6 +346,7 @@ pub async fn create(
         idempotency_hash,
         provider,
         &state.packlink,
+        &input.locale,
     )
     .await
     {
@@ -624,6 +642,7 @@ async fn create_order(
     idempotency_hash: [u8; 32],
     provider: &str,
     packlink: &PacklinkService,
+    locale: &str,
 ) -> Result<(Order, bool), CreateError> {
     let mut transaction = pool.begin().await.map_err(|_| CreateError::Database)?;
     let cart = sqlx::query_as::<_, CheckoutCart>(
@@ -697,7 +716,7 @@ async fn create_order(
                product.shipping_units_per_package,
                (product.shipping_profile_configured AND COALESCE(package_profile.active, false)) AS shipping_profile_configured,
                line.customization, line.customization_media_asset_id,
-               line.customization_media_asset_ids,
+               line.customization_media_asset_ids, line.personalization_previews, variant.option_values AS variant_options,
                CASE WHEN line.customization IS NULL THEN NULL ELSE
                  jsonb_build_object(
                    'version', 1,
@@ -856,6 +875,12 @@ async fn create_order(
             .await
             .map_err(|_| CreateError::Database)?;
     }
+    sqlx::query("UPDATE orders SET email_locale = $2 WHERE id = $1")
+        .bind(order_id)
+        .bind(locale)
+        .execute(&mut *transaction)
+        .await
+        .map_err(|_| CreateError::Database)?;
     record_order_snapshots(&mut transaction, order_id, &commercial_pricing)
         .await
         .map_err(|_| CreateError::Database)?;
@@ -868,8 +893,8 @@ async fn create_order(
                 id, order_id, product_id, variant_id, product_title, variant_title,
                 sku, quantity, unit_price_minor, line_total_minor, currency, position,
                 customization, customization_media_asset_id, customization_media_asset_ids,
-                personalization_context
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9 * $8, $10, $11, $12, $13, $14, $15)
+                personalization_context, personalization_previews, variant_options
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9 * $8, $10, $11, $12, $13, $14, $15, $16, $17)
             "#,
         )
         .bind(order_line_id)
@@ -887,10 +912,21 @@ async fn create_order(
         .bind(line.customization_media_asset_id)
         .bind(&line.customization_media_asset_ids)
         .bind(&line.personalization_context)
+        .bind(&line.personalization_previews)
+        .bind(&line.variant_options)
         .execute(&mut *transaction)
         .await
         .map_err(|_| CreateError::Database)?;
-        for (media_position, media_id) in line.customization_media_asset_ids.iter().enumerate() {
+        let previews: Vec<crate::carts::PersonalizationPreview> =
+            serde_json::from_value(line.personalization_previews.clone())
+                .map_err(|_| CreateError::Database)?;
+        let retained_media: Vec<_> = line
+            .customization_media_asset_ids
+            .iter()
+            .copied()
+            .chain(previews.iter().map(|preview| preview.media_id))
+            .collect();
+        for (media_position, media_id) in retained_media.iter().enumerate() {
             sqlx::query(
                 "INSERT INTO order_line_personalization_media (order_line_id, media_asset_id, position) VALUES ($1, $2, $3)",
             )
@@ -1193,7 +1229,7 @@ pub(crate) async fn load_order(
                COALESCE((SELECT sum(fulfilled.quantity)::bigint FROM fulfillment_lines fulfilled WHERE fulfilled.order_line_id = line.id), 0) AS fulfilled_quantity,
                line.unit_price_minor, line.line_total_minor, line.currency::text AS currency,
                line.customization, line.customization_media_asset_id,
-               line.customization_media_asset_ids, line.personalization_context
+               line.customization_media_asset_ids, line.personalization_context, line.personalization_previews, line.variant_options
         FROM order_lines line WHERE line.order_id = $1 ORDER BY line.position, line.id
         "#,
     )

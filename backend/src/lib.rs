@@ -21,6 +21,7 @@ pub mod media_scanner;
 pub mod notifications;
 pub mod object_storage;
 pub mod openapi;
+pub mod order_email;
 pub mod orders;
 pub mod packlink;
 pub mod payments;
