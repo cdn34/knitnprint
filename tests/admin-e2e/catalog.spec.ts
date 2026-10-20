@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { signInVerifiedCustomer } from '../helpers/customer'
 
 const ownerEmail = process.env.E2E_OWNER_EMAIL ?? 'owner@knitnprint.local'
 const ownerPassword =
@@ -327,6 +328,7 @@ test('lets an owner manage commercial settings and complete an order journey', a
     .filter({ hasText: slug })
   await expect(persistedProduct.locator('.product-thumbnail img')).toBeVisible()
 
+  await signInVerifiedCustomer(page.request, orderEmail, 'Order', 'Browser')
   await page.goto(`http://127.0.0.1:3000/products/${slug}`)
   await page.waitForLoadState('networkidle')
   await expect(page.getByRole('heading', { level: 1 })).toHaveText(title)
