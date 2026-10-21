@@ -18,6 +18,7 @@ import {
 import { useEffect, useState, type FormEvent } from 'react'
 import { announceCartUpdate, cartApi, cartMutationKey } from '../cart-api'
 import { ContextualFaqs } from '../components/contextual-faqs'
+import { VerifiedCustomerGate } from '../components/verified-customer-gate'
 import { StorefrontAnnouncement, StorefrontFooter, StorefrontHeader } from '../components/storefront-shell'
 import { useI18n } from '../i18n'
 
@@ -58,12 +59,17 @@ function shippingDetails(shipping: { carrier_name: string; method_name: string; 
 }
 
 function CartPage() {
-  const { t, formatCurrency } = useI18n()
+  return <VerifiedCustomerGate><CartContent /></VerifiedCustomerGate>
+}
+
+function CartContent() {
+  const { t, formatCurrency, locale } = useI18n()
   const [cart, setCart] = useState<Cart | null>(null)
   const [loading, setLoading] = useState(true)
   const [busyLine, setBusyLine] = useState<string | null>(null)
   const [message, setMessage] = useState('')
   const [order, setOrder] = useState<Order | null>(null)
+  const [fromAccount, setFromAccount] = useState(false)
   const [submittingOrder, setSubmittingOrder] = useState(false)
   const [paymentOptions, setPaymentOptions] = useState<PaymentOptions | null>(null)
   const [discountBusy, setDiscountBusy] = useState(false)
@@ -89,6 +95,7 @@ function CartPage() {
   useEffect(() => {
     let active = true
     const orderId = new URLSearchParams(window.location.search).get('order_id')
+    setFromAccount(new URLSearchParams(window.location.search).get('source') === 'account')
     Promise.all([
       cartApi.paymentOptions(),
       orderId ? cartApi.customerOrder(orderId) : cartApi.cart(),
@@ -305,7 +312,7 @@ function CartPage() {
       if (!paymentOptions) return
       const method = paymentOptions.stripe ? 'stripe' : 'manual'
       const nextOrder = await cartApi.createOrder(
-        { payment_method: method },
+        { payment_method: method, locale },
         cartMutationKey(),
       )
       setOrder(nextOrder)
@@ -352,12 +359,12 @@ function CartPage() {
       <StorefrontHeader />
 
       <main className="cart-page" id="main-content" tabIndex={-1}>
-        <a className="text-link page-back-link" href="/#shop">
-          <ArrowLeft size={17} /> {t('cart.continueShopping')}
+        <a className="text-link page-back-link" href={fromAccount ? '/account' : '/#shop'}>
+          <ArrowLeft size={17} /> {t(fromAccount ? 'cart.backToAccount' : 'cart.continueShopping')}
         </a>
         <div className="cart-heading">
           <p className="eyebrow">{t('cart.eyebrow')}</p>
-          <h1>{order ? t('cart.orderReceived') : t('cart.title')}</h1>
+          <h1>{order ? t(fromAccount ? 'cart.orderDetails' : 'cart.orderReceived') : t('cart.title')}</h1>
           {!order && cart && <p>{cart.item_count} {t(cart.item_count === 1 ? 'cart.piece' : 'cart.pieces')}</p>}
         </div>
 
@@ -367,6 +374,7 @@ function CartPage() {
         {order && (
           <OrderConfirmation
             order={order}
+            fromAccount={fromAccount}
             busy={submittingOrder}
             onResumePayment={redirectToPayment}
           />
@@ -526,10 +534,12 @@ function CartPage() {
 
 function OrderConfirmation({
   order,
+  fromAccount,
   busy,
   onResumePayment,
 }: Readonly<{
   order: Order
+  fromAccount: boolean
   busy: boolean
   onResumePayment: (orderId: string) => Promise<void>
 }>) {
@@ -543,12 +553,16 @@ function OrderConfirmation({
       <div className="order-confirmation-mark"><ReceiptText aria-hidden="true" /></div>
       <p className="eyebrow">{order.order_number}</p>
       <h2 id="order-confirmation-title">
-        {thankCustomer
+        {fromAccount
+          ? t('cart.orderOverview')
+          : thankCustomer
           ? t('order.thankYou', { name: order.customer.first_name })
           : t('order.reserved')}
       </h2>
       <p>
-        {paid
+        {fromAccount
+          ? t('cart.orderOverviewBody')
+          : paid
           ? t('order.paidBody')
           : stripePending
             ? t('order.pendingBody')

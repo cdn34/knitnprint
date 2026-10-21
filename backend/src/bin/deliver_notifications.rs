@@ -1,6 +1,9 @@
 use std::env;
 
-use knitnprint_api::{config::Environment, email::EmailService, notifications::deliver_due};
+use knitnprint_api::{
+    config::Environment, email::EmailService, notifications::deliver_due_with_storage,
+    object_storage::ObjectStorage,
+};
 use sqlx::postgres::PgPoolOptions;
 
 #[tokio::main]
@@ -36,7 +39,13 @@ async fn main() {
             eprintln!("database unavailable: {error}");
             std::process::exit(1);
         });
-    let summary = deliver_due(&pool, &email, batch_size)
+    let storage = ObjectStorage::from_env(environment)
+        .await
+        .unwrap_or_else(|error| {
+            eprintln!("invalid media storage configuration: {error}");
+            std::process::exit(2);
+        });
+    let summary = deliver_due_with_storage(&pool, &email, batch_size, Some(&storage))
         .await
         .unwrap_or_else(|error| {
             eprintln!("notification delivery failed: {error}");

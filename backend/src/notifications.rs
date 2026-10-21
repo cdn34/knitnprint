@@ -3,7 +3,7 @@ use sqlx::{FromRow, PgPool, Postgres, Transaction};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::email::{EmailService, OrderEmail, OrderEmailKind};
+use crate::{email::EmailService, object_storage::ObjectStorage, orders::load_order};
 
 const MAX_ATTEMPTS: i32 = 8;
 
@@ -28,15 +28,8 @@ pub struct DeliverySummary {
 struct ClaimedNotification {
     id: Uuid,
     attempt_count: i32,
-    recipient_email: String,
-    kind: String,
-    order_number: String,
-    customer_first_name: String,
-    total_minor: i64,
-    currency: String,
-    carrier: String,
-    tracking_number: String,
-    tracking_url: String,
+    order_id: Uuid,
+    email_locale: String,
 }
 
 pub async fn enqueue_order_confirmation(
@@ -54,29 +47,6 @@ pub async fn enqueue_order_confirmation(
         "#,
     )
     .bind(order_id)
-    .bind(Uuid::now_v7())
-    .execute(&mut **transaction)
-    .await?;
-    Ok(())
-}
-
-pub async fn enqueue_fulfillment(
-    transaction: &mut Transaction<'_, Postgres>,
-    order_id: Uuid,
-    fulfillment_id: Uuid,
-) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        r#"
-        INSERT INTO notification_jobs (
-            id, order_id, fulfillment_id, kind, deduplication_key, recipient_email
-        )
-        SELECT $3, id, $2, 'fulfillment_created', $2::text, customer_email
-        FROM orders WHERE id = $1
-        ON CONFLICT (kind, deduplication_key) DO NOTHING
-        "#,
-    )
-    .bind(order_id)
-    .bind(fulfillment_id)
     .bind(Uuid::now_v7())
     .execute(&mut **transaction)
     .await?;
@@ -106,6 +76,15 @@ pub async fn deliver_due(
     email: &EmailService,
     batch_size: i64,
 ) -> Result<DeliverySummary, sqlx::Error> {
+    deliver_due_with_storage(pool, email, batch_size, None).await
+}
+
+pub async fn deliver_due_with_storage(
+    pool: &PgPool,
+    email: &EmailService,
+    batch_size: i64,
+    storage: Option<&ObjectStorage>,
+) -> Result<DeliverySummary, sqlx::Error> {
     if !(1..=100).contains(&batch_size) {
         return Err(sqlx::Error::Protocol(
             "notification batch must be between 1 and 100".to_owned(),
@@ -115,7 +94,7 @@ pub async fn deliver_due(
         r#"
         WITH candidates AS (
             SELECT id FROM notification_jobs
-            WHERE attempt_count < $1
+            WHERE kind = 'order_confirmation' AND attempt_count < $1
               AND (
                 (status = 'pending' AND next_attempt_at <= now())
                 OR (status = 'processing' AND locked_at <= now() - interval '15 minutes')
@@ -130,15 +109,9 @@ pub async fn deliver_due(
             FROM candidates WHERE job.id = candidates.id
             RETURNING job.*
         )
-        SELECT claimed.id, claimed.attempt_count, claimed.recipient_email, claimed.kind,
-               order_record.order_number, order_record.customer_first_name,
-               order_record.total_minor, order_record.currency::text AS currency,
-               COALESCE(fulfillment.carrier, '') AS carrier,
-               COALESCE(fulfillment.tracking_number, '') AS tracking_number,
-               COALESCE(fulfillment.tracking_url, '') AS tracking_url
+        SELECT claimed.id, claimed.attempt_count, claimed.order_id, order_record.email_locale
         FROM claimed
         JOIN orders order_record ON order_record.id = claimed.order_id
-        LEFT JOIN fulfillments fulfillment ON fulfillment.id = claimed.fulfillment_id
         ORDER BY claimed.next_attempt_at, claimed.id
         "#,
     )
@@ -149,24 +122,15 @@ pub async fn deliver_due(
 
     let mut summary = DeliverySummary::default();
     for job in claimed {
-        let kind = if job.kind == "order_confirmation" {
-            OrderEmailKind::Confirmation
-        } else {
-            OrderEmailKind::Fulfillment
+        let outcome = match load_order(pool, job.order_id).await {
+            Ok(Some(order)) => {
+                email
+                    .send_confirmation(&order, &job.email_locale, pool, storage)
+                    .await
+            }
+            Ok(None) => Err("order snapshot is unavailable".into()),
+            Err(_) => Err("order snapshot could not be loaded".into()),
         };
-        let total = format_money(job.total_minor, &job.currency);
-        let outcome = email
-            .send_order_notification(OrderEmail {
-                to: &job.recipient_email,
-                first_name: &job.customer_first_name,
-                kind,
-                order_number: &job.order_number,
-                total: &total,
-                carrier: &job.carrier,
-                tracking_number: &job.tracking_number,
-                tracking_url: &job.tracking_url,
-            })
-            .await;
         let mut transaction = pool.begin().await?;
         match outcome {
             Ok(()) => {
@@ -252,10 +216,6 @@ fn retry_delay_seconds(attempt: i32) -> i64 {
 
 fn truncate_error(error: &str) -> String {
     error.chars().take(1000).collect()
-}
-
-fn format_money(minor: i64, currency: &str) -> String {
-    format!("{} {:.2}", currency, minor as f64 / 100.0)
 }
 
 #[cfg(test)]

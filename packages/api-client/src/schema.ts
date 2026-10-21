@@ -8,6 +8,7 @@ export interface AddCartItemRequest {
   "customization"?: unknown
   "customization_media_asset_id"?: string | null
   "customization_media_asset_ids"?: Array<string>
+  "personalization_previews"?: Array<PersonalizationPreview>
   "quantity": number
   "variant_id": string
 }
@@ -199,6 +200,7 @@ export interface CreateFulfillmentRequest {
 }
 
 export interface CreateOrderRequest {
+  "locale"?: string
   "payment_method": string
 }
 
@@ -297,6 +299,25 @@ export interface CustomerDetail {
 export interface CustomerLoginRequest {
   "email": string
   "password": string
+}
+
+export interface CustomerOrderPage {
+  "orders": Array<CustomerOrderSummary>
+  "page": number
+  "page_size": number
+  "total": number
+}
+
+export interface CustomerOrderSummary {
+  "created_at": string
+  "currency": string
+  "fulfillment_status": string
+  "id": string
+  "item_count": number
+  "order_number": string
+  "order_status": string
+  "payment_status": string
+  "total_minor": number
 }
 
 export interface CustomerRegisterRequest {
@@ -620,10 +641,12 @@ export interface OrderLine {
   "id": string
   "line_total_minor": number
   "personalization_context"?: unknown
+  "personalization_previews": unknown
   "product_title": string
   "quantity": number
   "sku": string
   "unit_price_minor": number
+  "variant_options": unknown
   "variant_title": string
 }
 
@@ -746,6 +769,12 @@ export interface PersonalizationMediaRecord {
   "preview_url": string
 }
 
+export interface PersonalizationPreview {
+  "media_id": string
+  "view_id": string
+  "view_label": string
+}
+
 export interface Product {
   "categories": Array<Category>
   "description": string
@@ -828,6 +857,10 @@ export interface ReorderCategoriesRequest {
 
 export interface ReplyToProductFeedbackRequest {
   "reply"?: string | null
+}
+
+export interface RequestEmailChangeRequest {
+  "email": string
 }
 
 export interface ResetPasswordRequest {
@@ -965,6 +998,12 @@ export interface TaxSelection {
   "taxable_amount_minor": number
 }
 
+export interface UpdateAccountProfileRequest {
+  "first_name": string
+  "last_name": string
+  "phone"?: string
+}
+
 export interface UpdateCartItemRequest {
   "quantity": number
 }
@@ -1015,4 +1054,8 @@ export interface Variant {
   "price_minor": number
   "sku": string
   "title": string
+}
+
+export interface VerificationRequest {
+  "email": string
 }

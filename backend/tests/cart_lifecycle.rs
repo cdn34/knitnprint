@@ -1,4 +1,4 @@
-use std::{env, str::FromStr};
+use std::{env, str::FromStr, sync::OnceLock};
 
 use axum::{
     body::{Body, to_bytes},
@@ -12,6 +12,8 @@ use sqlx::{
 };
 use tower::ServiceExt;
 use uuid::Uuid;
+
+static VERIFIED_CUSTOMER_COOKIE: OnceLock<String> = OnceLock::new();
 
 #[tokio::test]
 async fn cart_prices_stock_delivery_and_retries_are_server_controlled() {
@@ -39,6 +41,41 @@ async fn cart_prices_stock_delivery_and_retries_are_server_controlled() {
         database: Some(pool.clone()),
         ..AppState::default()
     });
+
+    let starter = request(
+        &router,
+        "POST",
+        "/api/account/register",
+        None,
+        Some(json!({
+            "email": "ada@example.com",
+            "password": "cart-test-passphrase",
+            "first_name": "Ada",
+            "last_name": "Cart"
+        })),
+        None,
+    )
+    .await;
+    assert_eq!(starter.status(), StatusCode::CREATED);
+    sqlx::query("UPDATE customer_accounts SET email_verified_at = now()")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let login = request(
+        &router,
+        "POST",
+        "/api/account/login",
+        None,
+        Some(json!({
+            "email": "ada@example.com", "password": "cart-test-passphrase"
+        })),
+        None,
+    )
+    .await;
+    assert_eq!(login.status(), StatusCode::OK);
+    VERIFIED_CUSTOMER_COOKIE
+        .set(response_cookie(&login))
+        .unwrap();
 
     let empty = request(&router, "GET", "/api/cart", None, None, None).await;
     assert_eq!(empty.status(), StatusCode::OK);
@@ -287,9 +324,26 @@ async fn cart_prices_stock_delivery_and_retries_are_server_controlled() {
     )
     .await;
     assert_eq!(registered.status(), StatusCode::CREATED);
-    let account_cookie = response_cookie(&registered);
     let registered_body = response_json(registered).await;
     let registered_customer_id = registered_body["id"].as_str().unwrap();
+    sqlx::query("UPDATE customer_accounts SET email_verified_at = now() WHERE customer_id = $1")
+        .bind(Uuid::parse_str(registered_customer_id).unwrap())
+        .execute(&pool)
+        .await
+        .unwrap();
+    let account_login = request(
+        &router,
+        "POST",
+        "/api/account/login",
+        None,
+        Some(json!({
+            "email": "registered-cart@example.com", "password": "registered-cart-passphrase"
+        })),
+        None,
+    )
+    .await;
+    assert_eq!(account_login.status(), StatusCode::OK);
+    let account_cookie = response_cookie(&account_login);
     let account_cart = request(
         &router,
         "GET",
@@ -409,6 +463,14 @@ async fn request(
     idempotency_key: Option<&str>,
 ) -> axum::response::Response {
     let mut builder = Request::builder().method(method).uri(path);
+    let cookie = match (VERIFIED_CUSTOMER_COOKIE.get(), cookie) {
+        (Some(account), Some(other)) if !other.contains("knitnprint_customer=") => {
+            Some(format!("{account}; {other}"))
+        }
+        (Some(account), None) => Some(account.clone()),
+        (_, Some(other)) => Some(other.to_owned()),
+        _ => None,
+    };
     if let Some(cookie) = cookie {
         builder = builder.header(header::COOKIE, cookie);
     }

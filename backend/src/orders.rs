@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use axum::{
     Json,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::{HeaderMap, HeaderValue, StatusCode, header},
     response::{IntoResponse, Response},
 };
@@ -18,6 +18,7 @@ use crate::{
     AppState,
     auth::{AuthenticatedStaff, require_capability},
     cancellations::{OrderOperations, Refund, load_operations, load_refunds},
+    customer_auth::AuthenticatedCustomer,
     discounts::{
         EvaluationError as DiscountEvaluationError, OrderDiscount, evaluate_in_transaction,
         load_order_discount, record_usage,
@@ -43,7 +44,13 @@ const ORDERS_FULFILL: &str = "orders.fulfill";
 
 #[derive(Deserialize, ToSchema)]
 pub struct CreateOrderRequest {
+    #[serde(default = "default_email_locale")]
+    pub locale: String,
     pub payment_method: String,
+}
+
+fn default_email_locale() -> String {
+    "en".into()
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -114,6 +121,8 @@ pub struct OrderLine {
     pub customization_media_asset_id: Option<Uuid>,
     pub customization_media_asset_ids: Vec<Uuid>,
     pub personalization_context: Option<Value>,
+    pub personalization_previews: Value,
+    pub variant_options: Value,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -154,6 +163,38 @@ pub struct OrderSummary {
     pub created_at: String,
 }
 
+#[derive(Serialize, ToSchema, FromRow)]
+pub struct CustomerOrderSummary {
+    pub id: Uuid,
+    pub order_number: String,
+    pub order_status: String,
+    pub payment_status: String,
+    pub fulfillment_status: String,
+    pub item_count: i64,
+    pub total_minor: i64,
+    pub currency: String,
+    pub created_at: String,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct CustomerOrderPage {
+    pub orders: Vec<CustomerOrderSummary>,
+    pub total: i64,
+    pub page: i64,
+    pub page_size: i64,
+}
+
+#[derive(Deserialize)]
+pub struct CustomerOrdersQuery {
+    pub kind: String,
+    #[serde(default = "first_page")]
+    pub page: i64,
+}
+
+fn first_page() -> i64 {
+    1
+}
+
 #[derive(FromRow)]
 struct CheckoutCart {
     id: Uuid,
@@ -191,6 +232,8 @@ struct CheckoutLine {
     customization_media_asset_id: Option<Uuid>,
     customization_media_asset_ids: Vec<Uuid>,
     personalization_context: Option<Value>,
+    personalization_previews: Value,
+    variant_options: Value,
 }
 
 #[derive(FromRow)]
@@ -254,6 +297,8 @@ struct OrderHead {
     responses(
         (status = 200, body = Order, description = "Idempotent replay"),
         (status = 201, body = Order),
+        (status = 401, body = ErrorBody),
+        (status = 403, body = ErrorBody),
         (status = 409, body = ErrorBody),
         (status = 422, body = ErrorBody),
         (status = 503, body = ErrorBody)
@@ -261,6 +306,7 @@ struct OrderHead {
 )]
 pub async fn create(
     State(state): State<AppState>,
+    customer: AuthenticatedCustomer,
     jar: CookieJar,
     headers: HeaderMap,
     Json(input): Json<CreateOrderRequest>,
@@ -286,12 +332,21 @@ pub async fn create(
     let Some(pool) = state.database.as_ref() else {
         return unavailable();
     };
+    if !matches!(input.locale.as_str(), "en" | "pt" | "es") {
+        return error(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "invalid_locale",
+            "Choose en, pt, or es.",
+        );
+    }
     match create_order(
         pool,
+        customer.id,
         token_hash,
         idempotency_hash,
         provider,
         &state.packlink,
+        &input.locale,
     )
     .await
     {
@@ -324,33 +379,33 @@ pub async fn create(
     params(("order_id" = Uuid, Path)),
     responses(
         (status = 200, body = Order),
+        (status = 401, body = ErrorBody),
+        (status = 403, body = ErrorBody),
         (status = 404, body = ErrorBody),
         (status = 503, body = ErrorBody)
     )
 )]
 pub async fn customer_detail(
     State(state): State<AppState>,
-    jar: CookieJar,
+    customer: AuthenticatedCustomer,
     Path(order_id): Path<Uuid>,
 ) -> Response {
-    let Some(cookie) = jar.get(CART_COOKIE) else {
+    if !customer.email_verified {
         return not_found();
-    };
+    }
     let Some(pool) = state.database else {
         return unavailable();
     };
-    let token_hash: [u8; 32] = Sha256::digest(cookie.value().as_bytes()).into();
     let owned = sqlx::query_scalar::<_, bool>(
         r#"
         SELECT EXISTS (
-            SELECT 1 FROM orders order_record
-            JOIN carts cart ON cart.id = order_record.cart_id
-            WHERE order_record.id = $1 AND cart.token_hash = $2
+            SELECT 1 FROM orders
+            WHERE id = $1 AND customer_id = $2
         )
         "#,
     )
     .bind(order_id)
-    .bind(token_hash.as_slice())
+    .bind(customer.id)
     .fetch_one(&pool)
     .await;
     match owned {
@@ -365,6 +420,81 @@ pub async fn customer_detail(
             Err(_) => unavailable(),
         },
         Ok(false) => not_found(),
+        Err(_) => unavailable(),
+    }
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/account/orders",
+    tag = "customer account",
+    params(
+        ("kind" = String, Query, description = "active or history"),
+        ("page" = i64, Query, description = "One-based page number")
+    ),
+    responses(
+        (status = 200, body = CustomerOrderPage),
+        (status = 401, body = ErrorBody),
+        (status = 403, body = ErrorBody),
+        (status = 422, body = ErrorBody),
+        (status = 503, body = ErrorBody)
+    )
+)]
+pub async fn customer_list(
+    State(state): State<AppState>,
+    customer: AuthenticatedCustomer,
+    Query(query): Query<CustomerOrdersQuery>,
+) -> Response {
+    if !customer.email_verified {
+        return error(
+            StatusCode::FORBIDDEN,
+            "email_verification_required",
+            "Verify your email address to view orders.",
+        );
+    }
+    if !matches!(query.kind.as_str(), "active" | "history")
+        || !(1..=1_000_000).contains(&query.page)
+    {
+        return error(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "invalid_order_page",
+            "Choose active or history and a valid page number.",
+        );
+    }
+    let Some(pool) = state.database else {
+        return unavailable();
+    };
+    let history = query.kind == "history";
+    let total = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM orders WHERE customer_id = $1 AND (order_status IN ('completed', 'cancelled')) = $2")
+        .bind(customer.id).bind(history).fetch_one(&pool).await;
+    let total = match total {
+        Ok(total) => total,
+        Err(_) => return unavailable(),
+    };
+    let orders = sqlx::query_as::<_, CustomerOrderSummary>(r#"
+        SELECT order_record.id, order_record.order_number, order_record.order_status,
+               order_record.payment_status, order_record.fulfillment_status,
+               COALESCE(sum(line.quantity), 0)::bigint AS item_count,
+               order_record.total_minor, order_record.currency::text AS currency,
+               to_char(order_record.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at
+        FROM orders order_record
+        LEFT JOIN order_lines line ON line.order_id = order_record.id
+        WHERE order_record.customer_id = $1
+          AND (order_record.order_status IN ('completed', 'cancelled')) = $2
+        GROUP BY order_record.id
+        ORDER BY order_record.created_at DESC, order_record.id DESC
+        LIMIT 10 OFFSET $3
+    "#).bind(customer.id).bind(history).bind((query.page - 1) * 10).fetch_all(&pool).await;
+    match orders {
+        Ok(orders) => no_store(
+            Json(CustomerOrderPage {
+                orders,
+                total,
+                page: query.page,
+                page_size: 10,
+            })
+            .into_response(),
+        ),
         Err(_) => unavailable(),
     }
 }
@@ -507,10 +637,12 @@ enum CreateError {
 
 async fn create_order(
     pool: &PgPool,
+    customer_id: Uuid,
     token_hash: [u8; 32],
     idempotency_hash: [u8; 32],
     provider: &str,
     packlink: &PacklinkService,
+    locale: &str,
 ) -> Result<(Order, bool), CreateError> {
     let mut transaction = pool.begin().await.map_err(|_| CreateError::Database)?;
     let cart = sqlx::query_as::<_, CheckoutCart>(
@@ -527,6 +659,10 @@ async fn create_order(
     .await
     .map_err(|_| CreateError::Database)?
     .ok_or(CreateError::NotReady)?;
+
+    if cart.customer_id != Some(customer_id) {
+        return Err(CreateError::NotReady);
+    }
 
     if cart.status == "converted" {
         let existing: (Uuid, Vec<u8>, String) = sqlx::query_as(
@@ -580,7 +716,7 @@ async fn create_order(
                product.shipping_units_per_package,
                (product.shipping_profile_configured AND COALESCE(package_profile.active, false)) AS shipping_profile_configured,
                line.customization, line.customization_media_asset_id,
-               line.customization_media_asset_ids,
+               line.customization_media_asset_ids, line.personalization_previews, variant.option_values AS variant_options,
                CASE WHEN line.customization IS NULL THEN NULL ELSE
                  jsonb_build_object(
                    'version', 1,
@@ -739,6 +875,12 @@ async fn create_order(
             .await
             .map_err(|_| CreateError::Database)?;
     }
+    sqlx::query("UPDATE orders SET email_locale = $2 WHERE id = $1")
+        .bind(order_id)
+        .bind(locale)
+        .execute(&mut *transaction)
+        .await
+        .map_err(|_| CreateError::Database)?;
     record_order_snapshots(&mut transaction, order_id, &commercial_pricing)
         .await
         .map_err(|_| CreateError::Database)?;
@@ -751,8 +893,8 @@ async fn create_order(
                 id, order_id, product_id, variant_id, product_title, variant_title,
                 sku, quantity, unit_price_minor, line_total_minor, currency, position,
                 customization, customization_media_asset_id, customization_media_asset_ids,
-                personalization_context
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9 * $8, $10, $11, $12, $13, $14, $15)
+                personalization_context, personalization_previews, variant_options
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9 * $8, $10, $11, $12, $13, $14, $15, $16, $17)
             "#,
         )
         .bind(order_line_id)
@@ -770,10 +912,21 @@ async fn create_order(
         .bind(line.customization_media_asset_id)
         .bind(&line.customization_media_asset_ids)
         .bind(&line.personalization_context)
+        .bind(&line.personalization_previews)
+        .bind(&line.variant_options)
         .execute(&mut *transaction)
         .await
         .map_err(|_| CreateError::Database)?;
-        for (media_position, media_id) in line.customization_media_asset_ids.iter().enumerate() {
+        let previews: Vec<crate::carts::PersonalizationPreview> =
+            serde_json::from_value(line.personalization_previews.clone())
+                .map_err(|_| CreateError::Database)?;
+        let retained_media: Vec<_> = line
+            .customization_media_asset_ids
+            .iter()
+            .copied()
+            .chain(previews.iter().map(|preview| preview.media_id))
+            .collect();
+        for (media_position, media_id) in retained_media.iter().enumerate() {
             sqlx::query(
                 "INSERT INTO order_line_personalization_media (order_line_id, media_asset_id, position) VALUES ($1, $2, $3)",
             )
@@ -1076,7 +1229,7 @@ pub(crate) async fn load_order(
                COALESCE((SELECT sum(fulfilled.quantity)::bigint FROM fulfillment_lines fulfilled WHERE fulfilled.order_line_id = line.id), 0) AS fulfilled_quantity,
                line.unit_price_minor, line.line_total_minor, line.currency::text AS currency,
                line.customization, line.customization_media_asset_id,
-               line.customization_media_asset_ids, line.personalization_context
+               line.customization_media_asset_ids, line.personalization_context, line.personalization_previews, line.variant_options
         FROM order_lines line WHERE line.order_id = $1 ORDER BY line.position, line.id
         "#,
     )

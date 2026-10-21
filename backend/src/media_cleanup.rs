@@ -26,11 +26,13 @@ pub async fn cleanup_media(
                         SELECT 1 FROM cart_lines AS line
                         WHERE media_assets.id = line.customization_media_asset_id
                            OR media_assets.id = ANY(line.customization_media_asset_ids)
+                           OR EXISTS (SELECT 1 FROM jsonb_array_elements(line.personalization_previews) preview WHERE preview->>'media_id' = media_assets.id::text)
                     )
                     AND NOT EXISTS (
                         SELECT 1 FROM order_lines AS line
                         WHERE media_assets.id = line.customization_media_asset_id
                            OR media_assets.id = ANY(line.customization_media_asset_ids)
+                           OR EXISTS (SELECT 1 FROM jsonb_array_elements(line.personalization_previews) preview WHERE preview->>'media_id' = media_assets.id::text)
                     )
                )
             ORDER BY created_at, id LIMIT 100 FOR UPDATE SKIP LOCKED

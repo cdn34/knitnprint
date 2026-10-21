@@ -22,7 +22,7 @@ exec "$seaweedfs_bin" mini \
   -ip.bind=127.0.0.1 \
   -s3.port=9100 \
   -admin.port=9101 \
-  -s3.allowedOrigins=http://127.0.0.1:3001,http://localhost:3001 \
+  -s3.allowedOrigins=http://127.0.0.1:3000,http://localhost:3000,http://127.0.0.1:3001,http://localhost:3001 \
   -s3.allowDeleteBucketNotEmpty=false \
   -s3.autoCreateBucket=false \
   -webdav=false \
