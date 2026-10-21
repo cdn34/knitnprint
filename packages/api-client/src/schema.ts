@@ -19,6 +19,21 @@ export interface AdjustInventoryRequest {
   "reason": string
 }
 
+export interface AdminNotification {
+  "attempt_count": number
+  "can_send": boolean
+  "created_at": string
+  "id": string
+  "kind": string
+  "last_error"?: string | null
+  "next_attempt_at": string
+  "order_id"?: string | null
+  "order_number"?: string | null
+  "recipient_email": string
+  "sent_at"?: string | null
+  "status": string
+}
+
 export interface AdminProductFeedback {
   "comment": string
   "created_at": string
@@ -545,6 +560,13 @@ export interface ModerateProductFeedbackRequest {
   "status": string
 }
 
+export interface NotificationPage {
+  "items": Array<AdminNotification>
+  "page": number
+  "page_size": number
+  "total": number
+}
+
 export interface NotificationStatus {
   "attempt_count": number
   "created_at": string
@@ -870,6 +892,10 @@ export interface ResetPasswordRequest {
 
 export interface SelectShippingMethodRequest {
   "shipping_method_id": string
+}
+
+export interface SendNotificationRequest {
+  "reason": string
 }
 
 export interface SettingsHistoryRecord {

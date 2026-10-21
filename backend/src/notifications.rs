@@ -25,11 +25,11 @@ pub struct DeliverySummary {
 }
 
 #[derive(FromRow)]
-struct ClaimedNotification {
-    id: Uuid,
-    attempt_count: i32,
-    order_id: Uuid,
-    email_locale: String,
+pub(crate) struct ClaimedNotification {
+    pub(crate) id: Uuid,
+    pub(crate) attempt_count: i32,
+    pub(crate) order_id: Uuid,
+    pub(crate) email_locale: String,
 }
 
 pub async fn enqueue_order_confirmation(
@@ -85,6 +85,29 @@ pub async fn deliver_due_with_storage(
     batch_size: i64,
     storage: Option<&ObjectStorage>,
 ) -> Result<DeliverySummary, sqlx::Error> {
+    deliver_matching(pool, email, batch_size, storage, None).await
+}
+
+/// Attempt the first delivery after the payment transaction commits. Persistent
+/// jobs let the worker recover failures, cancelled requests, and process exits.
+pub async fn deliver_order_confirmation(
+    pool: &PgPool,
+    email: &EmailService,
+    order_id: Uuid,
+    storage: Option<&ObjectStorage>,
+) {
+    if let Err(error) = deliver_matching(pool, email, 1, storage, Some(order_id)).await {
+        tracing::warn!(%error, %order_id, "immediate order email delivery failed; worker will recover the job");
+    }
+}
+
+async fn deliver_matching(
+    pool: &PgPool,
+    email: &EmailService,
+    batch_size: i64,
+    storage: Option<&ObjectStorage>,
+    order_id: Option<Uuid>,
+) -> Result<DeliverySummary, sqlx::Error> {
     if !(1..=100).contains(&batch_size) {
         return Err(sqlx::Error::Protocol(
             "notification batch must be between 1 and 100".to_owned(),
@@ -94,9 +117,10 @@ pub async fn deliver_due_with_storage(
         r#"
         WITH candidates AS (
             SELECT id FROM notification_jobs
-            WHERE kind = 'order_confirmation' AND attempt_count < $1
+            WHERE kind = 'order_confirmation'
+              AND ($3::uuid IS NULL OR (order_id = $3 AND attempt_count = 0))
               AND (
-                (status = 'pending' AND next_attempt_at <= now())
+                (status = 'pending' AND attempt_count < $1 AND next_attempt_at <= now())
                 OR (status = 'processing' AND locked_at <= now() - interval '15 minutes')
               )
             ORDER BY next_attempt_at, id
@@ -117,9 +141,19 @@ pub async fn deliver_due_with_storage(
     )
     .bind(MAX_ATTEMPTS)
     .bind(batch_size)
+    .bind(order_id)
     .fetch_all(pool)
     .await?;
 
+    deliver_claimed(pool, email, storage, claimed).await
+}
+
+pub(crate) async fn deliver_claimed(
+    pool: &PgPool,
+    email: &EmailService,
+    storage: Option<&ObjectStorage>,
+    claimed: Vec<ClaimedNotification>,
+) -> Result<DeliverySummary, sqlx::Error> {
     let mut summary = DeliverySummary::default();
     for job in claimed {
         let outcome = match load_order(pool, job.order_id).await {

@@ -5,6 +5,14 @@ existing notification worker in
 `infrastructure/terraform/staging/application/notification-worker.tf` is the
 reference implementation.
 
+Purchase confirmations are attempted by the API immediately after the Stripe or
+manual payment transaction commits. The transaction also saves a notification job.
+The scheduled notification worker runs hourly (`rate(1 hour)`) and recovers
+pending deliveries and stale processing
+claims, using the same delivery and retry logic as the API. Replayed payment
+requests do not resend completed jobs or trigger retries early. Email failures do
+not roll back confirmed payments. No additional database migration is required.
+
 The staging pattern is:
 
 ```text
@@ -13,6 +21,41 @@ EventBridge Scheduler -> one-shot ECS Fargate task -> Rust command -> exit
 
 Do not add an always-running service for short periodic work. A worker must be
 safe to retry, safe to run twice, and must terminate when its batch is done.
+
+## Admin notification queue
+
+Apply migration `0052_admin_notifications.sql` before deploying the admin
+notification queue. No staging changes are applied by editing this repository.
+Owners receive the new capabilities automatically; other staff need
+`notifications.read` to open **Email notifications** and `notifications.send`
+to attempt manual delivery. Both are assignable in Staff access.
+
+The queue defaults to outstanding jobs (pending, processing, and failed). Search
+by recipient email, order number, notification type, or job UUID; status and exact
+notification-type filters and pagination are available. Sent and suppressed jobs
+can be inspected using the status filter.
+
+`GET /api/admin/notifications?q=KP-1042&status=outstanding&page=1&page_size=25`
+returns a page of jobs. `POST /api/admin/notifications/{id}/send` accepts
+`{"reason":"Customer reported a missing confirmation"}` and attempts delivery
+immediately, ignoring retry timing and the automatic attempt limit. A response
+of 200 means delivery was attempted: inspect `status` and `last_error` to see
+whether the provider accepted the email. Failures remain pending until the
+normal attempt limit is reached, after which they are failed and still available
+for manual retry. Each accepted manual request records the staff member and
+reason in the audit log, and delivery records an attempt outcome.
+
+Manual delivery uses the same processing lease as immediate API delivery and the
+worker. Sent, suppressed, and actively processing jobs cannot be sent manually.
+The worker recovers expired processing claims, including interrupted manual
+attempts beyond the normal automatic retry limit.
+
+Jobs can now exist without an order, and the queue lists all notification types.
+Only `order_confirmation` currently has a delivery handler. Unsupported kinds
+show **Delivery unavailable** and the send endpoint rejects them. Sign-up and
+other account emails are not yet enqueued here; adding them requires their own
+enqueueing and delivery handlers. Carrier fulfillment notifications remain
+suppressed.
 
 ## 1. Implement and test the command
 
@@ -75,7 +118,9 @@ permissions as the API. Otherwise create a smaller task role. Reusing the ECS
 execution role is appropriate for image pulls, logs, and approved secret
 injection.
 
-For low-volume staging work, start with `rate(5 minutes)`. A one-minute schedule
+Choose a schedule based on the acceptable recovery delay. The notification worker
+uses `rate(1 hour)` because the API attempts initial delivery immediately; failed
+emails can wait up to approximately an hour for their next eligible run. A one-minute schedule
 creates 1,440 Fargate launches per day and is rarely justified for fewer than
 five testers.
 
