@@ -153,8 +153,8 @@ resource "aws_ecs_service" "application" {
   launch_type      = "FARGATE"
   platform_version = "1.4.0"
 
-  deployment_minimum_healthy_percent = 0
-  deployment_maximum_percent         = 100
+  deployment_minimum_healthy_percent = 100
+  deployment_maximum_percent         = 200
   health_check_grace_period_seconds  = 600
 
   enable_ecs_managed_tags = true
