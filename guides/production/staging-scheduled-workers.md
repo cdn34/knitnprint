@@ -5,6 +5,13 @@ existing notification worker in
 `infrastructure/terraform/staging/application/notification-worker.tf` is the
 reference implementation.
 
+Purchase confirmations are attempted by the API immediately after the Stripe or
+manual payment transaction commits. The transaction also saves a notification job.
+The scheduled notification worker recovers pending deliveries and stale processing
+claims, using the same delivery and retry logic as the API. Replayed payment
+requests do not resend completed jobs or trigger retries early. Email failures do
+not roll back confirmed payments. No additional database migration is required.
+
 The staging pattern is:
 
 ```text

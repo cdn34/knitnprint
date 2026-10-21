@@ -132,6 +132,7 @@ async fn checkout_snapshots_reserves_and_manual_payment_are_idempotent() {
     let router = app(AppState {
         database: Some(pool.clone()),
         email: email.clone(),
+        media_storage: Some(storage.clone()),
         manual_payments_enabled: true,
         ..AppState::default()
     });
@@ -491,6 +492,21 @@ async fn checkout_snapshots_reserves_and_manual_payment_are_idempotent() {
     assert_eq!(paid_body["payment_status"], "paid");
     assert_eq!(paid_body["timeline"].as_array().unwrap().len(), 2);
     assert_eq!(paid_body["notifications"][0]["kind"], "order_confirmation");
+    assert_eq!(paid_body["notifications"][0]["status"], "sent");
+    assert_eq!(paid_body["notifications"][0]["attempt_count"], 1);
+    assert_eq!(
+        request(
+            &router,
+            "GET",
+            "/api/development/emails/latest?to=order%40example.com&kind=order_confirmation",
+            None,
+            None,
+            None,
+        )
+        .await
+        .status(),
+        StatusCode::OK
+    );
     let dashboard = request(
         &router,
         "GET",
@@ -532,6 +548,9 @@ async fn checkout_snapshots_reserves_and_manual_payment_are_idempotent() {
     )
     .await;
     assert_eq!(paid_replay.status(), StatusCode::OK);
+    let replay_body = response_json(paid_replay).await;
+    assert_eq!(replay_body["notifications"][0]["attempt_count"], 1);
+    assert_eq!(replay_body["notifications"].as_array().unwrap().len(), 1);
     let quantities: (i64, i64, i64) = sqlx::query_as(
         "SELECT available_quantity, reserved_quantity, committed_quantity FROM inventory_items WHERE variant_id = $1",
     )
@@ -677,6 +696,11 @@ async fn checkout_snapshots_reserves_and_manual_payment_are_idempotent() {
     .await;
     assert_eq!(conflict.status(), StatusCode::CONFLICT);
 
+    // Requeue explicitly to exercise worker failure and recovery independently
+    // of the successful immediate confirmation above.
+    sqlx::query("UPDATE notification_jobs SET status = 'pending', sent_at = NULL, next_attempt_at = now() WHERE order_id = $1")
+        .bind(Uuid::parse_str(order_id).unwrap())
+        .execute(&pool).await.unwrap();
     let failed_delivery =
         deliver_due_with_storage(&pool, &EmailService::default(), 25, Some(&storage))
             .await
@@ -1145,6 +1169,46 @@ async fn stripe_webhooks_are_signed_idempotent_and_drive_inventory() {
     assert_eq!(paid_body["order_status"], "confirmed");
     assert_eq!(paid_body["payment_status"], "paid");
     assert_eq!(paid_body["payment"]["attempts"][0]["status"], "succeeded");
+    // Disabled email delivery fails without failing payment or webhook replay.
+    assert_eq!(paid_body["notifications"][0]["status"], "pending");
+    assert_eq!(paid_body["notifications"][0]["attempt_count"], 1);
+    assert!(paid_body["notifications"][0]["last_error"].is_string());
+    let deferred: bool = sqlx::query_scalar(
+        "SELECT next_attempt_at > now() FROM notification_jobs WHERE order_id = $1",
+    )
+    .bind(Uuid::parse_str(&order_id).unwrap())
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(deferred);
+    let email = EmailService::development("http://127.0.0.1:3000");
+    assert_eq!(
+        deliver_due_with_storage(&pool, &email, 25, None)
+            .await
+            .unwrap()
+            .sent,
+        0
+    );
+    sqlx::query("UPDATE notification_jobs SET next_attempt_at = now() WHERE order_id = $1")
+        .bind(Uuid::parse_str(&order_id).unwrap())
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        deliver_due_with_storage(&pool, &email, 25, None)
+            .await
+            .unwrap()
+            .sent,
+        1
+    );
+    assert_eq!(
+        deliver_due_with_storage(&pool, &email, 25, None)
+            .await
+            .unwrap()
+            .sent,
+        0
+    );
+
     assert_eq!(paid_body["payment"]["history"].as_array().unwrap().len(), 3);
     let quantities: (i64, i64, i64) = sqlx::query_as(
         "SELECT available_quantity, reserved_quantity, committed_quantity FROM inventory_items WHERE variant_id = $1",

@@ -27,7 +27,8 @@ use crate::{
     fulfillment::{Fulfillment, load_for_order as load_fulfillments},
     inventory::{InventoryOperationError, commit_in_transaction, reserve_in_transaction},
     notifications::{
-        NotificationStatus, enqueue_order_confirmation, load_for_order as load_notifications,
+        NotificationStatus, deliver_order_confirmation, enqueue_order_confirmation,
+        load_for_order as load_notifications,
     },
     packlink::{PackageItem, PacklinkPackage, PacklinkService, packages_for_items},
     payments::{PaymentAttempt, PaymentStatusEvent, load_attempts, load_status_events},
@@ -614,10 +615,14 @@ pub async fn record_manual_payment(
         return unavailable();
     };
     match pay_order(&pool, order_id, actor.id, reason).await {
-        Ok(()) => match load_order(&pool, order_id).await {
-            Ok(Some(order)) => no_store(Json(order).into_response()),
-            _ => unavailable(),
-        },
+        Ok(()) => {
+            deliver_order_confirmation(&pool, &state.email, order_id, state.media_storage.as_ref())
+                .await;
+            match load_order(&pool, order_id).await {
+                Ok(Some(order)) => no_store(Json(order).into_response()),
+                _ => unavailable(),
+            }
+        }
         Err(PaymentError::NotFound) => not_found(),
         Err(PaymentError::Conflict) => error(
             StatusCode::CONFLICT,
