@@ -25,11 +25,11 @@ pub struct DeliverySummary {
 }
 
 #[derive(FromRow)]
-struct ClaimedNotification {
-    id: Uuid,
-    attempt_count: i32,
-    order_id: Uuid,
-    email_locale: String,
+pub(crate) struct ClaimedNotification {
+    pub(crate) id: Uuid,
+    pub(crate) attempt_count: i32,
+    pub(crate) order_id: Uuid,
+    pub(crate) email_locale: String,
 }
 
 pub async fn enqueue_order_confirmation(
@@ -117,10 +117,10 @@ async fn deliver_matching(
         r#"
         WITH candidates AS (
             SELECT id FROM notification_jobs
-            WHERE kind = 'order_confirmation' AND attempt_count < $1
+            WHERE kind = 'order_confirmation'
               AND ($3::uuid IS NULL OR (order_id = $3 AND attempt_count = 0))
               AND (
-                (status = 'pending' AND next_attempt_at <= now())
+                (status = 'pending' AND attempt_count < $1 AND next_attempt_at <= now())
                 OR (status = 'processing' AND locked_at <= now() - interval '15 minutes')
               )
             ORDER BY next_attempt_at, id
@@ -145,6 +145,15 @@ async fn deliver_matching(
     .fetch_all(pool)
     .await?;
 
+    deliver_claimed(pool, email, storage, claimed).await
+}
+
+pub(crate) async fn deliver_claimed(
+    pool: &PgPool,
+    email: &EmailService,
+    storage: Option<&ObjectStorage>,
+    claimed: Vec<ClaimedNotification>,
+) -> Result<DeliverySummary, sqlx::Error> {
     let mut summary = DeliverySummary::default();
     for job in claimed {
         let outcome = match load_order(pool, job.order_id).await {

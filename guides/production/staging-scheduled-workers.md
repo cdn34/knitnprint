@@ -22,6 +22,41 @@ EventBridge Scheduler -> one-shot ECS Fargate task -> Rust command -> exit
 Do not add an always-running service for short periodic work. A worker must be
 safe to retry, safe to run twice, and must terminate when its batch is done.
 
+## Admin notification queue
+
+Apply migration `0052_admin_notifications.sql` before deploying the admin
+notification queue. No staging changes are applied by editing this repository.
+Owners receive the new capabilities automatically; other staff need
+`notifications.read` to open **Email notifications** and `notifications.send`
+to attempt manual delivery. Both are assignable in Staff access.
+
+The queue defaults to outstanding jobs (pending, processing, and failed). Search
+by recipient email, order number, notification type, or job UUID; status and exact
+notification-type filters and pagination are available. Sent and suppressed jobs
+can be inspected using the status filter.
+
+`GET /api/admin/notifications?q=KP-1042&status=outstanding&page=1&page_size=25`
+returns a page of jobs. `POST /api/admin/notifications/{id}/send` accepts
+`{"reason":"Customer reported a missing confirmation"}` and attempts delivery
+immediately, ignoring retry timing and the automatic attempt limit. A response
+of 200 means delivery was attempted: inspect `status` and `last_error` to see
+whether the provider accepted the email. Failures remain pending until the
+normal attempt limit is reached, after which they are failed and still available
+for manual retry. Each accepted manual request records the staff member and
+reason in the audit log, and delivery records an attempt outcome.
+
+Manual delivery uses the same processing lease as immediate API delivery and the
+worker. Sent, suppressed, and actively processing jobs cannot be sent manually.
+The worker recovers expired processing claims, including interrupted manual
+attempts beyond the normal automatic retry limit.
+
+Jobs can now exist without an order, and the queue lists all notification types.
+Only `order_confirmation` currently has a delivery handler. Unsupported kinds
+show **Delivery unavailable** and the send endpoint rejects them. Sign-up and
+other account emails are not yet enqueued here; adding them requires their own
+enqueueing and delivery handlers. Carrier fulfillment notifications remain
+suppressed.
+
 ## 1. Implement and test the command
 
 Choose names once, for example:
