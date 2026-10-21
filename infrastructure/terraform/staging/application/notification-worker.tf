@@ -96,8 +96,8 @@ resource "aws_iam_role_policy" "notification_scheduler" {
 
 resource "aws_scheduler_schedule" "notification_worker" {
   name                         = "${local.name_prefix}-notification-worker"
-  description                  = "Drain the KnitNPrint staging transactional-email outbox every five minutes."
-  schedule_expression          = "rate(5 minutes)"
+  description                  = "Drain the KnitNPrint staging transactional-email outbox hourly."
+  schedule_expression          = "rate(1 hour)"
   schedule_expression_timezone = "UTC"
   state                        = "ENABLED"
 

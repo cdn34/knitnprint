@@ -7,7 +7,8 @@ reference implementation.
 
 Purchase confirmations are attempted by the API immediately after the Stripe or
 manual payment transaction commits. The transaction also saves a notification job.
-The scheduled notification worker recovers pending deliveries and stale processing
+The scheduled notification worker runs hourly (`rate(1 hour)`) and recovers
+pending deliveries and stale processing
 claims, using the same delivery and retry logic as the API. Replayed payment
 requests do not resend completed jobs or trigger retries early. Email failures do
 not roll back confirmed payments. No additional database migration is required.
@@ -82,7 +83,9 @@ permissions as the API. Otherwise create a smaller task role. Reusing the ECS
 execution role is appropriate for image pulls, logs, and approved secret
 injection.
 
-For low-volume staging work, start with `rate(5 minutes)`. A one-minute schedule
+Choose a schedule based on the acceptable recovery delay. The notification worker
+uses `rate(1 hour)` because the API attempts initial delivery immediately; failed
+emails can wait up to approximately an hour for their next eligible run. A one-minute schedule
 creates 1,440 Fargate launches per day and is rarely justified for fewer than
 five testers.
 
