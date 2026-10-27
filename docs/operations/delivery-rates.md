@@ -17,7 +17,7 @@ label by itself does not restrict a country-wide rule's coverage.
 
 ## Initial setup
 
-Migration 0057 creates four inactive, unpriced destinations and leaves the table
+Migration 0054 creates four inactive, unpriced destinations and leaves the table
 **off**, preserving the existing zero-charge checkout until staff opt in:
 
 | Country | Region | Postal prefixes |
