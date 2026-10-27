@@ -472,6 +472,9 @@ mod tests {
         );
         let copies: BTreeMap<String, BTreeMap<String, String>> =
             serde_json::from_str(include_str!("../assets/order-email-copy.json")).unwrap();
+        assert!(copies["pt"]["introBody"].contains("cada detalhe com cuidado"));
+        assert!(copies["en"]["introBody"].contains("every detail with care"));
+        assert!(copies["es"]["introBody"].contains("cada detalle con cuidado"));
         for locale in ["pt", "es"] {
             assert_eq!(
                 copies[locale].keys().collect::<Vec<_>>(),
