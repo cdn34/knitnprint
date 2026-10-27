@@ -1631,6 +1631,7 @@ dependencies = [
  "aws-sdk-sesv2",
  "axum",
  "axum-extra",
+ "base64 0.22.1",
  "hex",
  "hmac 0.12.1",
  "image",

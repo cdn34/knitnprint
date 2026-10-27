@@ -39,10 +39,6 @@ async fn main() {
             eprintln!("invalid payment configuration: {error}");
             std::process::exit(2);
         });
-    let packlink = knitnprint_api::packlink::PacklinkService::from_env().unwrap_or_else(|error| {
-        eprintln!("invalid Packlink configuration: {error}");
-        std::process::exit(2);
-    });
 
     if deployed && database.is_none() {
         eprintln!("database connection is required in staging and production");
@@ -50,6 +46,20 @@ async fn main() {
     }
 
     if let Some(pool) = database.clone() {
+        let b2b_pool = pool.clone();
+        let b2b_email = email.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(10));
+            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            loop {
+                interval.tick().await;
+                if let Err(error) =
+                    knitnprint_api::b2b::deliver_due(&b2b_pool, &b2b_email, 25).await
+                {
+                    warn!(%error, "B2B notification delivery failed");
+                }
+            }
+        });
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_secs(30));
             interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -76,7 +86,6 @@ async fn main() {
             media_scanner,
             email,
             payments,
-            packlink,
             trusted_proxy_hops: config.trusted_proxy_hops,
             secure_cookies: deployed,
             manual_payments_enabled: !deployed,

@@ -106,6 +106,10 @@ pub struct DevelopmentEmail {
     pub kind: String,
     pub subject: String,
     pub action_url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub html: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
 }
 
 #[derive(Clone)]
@@ -210,6 +214,8 @@ impl EmailService {
                     kind: kind.as_str().into(),
                     subject: kind.subject().into(),
                     action_url,
+                    html: None,
+                    text: None,
                 });
                 Ok(())
             }
@@ -270,6 +276,108 @@ impl EmailService {
         }
     }
 
+    pub async fn send_confirmation(
+        &self,
+        order: &crate::orders::Order,
+        locale: crate::order_email::EmailLocale,
+        images: Vec<crate::order_email::InlineImage>,
+    ) -> Result<(), String> {
+        use aws_sdk_sesv2::{
+            primitives::Blob,
+            types::{Attachment, AttachmentContentDisposition, AttachmentContentTransferEncoding},
+        };
+        self.ensure_recipient_allowed(&order.customer.email)?;
+        let content = crate::order_email::render(order, locale, &self.storefront_base_url, images)?;
+        match &self.delivery {
+            Delivery::Development(mailbox) => {
+                use base64::Engine;
+                let mut html = content.html;
+                for image in &content.images {
+                    html = html.replace(
+                        &format!("cid:{}", image.cid),
+                        &format!(
+                            "data:{};base64,{}",
+                            image.content_type,
+                            base64::engine::general_purpose::STANDARD.encode(&image.bytes)
+                        ),
+                    );
+                }
+                mailbox.write().await.push(DevelopmentEmail {
+                    to: order.customer.email.clone(),
+                    kind: "order_confirmation".into(),
+                    subject: content.subject,
+                    action_url: content.action_url,
+                    html: Some(html),
+                    text: Some(content.text),
+                });
+                Ok(())
+            }
+            Delivery::Ses {
+                client,
+                from,
+                configuration_set,
+            } => {
+                let mut message = Message::builder()
+                    .subject(
+                        Content::builder()
+                            .data(content.subject)
+                            .charset("UTF-8")
+                            .build()
+                            .map_err(|e| e.to_string())?,
+                    )
+                    .body(
+                        Body::builder()
+                            .text(
+                                Content::builder()
+                                    .data(content.text)
+                                    .charset("UTF-8")
+                                    .build()
+                                    .map_err(|e| e.to_string())?,
+                            )
+                            .html(
+                                Content::builder()
+                                    .data(content.html)
+                                    .charset("UTF-8")
+                                    .build()
+                                    .map_err(|e| e.to_string())?,
+                            )
+                            .build(),
+                    );
+                for image in content.images {
+                    message = message.attachments(
+                        Attachment::builder()
+                            .file_name(format!("{}.png", image.cid))
+                            .content_id(image.cid)
+                            .content_type(image.content_type)
+                            .content_disposition(AttachmentContentDisposition::Inline)
+                            .content_transfer_encoding(AttachmentContentTransferEncoding::Base64)
+                            .raw_content(Blob::new(image.bytes))
+                            .build()
+                            .map_err(|e| e.to_string())?,
+                    );
+                }
+                let mut request = client
+                    .send_email()
+                    .from_email_address(from)
+                    .destination(
+                        Destination::builder()
+                            .to_addresses(&order.customer.email)
+                            .build(),
+                    )
+                    .content(EmailContent::builder().simple(message.build()).build());
+                if let Some(set) = configuration_set {
+                    request = request.configuration_set_name(set);
+                }
+                request
+                    .send()
+                    .await
+                    .map_err(|error| format!("SES send failed: {error:?}"))?;
+                Ok(())
+            }
+            Delivery::Disabled => Err("email delivery is not configured".into()),
+        }
+    }
+
     pub async fn send_order_notification(&self, email: OrderEmail<'_>) -> Result<(), String> {
         self.ensure_recipient_allowed(email.to)?;
         let order_url = format!("{}/cart", self.storefront_base_url);
@@ -285,6 +393,8 @@ impl EmailService {
                     kind: email.kind.as_str().into(),
                     subject: email.kind.subject().into(),
                     action_url,
+                    html: None,
+                    text: None,
                 });
                 Ok(())
             }
@@ -342,6 +452,64 @@ impl EmailService {
                     configuration_set.as_deref(),
                     email.to,
                     email.kind.subject(),
+                    text,
+                    html,
+                )
+                .await
+            }
+            Delivery::Disabled => Err("email delivery is not configured".into()),
+        }
+    }
+
+    pub async fn send_b2b_notification(
+        &self,
+        request: &crate::b2b::B2bRequest,
+    ) -> Result<(), String> {
+        let to = "support@knitnprint.com";
+        self.ensure_recipient_allowed(to)?;
+        let subject = format!(
+            "Novo pedido B2B {} — {}",
+            request.reference, request.company
+        );
+        let text = format!(
+            "Novo pedido de proposta recebido.\n\nReferência: {}\nEmpresa: {}\nContacto: {}\nEmail: {}\nTelefone: {}\nProduto: {}\nQuantidade: {}\n\nNotas:\n{}\n\nAnexo: {}\n\nO pedido e o ficheiro estão guardados na área B2B do painel de administração.\n",
+            request.reference,
+            request.company,
+            request.contact_name,
+            request.email,
+            request.phone,
+            request.product_type,
+            request.quantity,
+            request.notes,
+            request.attachment_name,
+        );
+        match &self.delivery {
+            Delivery::Development(mailbox) => {
+                mailbox.write().await.push(DevelopmentEmail {
+                    to: to.into(),
+                    kind: "b2b_request".into(),
+                    subject,
+                    action_url: format!("/#b2b/{}", request.id),
+                    html: None,
+                    text: None,
+                });
+                Ok(())
+            }
+            Delivery::Ses {
+                client,
+                from,
+                configuration_set,
+            } => {
+                let html = format!(
+                    "<pre style=\"font-family:Arial,sans-serif;white-space:pre-wrap\">{}</pre>",
+                    escape_html(&text)
+                );
+                send_ses(
+                    client,
+                    from,
+                    configuration_set.as_deref(),
+                    to,
+                    &subject,
                     text,
                     html,
                 )
@@ -515,7 +683,7 @@ fn validate_base_url(value: &str, deployed: bool) -> Result<(), String> {
     Ok(())
 }
 
-fn escape_html(value: &str) -> String {
+pub(crate) fn escape_html(value: &str) -> String {
     value
         .replace('&', "&amp;")
         .replace('<', "&lt;")

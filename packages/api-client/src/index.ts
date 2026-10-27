@@ -1,4 +1,11 @@
+export type { DeliveryRate, DeliveryRatesSettings, DeliveryQuote, UpdateDeliveryRatesRequest, TestDeliveryRateRequest } from './schema'
+import type { DeliveryRatesSettings, DeliveryQuote, UpdateDeliveryRatesRequest, TestDeliveryRateRequest } from './schema'
+
 export type {
+  B2bRequest,
+  B2bReceipt,
+  CreateB2bRequest,
+  UpdateB2bStatus,
   AddCartItemRequest,
   AdminProductFeedback,
   FeedbackSettings,
@@ -77,20 +84,13 @@ export type {
   ProductFeedback,
   ProductFeedbackSummary,
   ProductMedia,
+  ReorderProductMediaRequest,
   ReorderCategoriesRequest,
   ReplyToProductFeedbackRequest,
   Refund,
   RefundLine,
   ResetPasswordRequest,
   RequestEmailChangeRequest,
-  SelectShippingMethodRequest,
-  ShippingMethod,
-  ShippingMethodInput,
-  ShippingPackageProfile,
-  ShippingPackageProfileRequest,
-  ShippingSelection,
-  ShippingZone,
-  ShippingZoneInput,
   StaffProfile,
   StaffRecord,
   SubmittedProductFeedback,
@@ -107,6 +107,10 @@ export type {
 } from './schema'
 
 import type {
+  B2bRequest,
+  B2bReceipt,
+  CreateB2bRequest,
+  UpdateB2bStatus,
   AddCartItemRequest,
   AdminProductFeedback,
   FeedbackSettings,
@@ -164,9 +168,6 @@ import type {
   ReplyToProductFeedbackRequest,
   ResetPasswordRequest,
   RequestEmailChangeRequest,
-  SelectShippingMethodRequest,
-  ShippingPackageProfile,
-  ShippingPackageProfileRequest,
   StaffProfile,
   StaffRecord,
   SubmittedProductFeedback,
@@ -241,6 +242,15 @@ export function createApiClient(options: ApiClientOptions = {}) {
         method: 'POST',
       }),
     profile: () => send<StaffProfile>('/api/admin/auth/me'),
+    submitB2bRequest: (input: CreateB2bRequest) => send<B2bReceipt>('/api/b2b/requests', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(input),
+    }),
+    listB2bRequests: (offset = 0) => send<Array<B2bRequest>>(`/api/admin/b2b/requests?offset=${offset}`),
+    b2bRequest: (id: string) => send<B2bRequest>(`/api/admin/b2b/requests/${encodeURIComponent(id)}`),
+    deleteB2bRequest: (id: string) => send<void>(`/api/admin/b2b/requests/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    updateB2bStatus: (id: string, input: UpdateB2bStatus) => send<void>(`/api/admin/b2b/requests/${encodeURIComponent(id)}/status`, {
+      method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(input),
+    }),
     dashboard: () => send<OperationalDashboard>('/api/admin/dashboard'),
     customerAccount: () =>
       send<CustomerAccountProfile>('/api/account/me'),
@@ -390,29 +400,10 @@ export function createApiClient(options: ApiClientOptions = {}) {
         method: 'DELETE',
         headers: { 'idempotency-key': idempotencyKey },
       }),
-    selectCartShippingMethod: (
-      input: SelectShippingMethodRequest,
-      idempotencyKey: string,
-    ) =>
-      send<Cart>('/api/cart/shipping-method', {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          'idempotency-key': idempotencyKey,
-        },
-        body: JSON.stringify(input),
-      }),
-    refreshCartShippingQuotes: () =>
-      send<Cart>('/api/cart/shipping-quotes', {
-        method: 'POST',
-      }),
     setCartDelivery: (input: GuestCustomerRequest, idempotencyKey: string) =>
       send<Cart>('/api/cart/delivery', {
         method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          'idempotency-key': idempotencyKey,
-        },
+        headers: { 'content-type': 'application/json', 'idempotency-key': idempotencyKey },
         body: JSON.stringify(input),
       }),
     createOrder: (input: CreateOrderRequest, idempotencyKey: string) =>
@@ -454,6 +445,13 @@ export function createApiClient(options: ApiClientOptions = {}) {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(input),
       }),
+    deliveryRates: () => send<DeliveryRatesSettings>('/api/admin/delivery-rates'),
+    updateDeliveryRates: (input: UpdateDeliveryRatesRequest) => send<DeliveryRatesSettings>('/api/admin/delivery-rates', {
+      method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(input),
+    }),
+    testDeliveryRate: (input: TestDeliveryRateRequest) => send<DeliveryQuote>('/api/admin/delivery-rates/test', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(input),
+    }),
     settings: () => send<CommercialSettings>('/api/admin/settings'),
     updateSettings: (input: UpdateCommercialSettingsRequest) =>
       send<CommercialSettings>('/api/admin/settings', {
@@ -547,6 +545,12 @@ export function createApiClient(options: ApiClientOptions = {}) {
       }),
     deleteProduct: (productId: string) =>
       send<void>(`/api/admin/products/${productId}`, { method: 'DELETE' }),
+    reorderProductMedia: (productId: string, mediaIds: string[]) =>
+      send<Product>(`/api/admin/products/${productId}/media/order`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ media_ids: mediaIds }),
+      }),
     deleteProductMedia: (productId: string, mediaId: string) =>
       send<Product>(`/api/admin/products/${productId}/media/${mediaId}`, {
         method: 'DELETE',
@@ -561,27 +565,6 @@ export function createApiClient(options: ApiClientOptions = {}) {
         body: JSON.stringify(input),
       }),
     listCategories: () => send<Array<Category>>('/api/admin/categories'),
-    listShippingPackages: () =>
-      send<Array<ShippingPackageProfile>>('/api/admin/shipping-packages'),
-    createShippingPackage: (input: ShippingPackageProfileRequest) =>
-      send<ShippingPackageProfile>('/api/admin/shipping-packages', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(input),
-      }),
-    updateShippingPackage: (
-      profileId: string,
-      input: ShippingPackageProfileRequest,
-    ) =>
-      send<ShippingPackageProfile>(`/api/admin/shipping-packages/${profileId}`, {
-        method: 'PUT',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(input),
-      }),
-    deleteShippingPackage: (profileId: string) =>
-      send<void>(`/api/admin/shipping-packages/${profileId}`, {
-        method: 'DELETE',
-      }),
     createCategory: (input: CreateCategoryRequest) =>
       send<Category>('/api/admin/categories', {
         method: 'POST',

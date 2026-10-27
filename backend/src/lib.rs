@@ -1,12 +1,15 @@
 pub mod auth;
+pub mod b2b;
 pub mod cancellations;
 pub mod carts;
 pub mod catalog;
+pub mod checkout;
 pub mod config;
 pub mod customer_auth;
 pub mod customer_retention;
 pub mod customers;
 pub mod dashboard;
+pub mod delivery_rates;
 pub mod discounts;
 pub mod email;
 pub mod error;
@@ -21,8 +24,8 @@ pub mod media_scanner;
 pub mod notifications;
 pub mod object_storage;
 pub mod openapi;
+pub mod order_email;
 pub mod orders;
-pub mod packlink;
 pub mod payments;
 pub mod security;
 pub mod settings;
@@ -51,7 +54,6 @@ pub struct AppState {
     pub media_scanner: media_scanner::MediaScanner,
     pub email: email::EmailService,
     pub payments: payments::PaymentService,
-    pub packlink: packlink::PacklinkService,
     pub trusted_proxy_hops: usize,
     pub secure_cookies: bool,
     pub manual_payments_enabled: bool,
@@ -70,6 +72,23 @@ pub fn app(state: AppState) -> Router {
     Router::new()
         .route("/api/health", get(health::health))
         .route("/api/ready", get(health::ready))
+        .route(
+            "/api/b2b/requests",
+            axum::routing::post(b2b::create).layer(DefaultBodyLimit::max(b2b::MAX_REQUEST_BYTES)),
+        )
+        .route("/api/admin/b2b/requests", get(b2b::list))
+        .route(
+            "/api/admin/b2b/requests/{id}",
+            get(b2b::detail).delete(b2b::delete),
+        )
+        .route(
+            "/api/admin/b2b/requests/{id}/status",
+            axum::routing::put(b2b::update_status),
+        )
+        .route(
+            "/api/admin/b2b/requests/{id}/attachment",
+            get(b2b::attachment),
+        )
         .route("/api/admin/auth/login", axum::routing::post(auth::login))
         .route("/api/admin/auth/logout", axum::routing::post(auth::logout))
         .route("/api/admin/auth/me", get(auth::me))
@@ -141,6 +160,10 @@ pub fn app(state: AppState) -> Router {
             axum::routing::post(catalog::change_status),
         )
         .route(
+            "/api/admin/products/{product_id}/media/order",
+            axum::routing::put(catalog::reorder_media),
+        )
+        .route(
             "/api/admin/products/{product_id}/media/{media_id}",
             axum::routing::delete(catalog::delete_media),
         )
@@ -173,15 +196,6 @@ pub fn app(state: AppState) -> Router {
             "/api/admin/feedback/{feedback_id}/reply",
             axum::routing::put(feedback::reply),
         )
-        .route(
-            "/api/admin/shipping-packages",
-            get(catalog::shipping_package_list).post(catalog::shipping_package_create),
-        )
-        .route(
-            "/api/admin/shipping-packages/{profile_id}",
-            axum::routing::put(catalog::shipping_package_update)
-                .delete(catalog::shipping_package_delete),
-        )
         .route("/api/admin/inventory", get(inventory::list))
         .route(
             "/api/admin/customers",
@@ -209,6 +223,14 @@ pub fn app(state: AppState) -> Router {
         .route(
             "/api/admin/settings",
             get(settings::get).post(settings::update),
+        )
+        .route(
+            "/api/admin/delivery-rates",
+            get(delivery_rates::get).put(delivery_rates::update),
+        )
+        .route(
+            "/api/admin/delivery-rates/test",
+            axum::routing::post(delivery_rates::test_destination),
         )
         .route("/api/admin/orders/{order_id}", get(orders::admin_detail))
         .route(
@@ -289,18 +311,10 @@ pub fn app(state: AppState) -> Router {
             axum::routing::post(payments::start_checkout),
         )
         .route("/api/cart", get(carts::get))
-        .route(
-            "/api/cart/shipping-quotes",
-            axum::routing::post(carts::refresh_shipping_quotes),
-        )
         .route("/api/cart/items", axum::routing::post(carts::add_item))
         .route(
             "/api/cart/discount",
             axum::routing::post(carts::apply_discount).delete(carts::remove_discount),
-        )
-        .route(
-            "/api/cart/shipping-method",
-            axum::routing::post(carts::select_shipping_method),
         )
         .route(
             "/api/cart/items/{line_id}",

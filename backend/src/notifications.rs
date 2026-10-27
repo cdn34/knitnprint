@@ -30,6 +30,8 @@ struct ClaimedNotification {
     attempt_count: i32,
     recipient_email: String,
     kind: String,
+    order_id: Uuid,
+    locale: String,
     order_number: String,
     customer_first_name: String,
     total_minor: i64,
@@ -106,6 +108,15 @@ pub async fn deliver_due(
     email: &EmailService,
     batch_size: i64,
 ) -> Result<DeliverySummary, sqlx::Error> {
+    deliver_due_with_storage(pool, email, None, batch_size).await
+}
+
+pub async fn deliver_due_with_storage(
+    pool: &PgPool,
+    email: &EmailService,
+    storage: Option<&crate::object_storage::ObjectStorage>,
+    batch_size: i64,
+) -> Result<DeliverySummary, sqlx::Error> {
     if !(1..=100).contains(&batch_size) {
         return Err(sqlx::Error::Protocol(
             "notification batch must be between 1 and 100".to_owned(),
@@ -131,6 +142,7 @@ pub async fn deliver_due(
             RETURNING job.*
         )
         SELECT claimed.id, claimed.attempt_count, claimed.recipient_email, claimed.kind,
+               claimed.order_id, order_record.locale,
                order_record.order_number, order_record.customer_first_name,
                order_record.total_minor, order_record.currency::text AS currency,
                COALESCE(fulfillment.carrier, '') AS carrier,
@@ -155,18 +167,22 @@ pub async fn deliver_due(
             OrderEmailKind::Fulfillment
         };
         let total = format_money(job.total_minor, &job.currency);
-        let outcome = email
-            .send_order_notification(OrderEmail {
-                to: &job.recipient_email,
-                first_name: &job.customer_first_name,
-                kind,
-                order_number: &job.order_number,
-                total: &total,
-                carrier: &job.carrier,
-                tracking_number: &job.tracking_number,
-                tracking_url: &job.tracking_url,
-            })
-            .await;
+        let outcome = if kind == OrderEmailKind::Confirmation {
+            deliver_confirmation(pool, email, storage, &job).await
+        } else {
+            email
+                .send_order_notification(OrderEmail {
+                    to: &job.recipient_email,
+                    first_name: &job.customer_first_name,
+                    kind,
+                    order_number: &job.order_number,
+                    total: &total,
+                    carrier: &job.carrier,
+                    tracking_number: &job.tracking_number,
+                    tracking_url: &job.tracking_url,
+                })
+                .await
+        };
         let mut transaction = pool.begin().await?;
         match outcome {
             Ok(()) => {
@@ -228,20 +244,111 @@ async fn insert_attempt(
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
         r#"
-        INSERT INTO notification_attempts (
-            id, notification_job_id, attempt_number, outcome, error_message
-        ) VALUES ($1, $2, $3, $4, $5)
-        ON CONFLICT (notification_job_id, attempt_number) DO NOTHING
+        INSERT INTO notification_attempts (id, notification_job_id, attempt_number, outcome, error_message)
+        VALUES ($1, $2, $3, $4, $5) ON CONFLICT (notification_job_id, attempt_number) DO NOTHING
         "#,
-    )
-    .bind(Uuid::now_v7())
-    .bind(job_id)
-    .bind(attempt_number)
-    .bind(outcome)
-    .bind(error)
-    .execute(&mut **transaction)
-    .await?;
+    ).bind(Uuid::now_v7()).bind(job_id).bind(attempt_number).bind(outcome).bind(error)
+        .execute(&mut **transaction).await?;
     Ok(())
+}
+
+async fn deliver_confirmation(
+    pool: &PgPool,
+    email: &EmailService,
+    storage: Option<&crate::object_storage::ObjectStorage>,
+    job: &ClaimedNotification,
+) -> Result<(), String> {
+    let mut order = crate::orders::load_order(pool, job.order_id)
+        .await
+        .map_err(|_| "could not load confirmation snapshot")?
+        .ok_or("order snapshot missing")?;
+    // Use the recipient captured in the outbox, not the mutable account address.
+    order.customer.email.clone_from(&job.recipient_email);
+    let mut images = Vec::new();
+    let mut total_bytes = 0_usize;
+    for line in &order.lines {
+        if line.customization.is_none() {
+            if let Some(id) = line
+                .personalization_context
+                .as_ref()
+                .and_then(|context| context.pointer("/views/0/media_id"))
+                .and_then(|v| v.as_str())
+                .and_then(|v| Uuid::parse_str(v).ok())
+            {
+                let key: String = sqlx::query_scalar("SELECT variant.object_key FROM media_variants variant JOIN media_assets media ON media.id=variant.media_asset_id WHERE media.id=$1 AND media.status='ready' AND variant.kind='card'")
+                    .bind(id).fetch_one(pool).await.map_err(|_| "order product image unavailable")?;
+                let object = storage
+                    .ok_or("object storage is required for confirmation images")?
+                    .get(&key)
+                    .await
+                    .map_err(|_| "could not read order product image")?;
+                let mut png = std::io::Cursor::new(Vec::new());
+                image::load_from_memory(&object.bytes)
+                    .and_then(|image| {
+                        image
+                            .thumbnail(900, 900)
+                            .write_to(&mut png, image::ImageFormat::Png)
+                    })
+                    .map_err(|_| "could not prepare order product image")?;
+                total_bytes = total_bytes.saturating_add(png.get_ref().len());
+                if total_bytes > 20_000_000 || images.len() >= 40 {
+                    return Err("confirmation image attachments exceed delivery limit".into());
+                }
+                images.push(crate::order_email::InlineImage {
+                    cid: format!("catalog-{}", line.id),
+                    bytes: png.into_inner(),
+                    content_type: "image/png".into(),
+                });
+            }
+            continue;
+        }
+        let Some(previews) = line
+            .customization
+            .as_ref()
+            .and_then(|v| v.get("previews"))
+            .and_then(|v| v.as_array())
+        else {
+            continue;
+        };
+        for preview in previews {
+            let id = preview
+                .get("media_id")
+                .and_then(|v| v.as_str())
+                .and_then(|v| Uuid::parse_str(v).ok())
+                .ok_or("invalid saved preview")?;
+            let cid = format!("preview-{id}");
+            if images
+                .iter()
+                .any(|image: &crate::order_email::InlineImage| image.cid == cid)
+            {
+                continue;
+            }
+            let key: String = sqlx::query_scalar("SELECT media.object_key FROM media_assets media JOIN order_line_personalization_media retained ON retained.media_asset_id=media.id WHERE retained.order_line_id=$1 AND media.id=$2 AND media.status='ready'")
+                .bind(line.id).bind(id).fetch_one(pool).await.map_err(|_| "saved preview unavailable")?;
+            let storage =
+                storage.ok_or("object storage is required for personalized confirmation images")?;
+            let object = storage
+                .get(&key)
+                .await
+                .map_err(|_| "could not read saved preview")?;
+            total_bytes = total_bytes.saturating_add(object.bytes.len());
+            if total_bytes > 20_000_000 || images.len() >= 40 {
+                return Err("confirmation preview attachments exceed delivery limit".into());
+            }
+            images.push(crate::order_email::InlineImage {
+                cid,
+                bytes: object.bytes,
+                content_type: "image/png".into(),
+            });
+        }
+    }
+    email
+        .send_confirmation(
+            &order,
+            crate::order_email::EmailLocale::from_code(Some(&job.locale)),
+            images,
+        )
+        .await
 }
 
 fn retry_delay_seconds(attempt: i32) -> i64 {

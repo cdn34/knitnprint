@@ -172,6 +172,65 @@ async fn uploaded_draft_images_are_visible_only_to_catalog_staff_until_published
     .await;
     assert_eq!(completed.status(), StatusCode::OK);
 
+    // Saving/reloading a photo preserves its permissions and allows removing the final area.
+    let mut personalization = created["personalization"].clone();
+    let initial_area = personalization["print_areas"].clone();
+    let mut update = json!({"title":"Draft image product", "slug":"draft-image-product", "description":"", "sku":"DRAFT-IMAGE-TEST", "price_minor":1000, "currency":"EUR", "available_quantity":5});
+    for mode in ["text", "photo", "photo_text", "none"] {
+        personalization["views"] = json!([{"id":"photo-front", "label":"Frente", "media_id":media_id, "mode":mode, "print_areas":initial_area}]);
+        update["personalization"] = personalization.clone();
+        let saved = request(
+            &router,
+            "PUT",
+            &format!("/api/admin/products/{product_id}"),
+            Some(&owner_cookie),
+            Some(update.clone()),
+        )
+        .await;
+        assert_eq!(saved.status(), StatusCode::OK);
+        let reloaded = response_json(
+            request(
+                &router,
+                "GET",
+                &format!("/api/admin/products/{product_id}"),
+                Some(&owner_cookie),
+                None,
+            )
+            .await,
+        )
+        .await;
+        assert_eq!(reloaded["personalization"]["mode"], mode);
+        assert_eq!(reloaded["personalization"]["views"][0]["mode"], mode);
+        assert_eq!(
+            reloaded["personalization"]["views"][0]["media_id"],
+            media_id
+        );
+    }
+    personalization["views"][0]["mode"] = json!("text");
+    personalization["views"][0]["print_areas"] = json!([]);
+    personalization["print_areas"] = json!([]);
+    update["personalization"] = personalization;
+    let saved = response_json(
+        request(
+            &router,
+            "PUT",
+            &format!("/api/admin/products/{product_id}"),
+            Some(&owner_cookie),
+            Some(update),
+        )
+        .await,
+    )
+    .await;
+    assert_eq!(saved["personalization"]["mode"], "none");
+    let stored: Value =
+        sqlx::query_scalar("SELECT views FROM product_personalization WHERE product_id = $1")
+            .bind(Uuid::parse_str(product_id).unwrap())
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(stored[0]["mode"], "text");
+    assert_eq!(stored[0]["print_areas"], json!([]));
+
     // Both admin list and detail must return private URLs for every variant.
     let admin_detail = response_json(
         request(
@@ -479,6 +538,189 @@ async fn uploaded_draft_images_are_visible_only_to_catalog_staff_until_published
             .unwrap(),
         (0, 0)
     );
+    pool.close().await;
+    sqlx::query(&format!(r#"DROP SCHEMA "{schema}" CASCADE"#))
+        .execute(&admin)
+        .await
+        .unwrap();
+    admin.close().await;
+}
+
+#[tokio::test]
+async fn product_photo_order_is_persistent_scoped_and_preserves_personalization() {
+    let Ok(database_url) = env::var("DATABASE_URL") else {
+        return;
+    };
+    let schema = format!("photo_order_test_{}", Uuid::new_v4().simple());
+    let admin = PgPool::connect(&database_url).await.unwrap();
+    sqlx::query(&format!(r#"CREATE SCHEMA "{schema}""#))
+        .execute(&admin)
+        .await
+        .unwrap();
+    let search_path = format!(r#"SET search_path TO "{schema}", public"#);
+    let pool = PgPoolOptions::new()
+        .max_connections(4)
+        .after_connect(move |connection, _| {
+            let search_path = search_path.clone();
+            Box::pin(async move {
+                sqlx::query(&search_path).execute(connection).await?;
+                Ok(())
+            })
+        })
+        .connect_with(PgConnectOptions::from_str(&database_url).unwrap())
+        .await
+        .unwrap();
+    sqlx::migrate!("../migrations").run(&pool).await.unwrap();
+    let router = app(AppState {
+        database: Some(pool.clone()),
+        ..AppState::default()
+    });
+    let owner = staff_cookie(&pool, &router, "owner@order.test", "owner", &[]).await;
+    let reader = staff_cookie(
+        &pool,
+        &router,
+        "reader@order.test",
+        "staff",
+        &["catalog.read"],
+    )
+    .await;
+    let product = response_json(request(&router, "POST", "/api/admin/products", Some(&owner), Some(json!({
+        "title":"Ordered photos", "slug":"ordered-photos", "variants":[{"title":"Default", "sku":"PHOTO-ORDER", "price_minor":1000, "currency":"EUR", "available_quantity":5}]
+    }))).await).await;
+    let product_id = Uuid::parse_str(product["id"].as_str().unwrap()).unwrap();
+    let foreign_product_id = Uuid::now_v7();
+    sqlx::query("INSERT INTO products (id,title,slug,status) VALUES ($1,'Other','other-photo-product','draft')").bind(foreign_product_id).execute(&pool).await.unwrap();
+    let photos = [Uuid::now_v7(), Uuid::now_v7(), Uuid::now_v7()];
+    let foreign_photo = Uuid::now_v7();
+    for (position, media_id) in photos.iter().chain([foreign_photo].iter()).enumerate() {
+        sqlx::query("INSERT INTO media_assets (id,object_key,content_type,byte_size,status,scan_status,scanned_at,completed_at) VALUES ($1,$2,'image/png',1,'ready','clean',now(),now())")
+            .bind(media_id).bind(format!("photo-order/{media_id}")) .execute(&pool).await.unwrap();
+        for kind in ["thumbnail", "card", "detail"] {
+            sqlx::query("INSERT INTO media_variants (media_asset_id,kind,object_key,byte_size,width,height) VALUES ($1,$2,$3,1,2,2)")
+                .bind(media_id).bind(kind).bind(format!("photo-order/{media_id}/{kind}")) .execute(&pool).await.unwrap();
+        }
+        sqlx::query("INSERT INTO product_media (product_id,media_asset_id,alt_text,position) VALUES ($1,$2,$3,$4)")
+            .bind(if position == 3 { foreign_product_id } else { product_id }).bind(media_id).bind(format!("Photo {position}")) .bind(position as i32).execute(&pool).await.unwrap();
+    }
+    let views = json!([
+        {"id":"front", "label":"Frente", "media_id":photos[0], "mode":"text", "print_areas":product["personalization"]["print_areas"]},
+        {"id":"back", "label":"Costas", "media_id":photos[1], "mode":"none", "print_areas":[]}
+    ]);
+    sqlx::query("UPDATE product_personalization SET views=$2 WHERE product_id=$1")
+        .bind(product_id)
+        .bind(&views)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        request(
+            &router,
+            "POST",
+            &format!("/api/admin/products/{product_id}/status"),
+            Some(&owner),
+            Some(json!({"status":"active"}))
+        )
+        .await
+        .status(),
+        StatusCode::OK
+    );
+    let path = format!("/api/admin/products/{product_id}/media/order");
+    let desired = [photos[2], photos[0], photos[1]];
+    let body = json!({"media_ids":desired});
+    assert_eq!(
+        request(&router, "PUT", &path, None, Some(body.clone()))
+            .await
+            .status(),
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        request(&router, "PUT", &path, Some(&reader), Some(body.clone()))
+            .await
+            .status(),
+        StatusCode::FORBIDDEN
+    );
+    for _ in 0..2 {
+        let saved =
+            response_json(request(&router, "PUT", &path, Some(&owner), Some(body.clone())).await)
+                .await;
+        assert_eq!(
+            saved["media"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|media| media["id"].clone())
+                .collect::<Vec<_>>(),
+            desired.map(|id| json!(id)).to_vec()
+        );
+        assert_eq!(saved["personalization"]["views"], views);
+        for (position, media) in saved["media"].as_array().unwrap().iter().enumerate() {
+            assert_eq!(media["position"], position as i32);
+        }
+    }
+    let public =
+        response_json(request(&router, "GET", "/api/products/ordered-photos", None, None).await)
+            .await;
+    assert_eq!(public["media"][0]["id"], json!(photos[2]));
+    assert_eq!(public["media"][1]["id"], json!(photos[0]));
+    assert_eq!(public["personalization"]["views"], views);
+    for (ids, status) in [
+        (
+            vec![photos[0], photos[0], photos[1]],
+            StatusCode::UNPROCESSABLE_ENTITY,
+        ),
+        (vec![photos[0]], StatusCode::CONFLICT),
+        (
+            vec![photos[0], photos[1], foreign_photo],
+            StatusCode::CONFLICT,
+        ),
+        (
+            vec![photos[0], photos[1], Uuid::now_v7()],
+            StatusCode::CONFLICT,
+        ),
+    ] {
+        assert_eq!(
+            request(
+                &router,
+                "PUT",
+                &path,
+                Some(&owner),
+                Some(json!({"media_ids":ids}))
+            )
+            .await
+            .status(),
+            status
+        );
+    }
+    assert_eq!(
+        request(
+            &router,
+            "PUT",
+            &format!("/api/admin/products/{}/media/order", Uuid::now_v7()),
+            Some(&owner),
+            Some(body)
+        )
+        .await
+        .status(),
+        StatusCode::NOT_FOUND
+    );
+    sqlx::raw_sql("CREATE FUNCTION reject_photo_reorder() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.action = 'product.media.reorder' THEN RAISE EXCEPTION 'injected audit failure'; END IF; RETURN NEW; END $$; CREATE TRIGGER reject_photo_reorder BEFORE INSERT ON audit_log FOR EACH ROW EXECUTE FUNCTION reject_photo_reorder();").execute(&pool).await.unwrap();
+    assert_eq!(
+        request(
+            &router,
+            "PUT",
+            &path,
+            Some(&owner),
+            Some(json!({"media_ids":photos}))
+        )
+        .await
+        .status(),
+        StatusCode::SERVICE_UNAVAILABLE
+    );
+    let reloaded =
+        response_json(request(&router, "GET", "/api/products/ordered-photos", None, None).await)
+            .await;
+    assert_eq!(reloaded["media"][0]["id"], json!(photos[2]));
+    assert_eq!(reloaded["personalization"]["views"], views);
     pool.close().await;
     sqlx::query(&format!(r#"DROP SCHEMA "{schema}" CASCADE"#))
         .execute(&admin)

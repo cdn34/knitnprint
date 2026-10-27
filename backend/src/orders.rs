@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 use axum::{
     Json,
     extract::{Path, Query, State},
@@ -29,22 +27,22 @@ use crate::{
     notifications::{
         NotificationStatus, enqueue_order_confirmation, load_for_order as load_notifications,
     },
-    packlink::{PackageItem, PacklinkPackage, PacklinkService, packages_for_items},
     payments::{PaymentAttempt, PaymentStatusEvent, load_attempts, load_status_events},
-    settings::{
-        OrderShipping, OrderTax, PricingError, evaluate_in_transaction as evaluate_commercial,
-        evaluate_packlink_in_transaction, load_order_shipping, load_order_tax,
-        record_order_snapshots,
-    },
+    settings::{OrderShipping, OrderTax, load_order_shipping, load_order_tax},
 };
 
 const CART_COOKIE: &str = "knitnprint_cart";
+
 const ORDERS_READ: &str = "orders.read";
 const ORDERS_FULFILL: &str = "orders.fulfill";
 
 #[derive(Deserialize, ToSchema)]
 pub struct CreateOrderRequest {
     pub payment_method: String,
+    #[serde(default)]
+    pub locale: Option<String>,
+    #[serde(default)]
+    pub shipping_rate_revision: Option<i64>,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -195,8 +193,6 @@ struct CheckoutCart {
     customer_id: Option<Uuid>,
     shipping_address_id: Option<Uuid>,
     discount_id: Option<Uuid>,
-    shipping_method_id: Option<Uuid>,
-    shipping_quote_id: Option<Uuid>,
     expired: bool,
 }
 
@@ -213,16 +209,10 @@ struct CheckoutLine {
     current_price_minor: i64,
     stored_currency: String,
     current_currency: String,
-    shipping_weight_grams: i32,
-    shipping_width_cm: i32,
-    shipping_length_cm: i32,
-    shipping_height_cm: i32,
-    shipping_empty_weight_grams: i32,
-    shipping_units_per_package: i32,
-    shipping_profile_configured: bool,
     customization: Option<Value>,
     customization_media_asset_id: Option<Uuid>,
     customization_media_asset_ids: Vec<Uuid>,
+    confirmation_preview_media_asset_ids: Vec<Uuid>,
     personalization_context: Option<Value>,
 }
 
@@ -301,6 +291,14 @@ pub async fn create(
     headers: HeaderMap,
     Json(input): Json<CreateOrderRequest>,
 ) -> Response {
+    if !customer.email_verified {
+        return error(
+            StatusCode::FORBIDDEN,
+            "email_verification_required",
+            "Verify your email before placing an order.",
+        );
+    }
+    let locale = crate::order_email::EmailLocale::from_code(input.locale.as_deref());
     let provider = match input.payment_method.as_str() {
         "manual" if state.manual_payments_enabled => "manual",
         "stripe" if state.payments.enabled() => "stripe",
@@ -328,7 +326,8 @@ pub async fn create(
         token_hash,
         idempotency_hash,
         provider,
-        &state.packlink,
+        locale.as_str(),
+        input.shipping_rate_revision,
     )
     .await
     {
@@ -345,6 +344,11 @@ pub async fn create(
         ),
         Err(CreateError::NotReady) => cart_not_ready(),
         Err(CreateError::Changed) => cart_changed(),
+        Err(CreateError::DeliveryUnavailable) => error(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "shipping_destination_unavailable",
+            "Shipping is not available for this destination. Contact support@knitnprint.com before ordering.",
+        ),
         Err(CreateError::IdempotencyConflict) => error(
             StatusCode::CONFLICT,
             "checkout_idempotency_conflict",
@@ -615,6 +619,7 @@ enum CreateError {
     Changed,
     IdempotencyConflict,
     Database,
+    DeliveryUnavailable,
 }
 
 async fn create_order(
@@ -623,13 +628,13 @@ async fn create_order(
     token_hash: [u8; 32],
     idempotency_hash: [u8; 32],
     provider: &str,
-    packlink: &PacklinkService,
+    locale: &str,
+    shipping_rate_revision: Option<i64>,
 ) -> Result<(Order, bool), CreateError> {
     let mut transaction = pool.begin().await.map_err(|_| CreateError::Database)?;
     let cart = sqlx::query_as::<_, CheckoutCart>(
         r#"
         SELECT id, status, currency::text AS currency, customer_id, shipping_address_id, discount_id,
-               shipping_method_id, shipping_quote_id,
                expires_at <= now() AS expired
         FROM carts WHERE token_hash = $1
         FOR UPDATE
@@ -689,16 +694,16 @@ async fn create_order(
                variant.price_minor AS current_price_minor,
                line.currency::text AS stored_currency,
                variant.currency::text AS current_currency,
-               product.shipping_weight_grams,
-               COALESCE(package_profile.width_cm, product.shipping_width_cm) AS shipping_width_cm,
-               COALESCE(package_profile.length_cm, product.shipping_length_cm) AS shipping_length_cm,
-               COALESCE(package_profile.height_cm, product.shipping_height_cm) AS shipping_height_cm,
-               COALESCE(package_profile.empty_weight_grams, 0) AS shipping_empty_weight_grams,
-               product.shipping_units_per_package,
-               (product.shipping_profile_configured AND COALESCE(package_profile.active, false)) AS shipping_profile_configured,
                line.customization, line.customization_media_asset_id,
-               line.customization_media_asset_ids,
-               CASE WHEN line.customization IS NULL THEN NULL ELSE
+               line.customization_media_asset_ids, line.confirmation_preview_media_asset_ids,
+               CASE WHEN line.customization IS NULL THEN
+                 jsonb_build_object('version', 1, 'views', COALESCE((
+                   SELECT jsonb_agg(jsonb_build_object('media_id', chosen.media_asset_id))
+                   FROM (SELECT relation.media_asset_id FROM product_media relation
+                         JOIN media_assets media ON media.id=relation.media_asset_id AND media.status='ready'
+                         WHERE relation.product_id=product.id ORDER BY relation.position,relation.media_asset_id LIMIT 1) chosen
+                 ), '[]'::jsonb))
+               ELSE
                  jsonb_build_object(
                    'version', 1,
                    'views', COALESCE(personalization.views, '[]'::jsonb)
@@ -708,8 +713,6 @@ async fn create_order(
         JOIN product_variants variant ON variant.id = line.variant_id
         JOIN products product ON product.id = variant.product_id
         JOIN inventory_items inventory ON inventory.variant_id = variant.id
-        LEFT JOIN shipping_package_profiles package_profile
-          ON package_profile.id=product.shipping_package_profile_id
         LEFT JOIN product_personalization personalization ON personalization.product_id = product.id
         WHERE line.cart_id = $1
         ORDER BY variant.id
@@ -774,36 +777,33 @@ async fn create_order(
     let merchandise_minor = subtotal_minor
         .checked_sub(discount_minor)
         .ok_or(CreateError::Changed)?;
-    let commercial_pricing = if packlink.enabled() {
-        let packages = checkout_packages(&lines).ok_or(CreateError::Changed)?;
-        let request_hash =
-            packlink.request_hash(&delivery.country_code, &delivery.postal_code, &packages);
-        evaluate_packlink_in_transaction(
-            &mut transaction,
-            cart.id,
-            currency,
-            &delivery.country_code,
-            cart.shipping_quote_id,
-            merchandise_minor,
-            Some(request_hash.as_slice()),
-        )
-        .await
-    } else {
-        evaluate_commercial(
-            &mut transaction,
-            currency,
-            &delivery.country_code,
-            cart.shipping_method_id,
-            merchandise_minor,
-        )
-        .await
+    let shipping = crate::delivery_rates::quote_in_transaction(
+        &mut transaction,
+        currency,
+        &delivery.country_code,
+        &delivery.postal_code,
+    )
+    .await
+    .map_err(|_| CreateError::Database)?;
+    if !shipping.available {
+        return Err(CreateError::DeliveryUnavailable);
     }
-    .map_err(|error| match error {
-        PricingError::Unavailable => CreateError::Changed,
-        PricingError::Database(_) => CreateError::Database,
-    })?;
-    let shipping_minor = commercial_pricing.shipping.amount_minor;
-    let tax_minor = commercial_pricing.tax.amount_minor;
+    if (shipping.pricing_enabled && shipping_rate_revision != Some(shipping.revision))
+        || shipping_rate_revision.is_some_and(|revision| revision != shipping.revision)
+    {
+        return Err(CreateError::Changed);
+    }
+    let shipping_minor = shipping
+        .amount_minor
+        .ok_or(CreateError::DeliveryUnavailable)?;
+    let taxable_minor = merchandise_minor
+        .checked_add(shipping_minor)
+        .ok_or(CreateError::Changed)?;
+    let tax =
+        crate::settings::checkout_tax(&mut transaction, &delivery.country_code, taxable_minor)
+            .await
+            .map_err(|_| CreateError::Database)?;
+    let tax_minor = tax.amount_minor;
     let total_minor = subtotal_minor
         .checked_sub(discount_minor)
         .and_then(|total| total.checked_add(shipping_minor))
@@ -818,10 +818,10 @@ async fn create_order(
             currency, subtotal_minor, discount_minor, shipping_minor, tax_minor, total_minor, customer_email,
             customer_first_name, customer_last_name, customer_phone,
             shipping_recipient_name, shipping_line1, shipping_line2, shipping_city,
-            shipping_region, shipping_postal_code, shipping_country_code, shipping_phone
+            shipping_region, shipping_postal_code, shipping_country_code, shipping_phone, locale
         ) VALUES (
             $1, 'KP-' || to_char(now(), 'YYYY') || '-' || lpad(nextval('order_number_sequence')::text, 6, '0'),
-            $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22
+            $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23
         ) RETURNING order_number
         "#,
     )
@@ -847,6 +847,7 @@ async fn create_order(
     .bind(&delivery.postal_code)
     .bind(&delivery.country_code)
     .bind(&delivery.address_phone)
+    .bind(locale)
     .fetch_one(&mut *transaction)
     .await
     .map_err(|_| CreateError::Database)?;
@@ -856,9 +857,16 @@ async fn create_order(
             .await
             .map_err(|_| CreateError::Database)?;
     }
-    record_order_snapshots(&mut transaction, order_id, &commercial_pricing)
-        .await
-        .map_err(|_| CreateError::Database)?;
+    crate::settings::record_checkout_snapshots(
+        &mut transaction,
+        order_id,
+        currency,
+        &delivery.country_code,
+        &shipping,
+        &tax,
+    )
+    .await
+    .map_err(|_| CreateError::Database)?;
 
     for (position, line) in lines.iter().enumerate() {
         let order_line_id = Uuid::now_v7();
@@ -868,8 +876,8 @@ async fn create_order(
                 id, order_id, product_id, variant_id, product_title, variant_title,
                 sku, quantity, unit_price_minor, line_total_minor, currency, position,
                 customization, customization_media_asset_id, customization_media_asset_ids,
-                personalization_context
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9 * $8, $10, $11, $12, $13, $14, $15)
+                personalization_context, confirmation_preview_media_asset_ids
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9 * $8, $10, $11, $12, $13, $14, $15, $16)
             "#,
         )
         .bind(order_line_id)
@@ -887,10 +895,16 @@ async fn create_order(
         .bind(line.customization_media_asset_id)
         .bind(&line.customization_media_asset_ids)
         .bind(&line.personalization_context)
+        .bind(&line.confirmation_preview_media_asset_ids)
         .execute(&mut *transaction)
         .await
         .map_err(|_| CreateError::Database)?;
-        for (media_position, media_id) in line.customization_media_asset_ids.iter().enumerate() {
+        for (media_position, media_id) in line
+            .customization_media_asset_ids
+            .iter()
+            .chain(line.confirmation_preview_media_asset_ids.iter())
+            .enumerate()
+        {
             sqlx::query(
                 "INSERT INTO order_line_personalization_media (order_line_id, media_asset_id, position) VALUES ($1, $2, $3)",
             )
@@ -956,26 +970,6 @@ async fn create_order(
     Ok((order, true))
 }
 
-fn checkout_packages(lines: &[CheckoutLine]) -> Option<Vec<PacklinkPackage>> {
-    if lines.iter().any(|line| !line.shipping_profile_configured) {
-        return None;
-    }
-    let mut items = BTreeMap::<Uuid, PackageItem>::new();
-    for line in lines {
-        let item = items.entry(line.product_id).or_insert_with(|| PackageItem {
-            quantity: 0,
-            unit_weight_grams: line.shipping_weight_grams,
-            width_cm: line.shipping_width_cm,
-            length_cm: line.shipping_length_cm,
-            height_cm: line.shipping_height_cm,
-            empty_weight_grams: line.shipping_empty_weight_grams,
-            units_per_package: line.shipping_units_per_package,
-        });
-        item.quantity = item.quantity.checked_add(i64::from(line.quantity))?;
-    }
-    packages_for_items(&items.into_values().collect::<Vec<_>>())
-}
-
 async fn delivery_snapshot(
     transaction: &mut Transaction<'_, Postgres>,
     cart_id: Uuid,
@@ -995,6 +989,7 @@ async fn delivery_snapshot(
           AND address.customer_id = customer.id
         WHERE cart.id = $1 AND customer.id = $2 AND address.id = $3
           AND customer.anonymized_at IS NULL AND customer.retention_expires_at > now()
+          AND EXISTS (SELECT 1 FROM customer_accounts account WHERE account.customer_id=customer.id AND account.email_verified_at IS NOT NULL)
         "#,
     )
     .bind(cart_id)
@@ -1283,8 +1278,10 @@ pub(crate) async fn load_order(
 }
 
 fn map_inventory_create_error(error: InventoryOperationError) -> CreateError {
-    let _ = error;
-    CreateError::Database
+    match error {
+        InventoryOperationError::Database(_) => CreateError::Database,
+        _ => CreateError::Changed,
+    }
 }
 
 fn idempotency_hash(headers: &HeaderMap) -> Option<[u8; 32]> {
@@ -1297,18 +1294,6 @@ fn idempotency_hash(headers: &HeaderMap) -> Option<[u8; 32]> {
                 && value.chars().all(|character| character.is_ascii_graphic())
         })
         .map(|value| Sha256::digest(value.as_bytes()).into())
-}
-
-fn no_store(mut response: Response) -> Response {
-    response.headers_mut().insert(
-        header::CACHE_CONTROL,
-        HeaderValue::from_static("no-store, private"),
-    );
-    response
-}
-
-fn error(status: StatusCode, code: &'static str, message: &'static str) -> Response {
-    (status, Json(ErrorBody::new(code, message))).into_response()
 }
 
 fn invalid_idempotency_key() -> Response {
@@ -1333,6 +1318,18 @@ fn cart_changed() -> Response {
         "cart_changed",
         "The cart changed. Review it before creating the order.",
     )
+}
+
+fn no_store(mut response: Response) -> Response {
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("no-store, private"),
+    );
+    response
+}
+
+fn error(status: StatusCode, code: &'static str, message: &'static str) -> Response {
+    (status, Json(ErrorBody::new(code, message))).into_response()
 }
 
 fn not_found() -> Response {

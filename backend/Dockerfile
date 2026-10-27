@@ -3,6 +3,7 @@ WORKDIR /build
 COPY Cargo.toml Cargo.lock ./
 COPY backend ./backend
 COPY migrations ./migrations
+COPY apps/storefront/public/knitnprint-wordmark.webp ./apps/storefront/public/knitnprint-wordmark.webp
 RUN cargo build --locked --release -p knitnprint-api \
     --bin knitnprint-api \
     --bin migrate \

@@ -3,17 +3,12 @@ import { ImagePlus, Move, ShoppingBag, Type } from 'lucide-react'
 import { type KeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import { cartApi } from '../cart-api'
 import { useI18n } from '../i18n'
-import { printAreaForVariant } from '../personalization-scale'
+import { configuredViews, type ElementFrame, type PrintView, type PrintArea } from '../personalization-views'
+import { toBlob } from 'html-to-image'
 
 const SUPPORTED_FONTS = ['Roboto', 'Montserrat', 'Playfair Display', 'Dancing Script', 'Pacifico'] as const
 const DEFAULT_COLORS = ['#111111', '#ffffff', '#9c5263', '#1f4f78', '#b3232f']
-const safeBasisPoints = (value: unknown, fallback: number) => typeof value === 'number' && Number.isFinite(value) ? value : fallback
-
-type ElementFrame = { x: number; y: number; width: number; height: number }
 type Interaction = { pointerX: number; pointerY: number; frame: ElementFrame; handle: 'move' | 'nw' | 'ne' | 'sw' | 'se' }
-type PrintArea = ElementFrame & { id: string; label: string; physicalWidthCm: number; physicalHeightCm: number; previewFrame?: ElementFrame }
-type ArticleReference = ElementFrame & { physicalWidthCm: number; physicalHeightCm: number }
-type PrintView = { id: string; label: string; mediaId?: string; articleReference?: ArticleReference; printAreas: PrintArea[] }
 type ProductMediaForPersonalizer = { id: string; url: string }
 
 function normalizedFrame(frame: ElementFrame): ElementFrame {
@@ -26,67 +21,6 @@ function normalizedFrame(frame: ElementFrame): ElementFrame {
     width: round(Math.max(0.0001, Math.min(100 - x, frame.width))),
     height: round(Math.max(0.0001, Math.min(100 - y, frame.height))),
   }
-}
-
-function configuredPrintAreas(raw: unknown, config: PersonalizationConfig, areaLabel: (number: number) => string): PrintArea[] {
-  if (Array.isArray(raw)) {
-    const areas = raw.flatMap((item, index) => {
-      if (!item || typeof item !== 'object') return []
-      const area = item as Record<string, unknown>
-      const coordinates = ['x', 'y', 'width', 'height'].map((key) => area[key])
-      if (coordinates.some((value) => typeof value !== 'number' || !Number.isFinite(value))) return []
-      return [{
-        id: typeof area.id === 'string' && area.id ? area.id : `area-${index + 1}`,
-        label: typeof area.label === 'string' && area.label ? area.label : areaLabel(index + 1),
-        x: Number(area.x) / 100,
-        y: Number(area.y) / 100,
-        width: Number(area.width) / 100,
-        height: Number(area.height) / 100,
-        physicalWidthCm: typeof area.physical_width_cm === 'number' && Number.isFinite(area.physical_width_cm) ? area.physical_width_cm : 20,
-        physicalHeightCm: typeof area.physical_height_cm === 'number' && Number.isFinite(area.physical_height_cm) ? area.physical_height_cm : 20,
-      }]
-    })
-    if (areas.length) return areas
-  }
-  return [{ id: 'area-1', label: areaLabel(1), x: safeBasisPoints(config.area_x, 2500) / 100, y: safeBasisPoints(config.area_y, 2500) / 100, width: safeBasisPoints(config.area_width, 5000) / 100, height: safeBasisPoints(config.area_height, 5000) / 100, physicalWidthCm: 20, physicalHeightCm: 20 }]
-}
-
-function configuredViews(config: PersonalizationConfig, variantId: string, frontLabel: string, viewLabel: (number: number) => string, areaLabel: (number: number) => string): PrintView[] {
-  if (Array.isArray(config.views)) {
-    const views = config.views.flatMap((item, index) => {
-      if (!item || typeof item !== 'object') return []
-      const view = item as Record<string, unknown>
-      const printAreas = configuredPrintAreas(view.print_areas, config, areaLabel)
-      const rawReference = view.article_reference && typeof view.article_reference === 'object' ? view.article_reference as Record<string, unknown> : undefined
-      const referenceCoordinates = rawReference ? ['x', 'y', 'width', 'height'].map((key) => rawReference[key]) : []
-      const articleReference = rawReference?.configured === true
-        && referenceCoordinates.every((value) => typeof value === 'number' && Number.isFinite(value))
-        && typeof rawReference.physical_width_cm === 'number' && Number.isFinite(rawReference.physical_width_cm)
-        && typeof rawReference.physical_height_cm === 'number' && Number.isFinite(rawReference.physical_height_cm)
-        ? { x: Number(rawReference.x) / 100, y: Number(rawReference.y) / 100, width: Number(rawReference.width) / 100, height: Number(rawReference.height) / 100, physicalWidthCm: rawReference.physical_width_cm, physicalHeightCm: rawReference.physical_height_cm }
-        : undefined
-      const variantReferences = Array.isArray(view.variant_references) ? view.variant_references : []
-      const variantReference = variantReferences.find((raw): raw is Record<string, unknown> => Boolean(raw && typeof raw === 'object' && (raw as Record<string, unknown>).variant_id === variantId && (raw as Record<string, unknown>).configured === true))
-      const effectiveReference = articleReference && variantReference
-        && typeof variantReference.physical_width_cm === 'number' && typeof variantReference.physical_height_cm === 'number'
-        ? { ...articleReference, physicalWidthCm: variantReference.physical_width_cm, physicalHeightCm: variantReference.physical_height_cm }
-        : articleReference
-      const effectivePrintAreas = articleReference && effectiveReference && variantReference
-        ? printAreas.map((area) => {
-          return { ...area, ...printAreaForVariant(area, articleReference, effectiveReference) }
-        })
-        : printAreas
-      return [{
-        id: typeof view.id === 'string' && view.id ? view.id : `view-${index + 1}`,
-        label: typeof view.label === 'string' && view.label ? view.label : index === 0 ? frontLabel : viewLabel(index + 1),
-        mediaId: typeof view.media_id === 'string' ? view.media_id : undefined,
-        articleReference: effectiveReference,
-        printAreas: effectivePrintAreas,
-      }]
-    })
-    if (views.length) return views
-  }
-  return [{ id: 'view-front', label: frontLabel, mediaId: config.preview_media_id ?? undefined, printAreas: configuredPrintAreas(config.print_areas, config, areaLabel) }]
 }
 
 const designKey = (viewId: string, areaId: string) => `${viewId}:${areaId}`
@@ -105,6 +39,7 @@ function articleReferenceSnapshot(view: PrintView, area: PrintArea) {
 
 export type CustomerCustomization = {
   version: 7
+  previews?: Array<{ view_id: string; view_label: string; media_id: string }>
   areas: Array<{
     view_id: string
     view_label: string
@@ -207,17 +142,18 @@ function DesignElement({ frame, kind, label, selected, onSelect, onChange, child
   </div>
 }
 
-export function ProductPersonalizer({ config, variantId, variantLabel, productMedia, onChange, previewOpen, onPreviewClose, onAddToCart, addToCartDisabled, addToCartLabel }: Readonly<{
+export function ProductPersonalizer({ config, variantId, variantLabel, productMedia, onChange, previewOpen, onPreviewClose, onAddToCart, addToCartDisabled, addToCartLabel, saving = false }: Readonly<{
   config: PersonalizationConfig
   variantId: string
   variantLabel?: string
   productMedia: ProductMediaForPersonalizer[]
-  onChange: (value: { customization: CustomerCustomization | null; mediaIds: string[]; ready: boolean; missing: string[] }) => void
+  onChange: (value: { customization: CustomerCustomization | null; mediaIds: string[]; ready: boolean; missing: string[]; savePreviews?: () => Promise<NonNullable<CustomerCustomization['previews']>> }) => void
   previewOpen: boolean
   onPreviewClose: () => void
   onAddToCart: () => void
   addToCartDisabled: boolean
   addToCartLabel: string
+  saving?: boolean
 }>) {
   const { t } = useI18n()
   const fonts = useMemo(() => { const valid = Array.isArray(config.allowed_fonts) ? config.allowed_fonts.filter((value): value is typeof SUPPORTED_FONTS[number] => typeof value === 'string' && SUPPORTED_FONTS.includes(value as typeof SUPPORTED_FONTS[number])) : []; return valid.length ? valid : [...SUPPORTED_FONTS] }, [config.allowed_fonts])
@@ -229,33 +165,34 @@ export function ProductPersonalizer({ config, variantId, variantLabel, productMe
     '#1f4f78': t('personalization.colorBlue'),
     '#b3232f': t('personalization.colorRed'),
   }[value.toLowerCase()] ?? value)
-  const wantsPhoto = config.mode === 'photo' || config.mode === 'photo_text'
-  const wantsText = config.mode === 'text' || config.mode === 'photo_text'
-  const combined = wantsPhoto && wantsText
   const views = useMemo(() => configuredViews(
     config,
     variantId,
     t('personalization.front'),
     (number) => t('personalization.viewFallback', { number }),
     (number) => t('personalization.areaFallback', { number }),
-  ), [config, variantId, t])
-  const newDesign = (): AreaDesign => ({
+    productMedia,
+  ), [config, variantId, t, productMedia])
+  const newDesign = (mode = views[0].mode): AreaDesign => ({
     text: '',
     font: fonts[0] ?? 'Arial',
     color: colors[0] ?? '#111111',
     size: config.text_min_size,
-    textFrame: combined ? { x: 10, y: 58, width: 80, height: 40 } : { x: 15, y: 35, width: 70, height: 30 },
-    photoFrame: combined ? { x: 5, y: 5, width: 90, height: 50 } : { x: 15, y: 15, width: 70, height: 70 },
+    textFrame: mode === 'photo_text' ? { x: 10, y: 58, width: 80, height: 40 } : { x: 15, y: 35, width: 70, height: 30 },
+    photoFrame: mode === 'photo_text' ? { x: 5, y: 5, width: 90, height: 50 } : { x: 15, y: 15, width: 70, height: 70 },
   })
-  const [designs, setDesigns] = useState<Record<string, AreaDesign>>(() => Object.fromEntries(views.flatMap((view) => view.printAreas.map((area) => [designKey(view.id, area.id), newDesign()]))))
+  const [designs, setDesigns] = useState<Record<string, AreaDesign>>(() => Object.fromEntries(views.flatMap((view) => view.printAreas.map((area) => [designKey(view.id, area.id), newDesign(view.mode)]))))
   const [activeViewId, setActiveViewId] = useState(views[0].id)
   const activeView = views.find(({ id }) => id === activeViewId) ?? views[0]
+  const wantsPhoto = activeView.mode === 'photo' || activeView.mode === 'photo_text'
+  const wantsText = activeView.mode === 'text' || activeView.mode === 'photo_text'
   const printAreas = activeView.printAreas
   const [activeAreaId, setActiveAreaId] = useState(printAreas[0].id)
   const [selected, setSelected] = useState<'photo' | 'text'>(wantsPhoto ? 'photo' : 'text')
   const [uploadingAreas, setUploadingAreas] = useState<Record<string, boolean>>({})
   const [previewViewId, setPreviewViewId] = useState(views[0].id)
   const objectUrls = useRef(new Set<string>())
+  const confirmationCanvases = useRef(new Map<string, HTMLDivElement>())
   const activeDesignKey = designKey(activeView.id, activeAreaId)
   const activeDesign = designs[activeDesignKey] ?? newDesign()
   const activePrintArea = printAreas.find(({ id }) => id === activeAreaId) ?? printAreas[0]
@@ -282,6 +219,7 @@ export function ProductPersonalizer({ config, variantId, variantLabel, productMe
   function selectView(view: PrintView) {
     setActiveViewId(view.id)
     setActiveAreaId(view.printAreas[0].id)
+    setSelected(view.mode === 'photo' || view.mode === 'photo_text' ? 'photo' : 'text')
   }
 
   const customization = useMemo<CustomerCustomization>(() => ({
@@ -289,26 +227,45 @@ export function ProductPersonalizer({ config, variantId, variantLabel, productMe
     areas: views.flatMap((view) => view.printAreas.flatMap((area) => {
       const design = designs[designKey(view.id, area.id)]
       if (!design) return []
-      const photo = wantsPhoto && design.mediaId ? { media_id: design.mediaId, ...normalizedFrame(design.photoFrame), crop_x: 50, crop_y: 50, scale: 1 } : undefined
-      const text = wantsText && design.text.trim() ? { content: design.text.trim(), font: design.font, color: design.color, size: design.size, ...normalizedFrame(design.textFrame) } : undefined
+      const photo = (view.mode === 'photo' || view.mode === 'photo_text') && design.mediaId ? { media_id: design.mediaId, ...normalizedFrame(design.photoFrame), crop_x: 50, crop_y: 50, scale: 1 } : undefined
+      const text = (view.mode === 'text' || view.mode === 'photo_text') && design.text.trim() ? { content: design.text.trim(), font: design.font, color: design.color, size: design.size, ...normalizedFrame(design.textFrame) } : undefined
       const reference = articleReferenceSnapshot(view, area)
       return photo || text ? [{ view_id: view.id, view_label: view.label, area_id: area.id, area_label: area.label, print_width_cm: area.physicalWidthCm, print_height_cm: area.physicalHeightCm, ...(reference ? { article_reference: reference } : {}), ...(photo ? { photo } : {}), ...(text ? { text } : {}) }] : []
     })),
-  }), [designs, views, wantsPhoto, wantsText])
+  }), [designs, views])
   const mediaIds = useMemo(() => customization.areas.flatMap((area) => area.photo ? [area.photo.media_id] : []), [customization])
   const missing = useMemo(() => views.flatMap((view) => view.printAreas.flatMap((area) => {
     const design = designs[designKey(view.id, area.id)]
     return [
-      wantsPhoto && !design?.mediaId ? t('personalization.missingPhoto', { view: view.label, area: area.label }) : '',
-      wantsText && !design?.text.trim() ? t('personalization.missingText', { view: view.label, area: area.label }) : '',
+      (view.mode === 'photo' || view.mode === 'photo_text') && !design?.mediaId ? t('personalization.missingPhoto', { view: view.label, area: area.label }) : '',
+      (view.mode === 'text' || view.mode === 'photo_text') && !design?.text.trim() ? t('personalization.missingText', { view: view.label, area: area.label }) : '',
     ].filter(Boolean)
-  })), [designs, t, views, wantsPhoto, wantsText])
+  })), [designs, t, views])
   const ready = missing.length === 0
 
-  useEffect(() => onChange({ customization: customization.areas.length ? customization : null, mediaIds, ready, missing }), [customization, mediaIds, missing, onChange, ready])
+  useEffect(() => onChange({ customization: customization.areas.length ? customization : null, mediaIds, ready, missing,
+    savePreviews: async () => {
+      if (!customization.areas.length) return []
+      await document.fonts.ready
+      const result: NonNullable<CustomerCustomization['previews']> = []
+      for (const view of views.filter((view) => customization.areas.some((area) => area.view_id === view.id))) {
+        const node = confirmationCanvases.current.get(view.id)
+        if (!node) throw new Error('Personalized preview unavailable')
+        await Promise.all(Array.from(node.querySelectorAll('img')).map((image) => image.decode()))
+        const blob = await toBlob(node, { pixelRatio: 1, backgroundColor: '#f5f1ee', preferredFontFormat: 'woff2' })
+        if (!blob || blob.size === 0) throw new Error('Could not save personalized preview')
+        const filename = 'personalized-preview.png'
+        const upload = await cartApi.initiatePersonalizationUpload({ filename, content_type: 'image/png', byte_size: blob.size })
+        await cartApi.uploadMediaObject(upload.upload_url, new File([blob], filename, { type: 'image/png' }), 'image/png')
+        await cartApi.completePersonalizationUpload(upload.id)
+        result.push({ view_id: view.id, view_label: view.label, media_id: upload.id })
+      }
+      return result
+    },
+  }), [customization, mediaIds, missing, onChange, ready])
   useEffect(() => () => { objectUrls.current.forEach((url) => URL.revokeObjectURL(url)); objectUrls.current.clear() }, [])
   useEffect(() => {
-    setDesigns((current) => Object.fromEntries(views.flatMap((view) => view.printAreas.map((area) => { const key = designKey(view.id, area.id); return [key, current[key] ?? newDesign()] }))))
+    setDesigns((current) => Object.fromEntries(views.flatMap((view) => view.printAreas.map((area) => { const key = designKey(view.id, area.id); return [key, current[key] ?? newDesign(view.mode)] }))))
     if (!views.some(({ id }) => id === activeViewId)) setActiveViewId(views[0].id)
     if (!printAreas.some(({ id }) => id === activeAreaId)) setActiveAreaId(printAreas[0].id)
   }, [views, activeViewId, printAreas, activeAreaId])
@@ -344,7 +301,22 @@ export function ProductPersonalizer({ config, variantId, variantLabel, productMe
     }
   }
 
-  return <section className="personalizer" aria-labelledby="personalizer-title">
+  function renderFinalPreview(view: PrintView, imageUrl: string, capture = false) {
+    return <div className="personalization-final-preview-canvas" ref={capture ? (node) => { if (node) confirmationCanvases.current.set(view.id, node); else confirmationCanvases.current.delete(view.id) } : undefined}>
+            <img src={imageUrl} alt={t('personalization.customizedResultAlt', { view: view.label })} />
+            {view.printAreas.map((area) => {
+              const design = designs[designKey(view.id, area.id)] ?? newDesign()
+              if (!design.photoUrl && !design.text.trim()) return null
+              const frame = area.previewFrame ?? area
+              return <div key={area.id} className="personalization-final-area" style={{ left: `${frame.x}%`, top: `${frame.y}%`, width: `${frame.width}%`, height: `${frame.height}%` }}>
+                {design.photoUrl && <div className="personalization-final-element" style={{ left: `${design.photoFrame.x}%`, top: `${design.photoFrame.y}%`, width: `${design.photoFrame.width}%`, height: `${design.photoFrame.height}%` }}><img className="personalization-final-photo" src={design.photoUrl} alt={t('personalization.customPhotoAlt')} /></div>}
+                {design.text.trim() && <div className="personalization-final-element personalization-final-element--text" style={{ left: `${design.textFrame.x}%`, top: `${design.textFrame.y}%`, width: `${design.textFrame.width}%`, height: `${design.textFrame.height}%` }}><span style={{ color: design.color, fontFamily: design.font, fontSize: `${design.size}px` }}>{design.text}</span></div>}
+              </div>
+            })}
+          </div>
+  }
+
+  return <section className="personalizer" aria-labelledby="personalizer-title" inert={saving} aria-busy={saving}>
     <h2 className="sr-only" id="personalizer-title">{t('personalization.options')}</h2>
     <div className="personalizer-layout">
       <div className="personalizer-tools">
@@ -387,6 +359,12 @@ export function ProductPersonalizer({ config, variantId, variantLabel, productMe
         </div> : <div className="personalizer-product-empty">{t('personalization.emptyView')}</div>}
       </div>
     </div>
+    <div aria-hidden="true" style={{ position: 'fixed', left: '-10000px', top: 0, width: 'min(680px, calc(100vw - 32px))', pointerEvents: 'none' }}>
+      {views.filter((view) => customization.areas.some((area) => area.view_id === view.id)).map((view) => {
+        const imageUrl = productMedia.find(({ id }) => id === view.mediaId)?.url ?? (views.length === 1 ? productMedia[0]?.url : undefined)
+        return imageUrl ? <div key={view.id}>{renderFinalPreview(view, imageUrl, true)}</div> : null
+      })}
+    </div>
     {previewOpen && <div className="personalization-final-preview-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onPreviewClose() }}>
       <section className="personalization-final-preview" role="dialog" aria-modal="true" aria-labelledby="final-preview-title" aria-describedby="final-preview-description">
         <header>
@@ -394,18 +372,7 @@ export function ProductPersonalizer({ config, variantId, variantLabel, productMe
           {views.length > 1 && <div className="personalization-final-preview-tabs" role="tablist" aria-label={t('personalization.choosePreviewSide')}>{views.map((view, index) => <button key={view.id} type="button" role="tab" aria-selected={view.id === previewView.id} className={view.id === previewView.id ? 'selected' : ''} onClick={() => setPreviewViewId(view.id)}><b>{index + 1}</b>{view.label}</button>)}</div>}
         </header>
         <div className="personalization-final-preview-stage">
-          {previewProductImage ? <div className="personalization-final-preview-canvas">
-            <img src={previewProductImage} alt={t('personalization.customizedResultAlt', { view: previewView.label })} />
-            {previewView.printAreas.map((area) => {
-              const design = designs[designKey(previewView.id, area.id)] ?? newDesign()
-              if (!design.photoUrl && !design.text.trim()) return null
-              const frame = area.previewFrame ?? area
-              return <div key={area.id} className="personalization-final-area" style={{ left: `${frame.x}%`, top: `${frame.y}%`, width: `${frame.width}%`, height: `${frame.height}%` }}>
-                {design.photoUrl && <div className="personalization-final-element" style={{ left: `${design.photoFrame.x}%`, top: `${design.photoFrame.y}%`, width: `${design.photoFrame.width}%`, height: `${design.photoFrame.height}%` }}><img className="personalization-final-photo" src={design.photoUrl} alt={t('personalization.customPhotoAlt')} /></div>}
-                {design.text.trim() && <div className="personalization-final-element personalization-final-element--text" style={{ left: `${design.textFrame.x}%`, top: `${design.textFrame.y}%`, width: `${design.textFrame.width}%`, height: `${design.textFrame.height}%` }}><span style={{ color: design.color, fontFamily: design.font, fontSize: `${design.size}px` }}>{design.text}</span></div>}
-              </div>
-            })}
-          </div> : <p>{t('personalization.emptyView')}</p>}
+          {previewProductImage ? renderFinalPreview(previewView, previewProductImage) : <p>{t('personalization.emptyView')}</p>}
           {previewProductImage && previewHasDesign && <p className="personalization-final-preview-note" role="status">{t(previewIsPrintCapped ? 'personalization.previewPrintCapped' : 'personalization.previewScaleNote')}</p>}
         </div>
         <footer><span>{t('personalization.previewFooter')}</span><div className="personalization-final-preview-actions"><button className="button button--secondary" type="button" autoFocus onClick={onPreviewClose}>{t('personalization.continuePersonalizing')}</button><button className="button button--primary" type="button" disabled={addToCartDisabled} onClick={onAddToCart}><ShoppingBag />{addToCartLabel}</button></div></footer>

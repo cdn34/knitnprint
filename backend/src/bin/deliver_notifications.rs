@@ -1,6 +1,9 @@
 use std::env;
 
-use knitnprint_api::{config::Environment, email::EmailService, notifications::deliver_due};
+use knitnprint_api::{
+    config::Environment, email::EmailService, notifications::deliver_due_with_storage,
+    object_storage::ObjectStorage,
+};
 use sqlx::postgres::PgPoolOptions;
 
 #[tokio::main]
@@ -36,7 +39,13 @@ async fn main() {
             eprintln!("database unavailable: {error}");
             std::process::exit(1);
         });
-    let summary = deliver_due(&pool, &email, batch_size)
+    let storage = ObjectStorage::from_env(environment)
+        .await
+        .unwrap_or_else(|error| {
+            eprintln!("invalid storage configuration: {error}");
+            std::process::exit(2);
+        });
+    let summary = deliver_due_with_storage(&pool, &email, Some(&storage), batch_size)
         .await
         .unwrap_or_else(|error| {
             eprintln!("notification delivery failed: {error}");
@@ -45,5 +54,15 @@ async fn main() {
     println!(
         "notification delivery complete: {} sent, {} failed",
         summary.sent, summary.failed
+    );
+    let b2b_summary = knitnprint_api::b2b::deliver_due(&pool, &email, batch_size)
+        .await
+        .unwrap_or_else(|error| {
+            eprintln!("B2B notification delivery failed: {error}");
+            std::process::exit(1);
+        });
+    println!(
+        "B2B notification delivery complete: {} sent, {} failed",
+        b2b_summary.sent, b2b_summary.failed
     );
 }

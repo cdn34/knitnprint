@@ -1,7 +1,7 @@
 # Order confirmation email — approved design
 
-Status: approved visual proposal. This prototype is not connected to the live
-transactional email renderer or notification worker.
+Status: approved design, implemented in `backend/src/order_email.rs` and connected
+to the transactional notification worker. These preview files remain illustrative.
 
 Open [the standalone preview](order-confirmation-email.html) to review the design.
 The [editable fragment](order-confirmation-email.fragment.html) is the source of
@@ -26,14 +26,21 @@ products, prices and personalization shown in the prototype are illustrative.
 - Explain that shipping and delivery updates will come directly from the carrier.
   Do not promise additional KnitnPrint shipping emails in this confirmation.
 
-## Implementation boundary
+## Production implementation
 
-The garment drawings in the prototype illustrate the intended personalized
-thumbnails; they are not customer order assets. Connecting saved order previews,
-order data and localized copy to the live email is separate implementation work.
-The carrier notification preference above also requires a separate change to the
-live notification flow; this design commit does not change delivery behavior.
+The garment drawings in the prototype are illustrative. New personalized cart
+items save a PNG of each customized face using the same preview component. Uploads
+are checked against the owning cart and retained with the immutable order media.
+The worker attaches these privately through CID, never public upload URLs or
+generic catalog photos. Older orders without saved previews retain their text
+details and link to the order; the email does not invent a product preview.
 
-The standalone document is a browser preview. Its CSS layout, scripts and embedded
-WebP logo are not a production email template. The live version must use
-email-client-compatible markup and image delivery while preserving this design.
+PT/EN/ES subjects, body copy, dates and monetary formatting follow the immutable
+checkout language, with English as the fallback. Payment confirmation and outbox
+deduplication remain unchanged. Other notification kinds retain their existing
+behavior; this renderer does not send a shipment promise or progress bar.
+
+The standalone document is a browser preview. The production version uses tables,
+inline styles, system-font fallbacks, PNG attachments and a plain-text alternative
+without scripts. The beige header, plum accents and information order match the
+approved design. Shipping is shown as not charged while pricing is unconfigured.
