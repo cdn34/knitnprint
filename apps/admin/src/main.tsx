@@ -71,6 +71,7 @@ import {
 } from '@knitnprint/api-client'
 import { printAreaOffsets } from './personalization-measurements'
 import { uploadImagesWithProgress } from './product-image-uploads'
+import { NotificationManagement } from './notifications'
 import './styles.css'
 
 const api = createApiClient()
@@ -217,6 +218,9 @@ function LoginScreen({
 function AdminShell({ profile }: Readonly<{ profile: StaffProfile }>) {
   const availablePages = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    ...(profile.capabilities.includes('notifications.read')
+      ? [{ id: 'notifications', label: 'Email notifications', icon: Mail }]
+      : []),
     ...(profile.capabilities.includes('orders.read')
       ? [{ id: 'orders', label: 'Orders', icon: ReceiptText }]
       : []),
@@ -328,6 +332,8 @@ function AdminShell({ profile }: Readonly<{ profile: StaffProfile }>) {
                     ? 'Customer feedback.'
                   : page === 'shipping-packages'
                     ? 'Shipping packages.'
+                  : page === 'notifications'
+                    ? 'Email notifications.'
                   : page === 'inventory'
                     ? 'Inventory control.'
                     : page === 'customers'
@@ -344,6 +350,12 @@ function AdminShell({ profile }: Readonly<{ profile: StaffProfile }>) {
           </a>
         </header>
         {page === 'dashboard' && <Dashboard profile={profile} />}
+        {page === 'notifications' && profile.capabilities.includes('notifications.read') && (
+          <NotificationManagement
+            canSend={profile.capabilities.includes('notifications.send')}
+            canReadOrders={profile.capabilities.includes('orders.read')}
+          />
+        )}
         {page === 'orders' && profile.capabilities.includes('orders.read') && (
           <OrderManagement
             canRecordPayment={profile.capabilities.includes('orders.fulfill')}
@@ -4014,6 +4026,8 @@ const staffKey = ['staff'] as const
 const assignableCapabilities = [
   ['catalog.read', 'View catalog'],
   ['catalog.write', 'Manage catalog'],
+  ['notifications.read', 'View email notifications'],
+  ['notifications.send', 'Send pending email notifications'],
   ['orders.read', 'View orders'],
   ['orders.fulfill', 'Fulfill orders'],
   ['orders.refund', 'Refund orders'],

@@ -132,6 +132,7 @@ async fn checkout_snapshots_reserves_and_manual_payment_are_idempotent() {
     let router = app(AppState {
         database: Some(pool.clone()),
         email: email.clone(),
+        media_storage: Some(storage.clone()),
         manual_payments_enabled: true,
         ..AppState::default()
     });
@@ -491,6 +492,21 @@ async fn checkout_snapshots_reserves_and_manual_payment_are_idempotent() {
     assert_eq!(paid_body["payment_status"], "paid");
     assert_eq!(paid_body["timeline"].as_array().unwrap().len(), 2);
     assert_eq!(paid_body["notifications"][0]["kind"], "order_confirmation");
+    assert_eq!(paid_body["notifications"][0]["status"], "sent");
+    assert_eq!(paid_body["notifications"][0]["attempt_count"], 1);
+    assert_eq!(
+        request(
+            &router,
+            "GET",
+            "/api/development/emails/latest?to=order%40example.com&kind=order_confirmation",
+            None,
+            None,
+            None,
+        )
+        .await
+        .status(),
+        StatusCode::OK
+    );
     let dashboard = request(
         &router,
         "GET",
@@ -532,6 +548,9 @@ async fn checkout_snapshots_reserves_and_manual_payment_are_idempotent() {
     )
     .await;
     assert_eq!(paid_replay.status(), StatusCode::OK);
+    let replay_body = response_json(paid_replay).await;
+    assert_eq!(replay_body["notifications"][0]["attempt_count"], 1);
+    assert_eq!(replay_body["notifications"].as_array().unwrap().len(), 1);
     let quantities: (i64, i64, i64) = sqlx::query_as(
         "SELECT available_quantity, reserved_quantity, committed_quantity FROM inventory_items WHERE variant_id = $1",
     )
@@ -677,6 +696,11 @@ async fn checkout_snapshots_reserves_and_manual_payment_are_idempotent() {
     .await;
     assert_eq!(conflict.status(), StatusCode::CONFLICT);
 
+    // Requeue explicitly to exercise worker failure and recovery independently
+    // of the successful immediate confirmation above.
+    sqlx::query("UPDATE notification_jobs SET status = 'pending', sent_at = NULL, next_attempt_at = now() WHERE order_id = $1")
+        .bind(Uuid::parse_str(order_id).unwrap())
+        .execute(&pool).await.unwrap();
     let failed_delivery =
         deliver_due_with_storage(&pool, &EmailService::default(), 25, Some(&storage))
             .await
@@ -1145,6 +1169,46 @@ async fn stripe_webhooks_are_signed_idempotent_and_drive_inventory() {
     assert_eq!(paid_body["order_status"], "confirmed");
     assert_eq!(paid_body["payment_status"], "paid");
     assert_eq!(paid_body["payment"]["attempts"][0]["status"], "succeeded");
+    // Disabled email delivery fails without failing payment or webhook replay.
+    assert_eq!(paid_body["notifications"][0]["status"], "pending");
+    assert_eq!(paid_body["notifications"][0]["attempt_count"], 1);
+    assert!(paid_body["notifications"][0]["last_error"].is_string());
+    let deferred: bool = sqlx::query_scalar(
+        "SELECT next_attempt_at > now() FROM notification_jobs WHERE order_id = $1",
+    )
+    .bind(Uuid::parse_str(&order_id).unwrap())
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(deferred);
+    let email = EmailService::development("http://127.0.0.1:3000");
+    assert_eq!(
+        deliver_due_with_storage(&pool, &email, 25, None)
+            .await
+            .unwrap()
+            .sent,
+        0
+    );
+    sqlx::query("UPDATE notification_jobs SET next_attempt_at = now() WHERE order_id = $1")
+        .bind(Uuid::parse_str(&order_id).unwrap())
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        deliver_due_with_storage(&pool, &email, 25, None)
+            .await
+            .unwrap()
+            .sent,
+        1
+    );
+    assert_eq!(
+        deliver_due_with_storage(&pool, &email, 25, None)
+            .await
+            .unwrap()
+            .sent,
+        0
+    );
+
     assert_eq!(paid_body["payment"]["history"].as_array().unwrap().len(), 3);
     let quantities: (i64, i64, i64) = sqlx::query_as(
         "SELECT available_quantity, reserved_quantity, committed_quantity FROM inventory_items WHERE variant_id = $1",
@@ -1466,6 +1530,383 @@ async fn prepare_discount_cart(
         StatusCode::OK
     );
     cookie
+}
+
+#[tokio::test]
+async fn admin_notifications_are_searchable_protected_and_manually_retryable() {
+    let Some(database_url) = env::var("DATABASE_URL").ok() else {
+        eprintln!("skipping PostgreSQL integration test because DATABASE_URL is not set");
+        return;
+    };
+    let schema = format!("notification_admin_test_{}", Uuid::new_v4().simple());
+    let admin = PgPoolOptions::new()
+        .max_connections(1)
+        .connect(&database_url)
+        .await
+        .unwrap();
+    sqlx::query(&format!(r#"CREATE SCHEMA "{schema}""#))
+        .execute(&admin)
+        .await
+        .unwrap();
+    let pool = isolated_pool(&database_url, &schema).await;
+    sqlx::migrate!("../migrations").run(&pool).await.unwrap();
+    let variant = insert_product(&pool).await;
+    insert_owner(&pool).await;
+    insert_order_reader(&pool).await;
+    let secret = "whsec_admin_notifications";
+    let router = app(AppState {
+        database: Some(pool.clone()),
+        payments: PaymentService::with_provider(Arc::new(FakeStripe), secret),
+        ..AppState::default()
+    });
+    create_verified_customer(&pool).await;
+    let owner = login(&router).await;
+    let reader = login_as(
+        &router,
+        "orders-reader@test.invalid",
+        "integration-test-passphrase",
+    )
+    .await;
+    let (cart, order_id) = create_stripe_order(&router, variant, "notification-admin", None).await;
+    assert_eq!(
+        request(
+            &router,
+            "POST",
+            &format!("/api/orders/{order_id}/payment"),
+            Some(&cart),
+            None,
+            None
+        )
+        .await
+        .status(),
+        StatusCode::OK
+    );
+    let session = format!("cs_test_{}", Uuid::parse_str(&order_id).unwrap().simple());
+    assert_eq!(
+        webhook_request(
+            &router,
+            secret,
+            &stripe_event(
+                "evt_notification_admin",
+                "checkout.session.completed",
+                &session,
+                &order_id,
+                "paid"
+            )
+        )
+        .await
+        .status(),
+        StatusCode::OK
+    );
+    let (id, order_number): (Uuid, String) = sqlx::query_as("SELECT job.id, orders.order_number FROM notification_jobs job JOIN orders ON orders.id = job.order_id WHERE orders.id = $1")
+        .bind(Uuid::parse_str(&order_id).unwrap()).fetch_one(&pool).await.unwrap();
+    let send_path = format!("/api/admin/notifications/{id}/send");
+    let reason = json!({"reason": "Customer reported missing confirmation"});
+    for (cookie, expected) in [
+        (None, StatusCode::UNAUTHORIZED),
+        (Some(reader.as_str()), StatusCode::FORBIDDEN),
+    ] {
+        assert_eq!(
+            request(
+                &router,
+                "GET",
+                "/api/admin/notifications",
+                cookie,
+                None,
+                None
+            )
+            .await
+            .status(),
+            expected
+        );
+        assert_eq!(
+            request(
+                &router,
+                "POST",
+                &send_path,
+                cookie,
+                Some(reason.clone()),
+                None
+            )
+            .await
+            .status(),
+            expected
+        );
+    }
+    // Permission to view the queue does not grant permission to send.
+    sqlx::query("INSERT INTO staff_capabilities (staff_user_id, capability_name) SELECT id, 'notifications.read' FROM staff_users WHERE email = 'orders-reader@test.invalid'")
+        .execute(&pool).await.unwrap();
+    assert_eq!(
+        request(
+            &router,
+            "GET",
+            "/api/admin/notifications",
+            Some(&reader),
+            None,
+            None
+        )
+        .await
+        .status(),
+        StatusCode::OK
+    );
+    assert_eq!(
+        request(
+            &router,
+            "POST",
+            &send_path,
+            Some(&reader),
+            Some(reason.clone()),
+            None
+        )
+        .await
+        .status(),
+        StatusCode::FORBIDDEN
+    );
+    for q in [
+        &order_number,
+        "ORDER@EXAMPLE.COM",
+        &id.to_string(),
+        "order_confirmation",
+    ] {
+        let page = request(
+            &router,
+            "GET",
+            &format!("/api/admin/notifications?q={q}&page_size=1"),
+            Some(&owner),
+            None,
+            None,
+        )
+        .await;
+        assert_eq!(page.status(), StatusCode::OK);
+        assert_eq!(page.headers()[header::CACHE_CONTROL], "no-store, private");
+        let page = response_json(page).await;
+        assert_eq!(page["total"], 1);
+        assert_eq!(page["items"][0]["id"], id.to_string());
+        assert_eq!(page["items"][0]["can_send"], true);
+    }
+    for query in ["status=unknown", "page=0", "page_size=101"] {
+        assert_eq!(
+            request(
+                &router,
+                "GET",
+                &format!("/api/admin/notifications?{query}"),
+                Some(&owner),
+                None,
+                None
+            )
+            .await
+            .status(),
+            StatusCode::BAD_REQUEST
+        );
+    }
+    assert_eq!(
+        response_json(
+            request(
+                &router,
+                "GET",
+                "/api/admin/notifications?page=2&page_size=1",
+                Some(&owner),
+                None,
+                None
+            )
+            .await
+        )
+        .await["items"],
+        json!([])
+    );
+    assert_eq!(
+        request(
+            &router,
+            "POST",
+            &send_path,
+            Some(&owner),
+            Some(json!({"reason": " "})),
+            None
+        )
+        .await
+        .status(),
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    assert_eq!(
+        request(
+            &router,
+            "POST",
+            &format!("/api/admin/notifications/{}/send", Uuid::now_v7()),
+            Some(&owner),
+            Some(reason.clone()),
+            None
+        )
+        .await
+        .status(),
+        StatusCode::NOT_FOUND
+    );
+    // A non-order job is searchable, but cannot be dispatched without a handler.
+    let future_id = Uuid::now_v7();
+    sqlx::query("INSERT INTO notification_jobs (id, kind, deduplication_key, recipient_email) VALUES ($1, 'signup_confirmation', $1::text, 'signup@example.com')")
+        .bind(future_id).execute(&pool).await.unwrap();
+    let future = response_json(
+        request(
+            &router,
+            "GET",
+            "/api/admin/notifications?kind=signup_confirmation",
+            Some(&owner),
+            None,
+            None,
+        )
+        .await,
+    )
+    .await;
+    assert_eq!(future["total"], 1);
+    assert!(future["items"][0]["order_id"].is_null());
+    assert_eq!(future["items"][0]["can_send"], false);
+    assert_eq!(
+        request(
+            &router,
+            "POST",
+            &format!("/api/admin/notifications/{future_id}/send"),
+            Some(&owner),
+            Some(reason.clone()),
+            None
+        )
+        .await
+        .status(),
+        StatusCode::CONFLICT
+    );
+    // The manual endpoint bypasses retry timing, but still records send failure.
+    let failed = request(
+        &router,
+        "POST",
+        &send_path,
+        Some(&owner),
+        Some(reason.clone()),
+        None,
+    )
+    .await;
+    assert_eq!(failed.status(), StatusCode::OK);
+    let failed = response_json(failed).await;
+    assert_eq!(failed["status"], "pending");
+    assert_eq!(failed["attempt_count"], 2);
+    assert!(failed["last_error"].is_string());
+    let email = EmailService::development("http://127.0.0.1:3000");
+    let enabled = app(AppState {
+        database: Some(pool.clone()),
+        email: email.clone(),
+        ..AppState::default()
+    });
+    // Fresh processing claims and suppressed jobs cannot be manually sent.
+    for status in ["processing", "suppressed"] {
+        sqlx::query("UPDATE notification_jobs SET status = $2, locked_at = now() WHERE id = $1")
+            .bind(id)
+            .bind(status)
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert_eq!(
+            request(
+                &enabled,
+                "POST",
+                &send_path,
+                Some(&owner),
+                Some(reason.clone()),
+                None
+            )
+            .await
+            .status(),
+            StatusCode::CONFLICT
+        );
+    }
+    // Staff can retry an exhausted job; concurrent requests cannot both send it.
+    sqlx::query("UPDATE notification_jobs SET status = 'failed', attempt_count = 8, locked_at = NULL WHERE id = $1").bind(id).execute(&pool).await.unwrap();
+    let (a, b) = tokio::join!(
+        request(
+            &enabled,
+            "POST",
+            &send_path,
+            Some(&owner),
+            Some(reason.clone()),
+            None
+        ),
+        request(
+            &enabled,
+            "POST",
+            &send_path,
+            Some(&owner),
+            Some(reason.clone()),
+            None
+        )
+    );
+    let mut statuses = [a.status().as_u16(), b.status().as_u16()];
+    statuses.sort();
+    assert_eq!(statuses, [200, 409]);
+    let sent = if a.status() == StatusCode::OK {
+        response_json(a).await
+    } else {
+        response_json(b).await
+    };
+    assert_eq!(sent["status"], "sent");
+    assert_eq!(sent["attempt_count"], 9);
+    assert_eq!(sent["can_send"], false);
+    assert_eq!(
+        request(
+            &enabled,
+            "POST",
+            &send_path,
+            Some(&owner),
+            Some(reason.clone()),
+            None
+        )
+        .await
+        .status(),
+        StatusCode::CONFLICT
+    );
+    let audit_count: i64 = sqlx::query_scalar("SELECT count(*) FROM audit_log WHERE action = 'notification.manual_send' AND entity_id = $1 AND reason = $2 AND actor_staff_user_id = (SELECT id FROM staff_users WHERE email = 'orders-owner@test.invalid')")
+        .bind(id.to_string()).bind(reason["reason"].as_str().unwrap()).fetch_one(&pool).await.unwrap();
+    assert_eq!(audit_count, 2);
+    let attempts: Vec<(i32, String)> = sqlx::query_as("SELECT attempt_number, outcome FROM notification_attempts WHERE notification_job_id = $1 ORDER BY attempt_number")
+        .bind(id).fetch_all(&pool).await.unwrap();
+    assert_eq!(
+        attempts,
+        vec![
+            (1, "failed".into()),
+            (2, "failed".into()),
+            (9, "sent".into())
+        ]
+    );
+    let sent_page = response_json(
+        request(
+            &enabled,
+            "GET",
+            &format!("/api/admin/notifications?status=sent&q={order_number}"),
+            Some(&owner),
+            None,
+            None,
+        )
+        .await,
+    )
+    .await;
+    assert_eq!(sent_page["total"], 1);
+    // The worker can recover a stale manual claim even beyond its normal retry cap.
+    sqlx::query("UPDATE notification_jobs SET status = 'processing', sent_at = NULL, locked_at = now() - interval '16 minutes' WHERE id = $1").bind(id).execute(&pool).await.unwrap();
+    assert_eq!(
+        deliver_due_with_storage(&pool, &email, 25, None)
+            .await
+            .unwrap()
+            .sent,
+        1
+    );
+    let unchanged: i32 =
+        sqlx::query_scalar("SELECT attempt_count FROM notification_jobs WHERE id = $1")
+            .bind(future_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(unchanged, 0);
+    pool.close().await;
+    sqlx::query(&format!(r#"DROP SCHEMA "{schema}" CASCADE"#))
+        .execute(&admin)
+        .await
+        .unwrap();
+    admin.close().await;
 }
 
 async fn create_stripe_order(

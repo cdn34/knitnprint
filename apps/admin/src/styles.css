@@ -83,7 +83,7 @@ h1 { margin: .25rem 0 0; font: 500 2rem Georgia, serif; }
 .dashboard-stock-empty svg { width: 20px; }
 .dashboard-stock-empty strong { font-size: .72rem; }
 .dashboard-stock-empty small { color: #6e6864; font-size: .62rem; }
-.staff-section, .catalog-section, .shipping-packages-section, .inventory-section, .customers-section, .orders-section, .feedback-management-section { margin-top: 2.5rem; scroll-margin-top: 1rem; }
+.staff-section, .catalog-section, .shipping-packages-section, .inventory-section, .customers-section, .orders-section, .feedback-management-section, .notifications-section { margin-top: 2.5rem; scroll-margin-top: 1rem; }
 .section-heading { display: flex; align-items: end; justify-content: space-between; margin-bottom: 1rem; }
 .section-heading p { margin: 0 0 .35rem; color: #765c47; font-size: .65rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
 .section-heading h2 { margin: 0; font: 500 1.8rem Georgia, serif; }
@@ -832,3 +832,19 @@ h1 { margin: .25rem 0 0; font: 500 2rem Georgia, serif; }
 .order-originals a { min-height: 32px; padding: .28rem .5rem .28rem .3rem; display: inline-flex; align-items: center; gap: .4rem; border: 1px solid #d7cac4; border-radius: .42rem; color: #6f4150; background: #fff; font-size: .54rem; font-weight: 750; text-decoration: none; }
 .order-originals a:hover { border-color: #986276; background: #fff8fa; }
 .order-originals img { width: 26px; height: 26px; border-radius: .28rem; object-fit: cover; }
+
+.notifications-section > p { color: var(--muted, #666); }
+.notification-filters { display: flex; flex-wrap: wrap; align-items: end; gap: 1rem; margin: 1.5rem 0; }
+.notification-filters label, .notification-send label { display: grid; gap: .4rem; flex: 1 1 12rem; }
+.notification-filters input, .notification-filters select, .notification-send input { width: 100%; padding: .65rem; border: 1px solid #d8d5ce; border-radius: .4rem; background: white; color: inherit; }
+.notification-filters button, .notification-send button, .notification-pagination button, .notification-table button { padding: .65rem 1rem; border: 1px solid #d8d5ce; border-radius: .4rem; background: white; cursor: pointer; }
+.notification-filters button:disabled, .notification-send button:disabled, .notification-pagination button:disabled, .notification-table button:disabled { opacity: .5; cursor: default; }
+.notification-send { padding: 1.25rem; border: 1px solid #d8d5ce; border-radius: .65rem; background: #faf8f3; margin: 1rem 0; }
+.notification-send button { margin: 1rem .5rem 0 0; }
+.notification-table-wrap { overflow-x: auto; }
+.notification-table { width: 100%; border-collapse: collapse; text-align: left; font-size: .875rem; }
+.notification-table th, .notification-table td { padding: 1rem .75rem; border-bottom: 1px solid #e5e1d9; vertical-align: top; }
+.notification-table td span, .notification-table td a, .notification-table td small { display: block; margin-top: .35rem; }
+.notification-table td:first-child { overflow-wrap: anywhere; }
+.notification-error { display: block; color: #9d352b; overflow-wrap: anywhere; max-width: 38rem; margin-top: .5rem; }
+.notification-pagination { display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: end; gap: 1rem; margin-top: 1.5rem; }

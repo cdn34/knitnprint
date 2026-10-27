@@ -22,7 +22,7 @@ use crate::{
     config::Environment,
     error::ErrorBody,
     inventory::{commit_in_transaction, release_in_transaction},
-    notifications::enqueue_order_confirmation,
+    notifications::{deliver_order_confirmation, enqueue_order_confirmation},
 };
 
 const CART_COOKIE: &str = "knitnprint_cart";
@@ -780,7 +780,18 @@ pub async fn stripe_webhook(
     )
     .await
     {
-        Ok(()) => StatusCode::OK.into_response(),
+        Ok(()) => {
+            if matches!(transition, WebhookTransition::Succeeded) {
+                deliver_order_confirmation(
+                    &pool,
+                    &state.email,
+                    order_id,
+                    state.media_storage.as_ref(),
+                )
+                .await;
+            }
+            StatusCode::OK.into_response()
+        }
         Err(_) => payments_unavailable(),
     }
 }
