@@ -37,8 +37,8 @@ details and link to the order; the email does not invent a product preview.
 
 PT/EN/ES subjects, body copy, dates and monetary formatting follow the immutable
 checkout language, with English as the fallback. Payment confirmation and outbox
-deduplication remain unchanged. Other notification kinds retain their existing
-behavior; this renderer does not send a shipment promise or progress bar.
+deduplication remain unchanged. Carrier updates replace store fulfillment notifications; pending fulfillment jobs
+are suppressed. The confirmation does not show a progress bar.
 
 The standalone document is a browser preview. The production version uses tables,
 inline styles, system-font fallbacks, PNG attachments and a plain-text alternative

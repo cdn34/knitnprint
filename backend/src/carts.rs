@@ -28,8 +28,17 @@ use crate::{
 const CART_COOKIE: &str = "knitnprint_cart";
 const CART_DAYS: i64 = 30;
 
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+pub struct PersonalizationPreview {
+    pub view_id: String,
+    pub view_label: String,
+    pub media_id: Uuid,
+}
+
 #[derive(Deserialize, Serialize, ToSchema)]
 pub struct AddCartItemRequest {
+    #[serde(default)]
+    pub personalization_previews: Vec<PersonalizationPreview>,
     pub variant_id: Uuid,
     pub quantity: i32,
     #[serde(default)]
@@ -271,19 +280,6 @@ pub async fn add_item(
         return invalid_customization();
     }
     let photo_ids = media_ids.clone();
-    let preview_ids = match confirmation_preview_ids(input.customization.as_ref()) {
-        Some(ids) => ids,
-        None => return invalid_customization(),
-    };
-    if preview_ids.iter().any(|id| photo_ids.contains(id)) {
-        return invalid_customization();
-    }
-    media_ids.extend(preview_ids.iter().copied());
-    media_ids.sort_unstable();
-    media_ids.dedup();
-    if media_ids.len() > 48 {
-        return invalid_customization();
-    }
     let Some(idempotency_hash) = idempotency_hash(&headers) else {
         return invalid_idempotency_key();
     };
@@ -296,7 +292,10 @@ pub async fn add_item(
     };
     let signature = format!(
         "add:{}:{}:{:?}:{:?}",
-        input.variant_id, input.quantity, input.customization, media_ids
+        input.variant_id,
+        input.quantity,
+        input.customization,
+        (&photo_ids, &input.personalization_previews)
     );
     let mut transaction = match pool.begin().await {
         Ok(transaction) => transaction,
@@ -321,7 +320,21 @@ pub async fn add_item(
     if !customization_allowed(&variant, input.customization.as_ref(), &photo_ids) {
         return invalid_customization();
     }
-    for media_id in &media_ids {
+    if !valid_previews(
+        input.customization.as_ref(),
+        &input.personalization_previews,
+        &photo_ids,
+    ) {
+        return invalid_customization();
+    }
+    let mut owned_media_ids = media_ids.clone();
+    owned_media_ids.extend(
+        input
+            .personalization_previews
+            .iter()
+            .map(|preview| preview.media_id),
+    );
+    for media_id in &owned_media_ids {
         let ready: bool = match sqlx::query_scalar(
             "SELECT EXISTS(SELECT 1 FROM media_assets WHERE id=$1 AND status='ready' AND personalization_cart_id=$2 AND NOT EXISTS (SELECT 1 FROM product_media WHERE media_asset_id=$1))",
         )
@@ -362,7 +375,7 @@ pub async fn add_item(
     }
     if sqlx::query(
         r##"
-        INSERT INTO cart_lines (id, cart_id, variant_id, quantity, unit_price_minor, currency, customization, customization_media_asset_id, customization_media_asset_ids, confirmation_preview_media_asset_ids)
+        INSERT INTO cart_lines (id, cart_id, variant_id, quantity, unit_price_minor, currency, customization, customization_media_asset_id, customization_media_asset_ids, personalization_previews)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         ON CONFLICT (cart_id, variant_id) WHERE customization IS NULL DO UPDATE
         SET quantity = EXCLUDED.quantity,
@@ -380,7 +393,7 @@ pub async fn add_item(
     .bind(&input.customization)
     .bind(photo_ids.first().copied())
     .bind(&photo_ids)
-    .bind(&preview_ids)
+    .bind(serde_json::to_value(&input.personalization_previews).expect("serializable previews"))
     .execute(&mut *transaction)
     .await
     .is_err()
@@ -1067,72 +1080,46 @@ async fn load_cart(pool: &PgPool, cart_id: Uuid) -> Result<Cart, sqlx::Error> {
     })
 }
 
+fn valid_previews(
+    customization: Option<&Value>,
+    previews: &[PersonalizationPreview],
+    originals: &[Uuid],
+) -> bool {
+    if previews.is_empty() {
+        return true;
+    } // Legacy carts may not have saved previews.
+    if previews.len() > 16 {
+        return false;
+    }
+    let Some(areas) = customization
+        .and_then(|value| value.get("areas"))
+        .and_then(Value::as_array)
+    else {
+        return false;
+    };
+    let views: std::collections::BTreeSet<_> = areas
+        .iter()
+        .filter_map(|area| area.get("view_id").and_then(Value::as_str))
+        .collect();
+    let supplied: std::collections::BTreeSet<_> = previews
+        .iter()
+        .map(|preview| preview.view_id.as_str())
+        .collect();
+    let media: std::collections::BTreeSet<_> =
+        previews.iter().map(|preview| preview.media_id).collect();
+    supplied == views
+        && supplied.len() == previews.len()
+        && media.len() == previews.len()
+        && previews.iter().all(|preview| {
+            !originals.contains(&preview.media_id)
+                && !preview.view_label.trim().is_empty()
+                && preview.view_label.len() <= 200
+                && preview.view_id.len() <= 100
+        })
+}
+
 fn valid_customization(value: Option<&Value>) -> bool {
     value.is_none_or(|value| value.is_object() && value.to_string().len() <= 20_000)
-}
-
-fn confirmation_preview_ids(customization: Option<&Value>) -> Option<Vec<Uuid>> {
-    let Some(raw) = customization.and_then(|v| v.get("previews")) else {
-        return Some(Vec::new());
-    };
-    let previews = raw.as_array()?;
-    if previews.is_empty() || previews.len() > 8 {
-        return None;
-    }
-    let areas = customization?.get("areas")?.as_array()?;
-    let mut ids = Vec::new();
-    let mut views = Vec::new();
-    for preview in previews {
-        let view_id = preview.get("view_id")?.as_str()?;
-        let label = preview.get("view_label")?.as_str()?;
-        let id = Uuid::parse_str(preview.get("media_id")?.as_str()?).ok()?;
-        if label.len() > 200
-            || views.contains(&view_id)
-            || ids.contains(&id)
-            || !areas
-                .iter()
-                .any(|area| area.get("view_id").and_then(Value::as_str) == Some(view_id))
-        {
-            return None;
-        }
-        views.push(view_id);
-        ids.push(id);
-    }
-    if areas
-        .iter()
-        .any(|area| !views.contains(&area.get("view_id").and_then(Value::as_str).unwrap_or("")))
-    {
-        return None;
-    }
-    Some(ids)
-}
-
-#[cfg(test)]
-mod confirmation_preview_tests {
-    use super::*;
-    use serde_json::json;
-
-    #[test]
-    fn saved_previews_cover_each_customized_face_and_reject_duplicates() {
-        let front = Uuid::new_v4();
-        let back = Uuid::new_v4();
-        let mut customization = json!({"areas":[{"view_id":"front"},{"view_id":"back"}],"previews":[
-            {"view_id":"front","view_label":"Front","media_id":front},
-            {"view_id":"back","view_label":"Back","media_id":back}
-        ]});
-        assert_eq!(
-            confirmation_preview_ids(Some(&customization)),
-            Some(vec![front, back])
-        );
-        customization["previews"][1]["media_id"] = json!(front);
-        assert!(confirmation_preview_ids(Some(&customization)).is_none());
-        customization["previews"] =
-            json!([{ "view_id":"front","view_label":"Front","media_id":front }]);
-        assert!(confirmation_preview_ids(Some(&customization)).is_none());
-        customization["previews"] = json!("invalid");
-        assert!(confirmation_preview_ids(Some(&customization)).is_none());
-        assert_eq!(confirmation_preview_ids(None), Some(vec![]));
-    }
 }
 
 fn valid_element_frame(value: &Value) -> bool {
@@ -2444,5 +2431,40 @@ mod personalization_tests {
         shirt.personalization_views[0]["variant_references"][0]["configured"] =
             serde_json::json!(false);
         assert!(!customization_allowed(&shirt, Some(&valid), &[]));
+    }
+}
+
+#[cfg(test)]
+mod preview_tests {
+    use super::*;
+    #[test]
+    fn previews_cover_each_customized_face_and_cannot_reuse_originals() {
+        let id = Uuid::now_v7();
+        let customization = serde_json::json!({"areas":[{"view_id":"front"},{"view_id":"back"}]});
+        let first = PersonalizationPreview {
+            view_id: "front".into(),
+            view_label: "Front".into(),
+            media_id: id,
+        };
+        let second = PersonalizationPreview {
+            view_id: "back".into(),
+            view_label: "Back".into(),
+            media_id: Uuid::now_v7(),
+        };
+        assert!(!valid_previews(
+            Some(&customization),
+            std::slice::from_ref(&first),
+            &[]
+        ));
+        assert!(valid_previews(
+            Some(&customization),
+            &[first.clone(), second.clone()],
+            &[]
+        ));
+        assert!(!valid_previews(
+            Some(&customization),
+            &[first, second],
+            &[id]
+        ));
     }
 }

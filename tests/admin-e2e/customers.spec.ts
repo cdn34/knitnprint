@@ -1,5 +1,6 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test } from '@playwright/test'
+import { signInVerifiedCustomer } from '../helpers/customer'
 
 const ownerEmail = process.env.E2E_OWNER_EMAIL ?? 'owner@knitnprint.local'
 const ownerPassword =
@@ -13,6 +14,13 @@ test('lets authorized staff search and inspect a guest customer', async ({
   const lastName = `Needle ${unique}`
   const customerEmail = `marta-${unique}@example.com`
   const recipientName = `${firstName} ${lastName}`
+
+  await signInVerifiedCustomer(
+    page.request,
+    `staff-fixture-${unique}@example.com`,
+    'Fixture',
+    'Customer',
+  )
 
   const fixture = await page.request.post(
     'http://127.0.0.1:8080/api/customers/guest',

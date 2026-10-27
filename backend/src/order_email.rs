@@ -1,448 +1,482 @@
-//! Production, script-free version of the approved confirmation design.
-use std::io::Cursor;
-
-use image::ImageFormat;
-
+//! Production, table-based version of the approved confirmation design.
+//! Personalization images are immutable order snapshots, never catalog substitutes.
 use crate::{email::escape_html, orders::Order};
+use serde_json::Value;
+use std::collections::BTreeMap;
+use uuid::Uuid;
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub enum EmailLocale {
-    Pt,
-    #[default]
-    En,
-    Es,
-}
-
-impl EmailLocale {
-    pub fn from_code(value: Option<&str>) -> Self {
-        match value
-            .unwrap_or("en")
-            .trim()
-            .to_ascii_lowercase()
-            .split(['-', '_'])
-            .next()
-        {
-            Some("pt") => Self::Pt,
-            Some("es") => Self::Es,
-            _ => Self::En,
-        }
-    }
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Pt => "pt",
-            Self::En => "en",
-            Self::Es => "es",
-        }
-    }
-    pub fn text(self, pt: &'static str, en: &'static str, es: &'static str) -> &'static str {
-        match self {
-            Self::Pt => pt,
-            Self::En => en,
-            Self::Es => es,
-        }
-    }
-    pub fn money(self, minor: i64, currency: &str) -> String {
-        let sign = if minor < 0 { "−" } else { "" };
-        let amount = minor.unsigned_abs();
-        let decimal = if self == Self::En { '.' } else { ',' };
-        let digits = format!("{}{decimal}{:02}", amount / 100, amount % 100);
-        if currency == "EUR" {
-            if self == Self::En {
-                format!("{sign}€{digits}")
-            } else {
-                format!("{sign}{digits} €")
-            }
-        } else {
-            format!("{sign}{currency} {digits}")
-        }
-    }
-    fn date(self, value: &str) -> String {
-        let parts: Vec<_> = value
-            .split('T')
-            .next()
-            .unwrap_or(value)
-            .split('-')
-            .collect();
-        if parts.len() != 3 {
-            return value.to_owned();
-        }
-        let day = parts[2].trim_start_matches('0');
-        let month = parts[1].parse::<usize>().unwrap_or(0);
-        if !(1..=12).contains(&month) {
-            return value.to_owned();
-        }
-        let months = match self {
-            Self::Pt => [
-                "janeiro",
-                "fevereiro",
-                "março",
-                "abril",
-                "maio",
-                "junho",
-                "julho",
-                "agosto",
-                "setembro",
-                "outubro",
-                "novembro",
-                "dezembro",
-            ],
-            Self::En => [
-                "January",
-                "February",
-                "March",
-                "April",
-                "May",
-                "June",
-                "July",
-                "August",
-                "September",
-                "October",
-                "November",
-                "December",
-            ],
-            Self::Es => [
-                "enero",
-                "febrero",
-                "marzo",
-                "abril",
-                "mayo",
-                "junio",
-                "julio",
-                "agosto",
-                "septiembre",
-                "octubre",
-                "noviembre",
-                "diciembre",
-            ],
-        };
-        if self == Self::En {
-            format!("{day} {} {}", months[month - 1], parts[0])
-        } else {
-            format!("{day} de {} de {}", months[month - 1], parts[0])
-        }
-    }
-}
-
-#[derive(Clone, Debug)]
 pub struct InlineImage {
     pub cid: String,
     pub bytes: Vec<u8>,
-    pub content_type: String,
 }
 
-pub struct ConfirmationContent {
+pub struct RenderedConfirmation {
     pub subject: String,
     pub text: String,
     pub html: String,
-    pub images: Vec<InlineImage>,
-    pub action_url: String,
 }
 
-/// Images are attached with CID references, never public links to private uploads.
-pub fn render(
-    order: &Order,
-    locale: EmailLocale,
-    base_url: &str,
-    mut images: Vec<InlineImage>,
-) -> Result<ConfirmationContent, String> {
-    let tr = |pt, en, es| locale.text(pt, en, es);
-    let e = escape_html;
-    let money = |amount| locale.money(amount, &order.currency);
-    let subject = format!(
-        "{} — {}",
-        tr(
-            "A tua encomenda KnitnPrint está confirmada",
-            "Your KnitnPrint order is confirmed",
-            "Tu pedido de KnitnPrint está confirmado"
-        ),
-        order.order_number
-    );
-    let action_url = format!(
-        "{}/cart?order_id={}&source=account",
-        base_url.trim_end_matches('/'),
-        order.id
-    );
-    let intro = format!(
-        "{} {}. {}",
-        tr("Olá,", "Hi", "Hola,"),
-        order.customer.first_name,
-        tr(
-            "Recebemos o teu pagamento e vamos preparar cada detalhe com cuidado. A tua ideia está em boas mãos.",
-            "We have received your payment and will prepare every detail with care. Your idea is in good hands.",
-            "Hemos recibido tu pago y prepararemos cada detalle con cuidado. Tu idea está en buenas manos."
-        )
-    );
-    let title = tr(
-        "A tua encomenda está confirmada.",
-        "Your order is confirmed.",
-        "Tu pedido está confirmado.",
-    );
-    let ribbon = tr(
-        "Feito com cuidado em Portugal",
-        "Made with care in Portugal",
-        "Hecho con cuidado en Portugal",
-    );
-    let next = tr(
-        "Vamos preparar a tua encomenda com cuidado. As atualizações sobre o transporte e a entrega serão enviadas diretamente pela transportadora.",
-        "We will prepare your order with care. Shipping and delivery updates will be sent directly by the carrier.",
-        "Prepararemos tu pedido con cuidado. Las actualizaciones sobre el transporte y la entrega las enviará directamente la empresa de transporte.",
-    );
+pub fn preview_cid(media_id: Uuid) -> String {
+    format!("preview-{media_id}@knitnprint")
+}
+
+pub fn render(order: &Order, locale: &str, base_url: &str) -> RenderedConfirmation {
+    let locale = if matches!(locale, "pt" | "es") {
+        locale
+    } else {
+        "en"
+    };
+    let translations: BTreeMap<String, BTreeMap<String, String>> =
+        serde_json::from_str(include_str!("../assets/order-email-copy.json"))
+            .expect("bundled translations");
+    let copy = &translations[locale];
+    let t = |key: &str| copy.get(key).map(String::as_str).unwrap_or("");
+    let h = escape_html;
+    let money = |amount| format_money(amount, &order.currency, locale);
+    let url = format!("{base_url}/cart?order_id={}&source=account", order.id);
+    let date = localized_date(&order.created_at, locale);
     let mut text = format!(
-        "{title}\n\n{intro}\n\n{}: {}\n{}: {}\n\n",
-        tr("Encomenda", "Order", "Pedido"),
+        "{}\n\n{} {}. {}\n\n{}: {}\n{}: {}\n\n{}\n",
+        t("title"),
+        t("greeting"),
+        order.customer.first_name,
+        t("introBody"),
+        t("orderLabel"),
         order.order_number,
-        tr("Data", "Date", "Fecha"),
-        locale.date(&order.created_at)
+        t("dateLabel"),
+        date,
+        t("itemsTitle")
     );
-    let mut rows = String::new();
+    let mut items = String::new();
     for line in &order.lines {
-        let mut previews = String::new();
-        let catalog_cid = format!("catalog-{}", line.id);
-        if line.customization.is_none() && images.iter().any(|image| image.cid == catalog_cid) {
-            previews = format!(
-                "<img src=\"cid:{}\" alt=\"{}\" width=\"112\" style=\"display:block;width:112px;max-width:100%;height:auto\">",
-                e(&catalog_cid),
-                e(&line.product_title)
-            );
-        }
-        if let Some(customization) = &line.customization {
-            if let Some(saved) = customization.get("previews").and_then(|v| v.as_array()) {
-                for preview in saved {
-                    let Some(id) = preview.get("media_id").and_then(|v| v.as_str()) else {
-                        continue;
-                    };
-                    let cid = format!("preview-{id}");
-                    if images.iter().any(|image| image.cid == cid) {
-                        let label = preview
-                            .get("view_label")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("");
-                        previews.push_str(&format!("<img src=\"cid:{}\" alt=\"{}\" width=\"112\" style=\"display:block;width:112px;max-width:100%;height:auto;margin-bottom:6px\"><small>{}</small>", e(&cid), e(label), e(label)));
-                    }
-                }
-            }
-        }
-        let mut details = Vec::new();
-        if let Some(areas) = line
-            .customization
-            .as_ref()
-            .and_then(|v| v.get("areas"))
-            .and_then(|v| v.as_array())
-        {
-            for area in areas {
-                let view = area
-                    .get("view_label")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
-                if let Some(content) = area.pointer("/text/content").and_then(|v| v.as_str()) {
-                    details.push(format!(
-                        "{}: “{content}” · {view}",
-                        tr("Texto", "Text", "Texto")
-                    ));
-                }
-                if area.get("photo").is_some() {
-                    details.push(format!(
-                        "{} · {view}",
-                        tr(
-                            "Fotografia personalizada",
-                            "Personalized photo",
-                            "Fotografía personalizada"
+        let options = line
+            .variant_options
+            .as_object()
+            .map(|values| {
+                values
+                    .iter()
+                    .map(|(key, value)| {
+                        format!(
+                            "{key}: {}",
+                            value
+                                .as_str()
+                                .map(str::to_owned)
+                                .unwrap_or_else(|| value.to_string())
                         )
-                    ));
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" · ")
+            })
+            .unwrap_or_default();
+        let mut details = vec![line.variant_title.clone()];
+        if !options.is_empty() {
+            details.push(options);
+        }
+        details.push(format!("{} {}", t("quantity"), line.quantity));
+        let details = details.join(" · ");
+        let mut personalization = Vec::new();
+        if let Some(customization) = &line.customization {
+            if let Some(areas) = customization.get("areas").and_then(Value::as_array) {
+                for area in areas {
+                    personalization.push(describe_area(area, t("text"), t("photo")));
                 }
+            } else {
+                personalization.push(describe_area(customization, t("text"), t("photo")));
             }
         }
-        // Never substitute a generic product image for a missing personalized preview.
-        if line.customization.is_some() && previews.is_empty() {
-            previews = format!(
-                "<span style=\"font-size:12px;color:#6e6864\">{}</span>",
-                tr(
-                    "Personalização guardada na encomenda",
-                    "Personalization saved with your order",
-                    "Personalización guardada en tu pedido"
-                )
+        let previews: Vec<crate::carts::PersonalizationPreview> =
+            serde_json::from_value(line.personalization_previews.clone()).unwrap_or_default();
+        let mut visuals = String::new();
+        for preview in previews {
+            visuals.push_str(&format!("<p style=\"margin:0 0 8px\"><img src=\"cid:{}\" width=\"112\" alt=\"{}\" style=\"display:block;width:112px;max-width:100%;height:auto;border:0\"><span style=\"font-size:11px;color:#6e6864\">{}</span></p>", preview_cid(preview.media_id), h(&preview.view_label), h(&preview.view_label)));
+        }
+        if visuals.is_empty() && line.customization.is_some() {
+            visuals = format!(
+                "<span style=\"font-size:11px;color:#6e6864\">{}</span>",
+                h(t("missingPreview"))
             );
         }
-        let quantity = tr("Quantidade", "Quantity", "Cantidad");
-        let detail_html = details
+        let personal = personalization
             .iter()
-            .map(|value| {
-                format!(
-                    "<p style=\"margin:4px 0;color:#5f4652;font-size:12px;line-height:1.6\">{}</p>",
-                    e(value)
-                )
-            })
-            .collect::<String>();
-        rows.push_str(&format!("<tr><td class=\"product-image\" width=\"124\" valign=\"top\" style=\"padding:18px 12px 18px 0;border-bottom:1px solid #ded4cc\">{previews}</td><td valign=\"top\" style=\"padding:18px 4px;border-bottom:1px solid #ded4cc;overflow-wrap:anywhere\"><strong>{}</strong><p style=\"font-size:12px;color:#6e6864\">{}<br>{quantity}: {} · SKU: {}</p>{detail_html}<p class=\"mobile-price\" style=\"display:none;margin:10px 0 0\">{line_price}</p></td><td class=\"product-price\" align=\"right\" valign=\"top\" style=\"padding:18px 0 18px 6px;border-bottom:1px solid #ded4cc;white-space:nowrap\">{}</td></tr>", e(&line.product_title), e(&line.variant_title), line.quantity, e(&line.sku), e(&money(line.line_total_minor)), line_price=e(&money(line.line_total_minor))));
+            .filter(|value| !value.is_empty())
+            .cloned()
+            .collect::<Vec<_>>()
+            .join(" · ");
         text.push_str(&format!(
-            "{} — {}\n{quantity}: {} · SKU: {}\n{}\n{}\n\n",
+            "\n{}\n{}\n{}\n{}: {} · {}\n",
             line.product_title,
-            line.variant_title,
-            line.quantity,
-            line.sku,
-            details.join("\n"),
+            details,
+            personal,
+            t("unit"),
+            money(line.unit_price_minor),
             money(line.line_total_minor)
         ));
+        items.push_str(&format!(r#"<tr><td width="120" valign="top" style="padding:18px 8px 18px 0;border-bottom:1px solid #ded4cc">{visuals}</td><td valign="top" style="padding:18px 8px;border-bottom:1px solid #ded4cc"><h3 style="margin:0 0 5px;font-size:16px;color:#5f4652">{}</h3><p style="margin:0 0 6px;font-size:12px;color:#6e6864">{}</p><p style="margin:0;font-size:12px;color:#8a6877">{}</p><p style="margin:6px 0 0;font-size:11px;color:#6e6864">{}: {}</p></td><td valign="top" align="right" style="padding:18px 0;border-bottom:1px solid #ded4cc;white-space:nowrap;font-weight:bold;color:#5f4652">{}</td></tr>"#, h(&line.product_title), h(&details), h(&personal), h(t("unit")), h(&money(line.unit_price_minor)), h(&money(line.line_total_minor))));
     }
-    let shipping_label = if order.shipping.method_name == "Shipping not charged" {
-        tr(
-            "Portes de envio — não cobrados nesta fase",
-            "Shipping — not charged at this stage",
-            "Envío — sin cargo en esta fase",
-        )
-    } else {
-        tr("Entrega", "Delivery", "Entrega")
-    };
     let mut totals = String::new();
-    let mut total_row = |label: &str, value: i64, large: bool| {
-        totals.push_str(&format!("<tr><td style=\"padding:8px 0;{}\">{}</td><td align=\"right\" style=\"padding:8px 0;white-space:nowrap;{}\">{}</td></tr>", if large { "border-top:1px solid #ded4cc;font:22px Georgia,serif;color:#5f4652" } else { "color:#6e6864" }, e(label), if large { "border-top:1px solid #ded4cc;font-size:22px;color:#5f4652" } else { "" }, e(&money(value))));
-        text.push_str(&format!("{label}: {}\n", money(value)));
-    };
-    total_row(
-        tr("Subtotal", "Subtotal", "Subtotal"),
-        order.subtotal_minor,
-        false,
-    );
-    if order.discount_minor > 0 {
-        let code = order
-            .discount
-            .as_ref()
-            .map_or("", |discount| discount.code.as_str());
-        total_row(
-            &format!("{} {code}", tr("Desconto", "Discount", "Descuento")),
+    for (label, value) in [
+        (t("subtotal").to_owned(), order.subtotal_minor),
+        (
+            format!(
+                "{} {}",
+                t("discount"),
+                order
+                    .discount
+                    .as_ref()
+                    .map(|discount| discount.code.as_str())
+                    .unwrap_or("")
+            ),
             -order.discount_minor,
-            false,
-        );
+        ),
+        (t("shipping").to_owned(), order.shipping_minor),
+        (t("tax").to_owned(), order.tax_minor),
+        (t("total").to_owned(), order.total_minor),
+    ] {
+        if value == 0 && label.starts_with(t("discount")) {
+            continue;
+        }
+        let grand = label == t("total");
+        totals.push_str(&format!("<tr><td style=\"padding:8px 0;{}\">{}</td><td align=\"right\" style=\"padding:8px 0;{}\">{}</td></tr>", if grand { "border-top:2px solid #5f4652;font-weight:bold;font-size:19px;color:#5f4652" } else { "color:#6e6864" }, h(&label), if grand { "border-top:2px solid #5f4652;font-weight:bold;font-size:19px;color:#5f4652" } else { "color:#5f4652" }, h(&money(value))));
+        text.push_str(&format!("{label}: {}\n", money(value)));
     }
-    total_row(shipping_label, order.shipping_minor, false);
-    if order.tax_minor > 0 {
-        total_row(tr("Impostos", "Tax", "Impuestos"), order.tax_minor, false);
-    }
-    total_row(
-        tr("Total pago", "Total paid", "Total pagado"),
-        order.total_minor,
-        true,
-    );
     let address = &order.shipping_address;
     let address_lines = [
         &address.recipient_name,
         &address.line1,
         &address.line2,
-        &address.postal_code,
-        &address.city,
+        &format!("{} {}", address.postal_code, address.city),
         &address.region,
         &address.country_code,
     ]
     .into_iter()
-    .filter(|s| !s.is_empty())
+    .filter(|value| !value.is_empty())
     .cloned()
     .collect::<Vec<_>>();
+    text.push_str(&format!(
+        "\n{}\n{}\n\n{}: {}\n\n{}\n{}\n\n{}: {}\nsupport@knitnprint.com\n",
+        t("deliveryTitle"),
+        address_lines.join("\n"),
+        t("paymentTitle"),
+        t("paymentConfirmed"),
+        t("nextTitle"),
+        t("nextBody"),
+        t("cta"),
+        url
+    ));
     let address_html = address_lines
         .iter()
-        .map(|s| e(s))
+        .map(|line| h(line))
         .collect::<Vec<_>>()
         .join("<br>");
-    let delivery_title = tr(
-        "Onde vamos entregar",
-        "Your delivery address",
-        "Dónde entregaremos",
-    );
-    let payment = tr("Pagamento", "Payment", "Pago");
-    let confirmed = tr("Confirmado", "Confirmed", "Confirmado");
-    let cta = tr("Ver a minha encomenda", "View my order", "Ver mi pedido");
-    let cta_note = tr(
-        "Podes acompanhar o estado da encomenda na tua conta.",
-        "Follow your order status in your account.",
-        "Puedes seguir el estado del pedido en tu cuenta.",
-    );
-    let next_title = tr("E agora?", "What happens next?", "¿Y ahora?");
-    let footer_title = tr(
-        "Cada ideia conta uma história.",
-        "Every idea tells a story.",
-        "Cada idea cuenta una historia.",
-    );
-    let footer_subtitle = tr(
-        "Obrigada por nos deixares fazer parte da tua.",
-        "Thank you for letting us be part of yours.",
-        "Gracias por dejarnos formar parte de la tuya.",
-    );
-    let help = tr(
-        "Precisas de ajuda? Fala connosco.",
-        "Need a hand? We are here to help.",
-        "¿Necesitas ayuda? Escríbenos.",
-    );
-    let eyebrow = tr(
-        "Obrigada por escolheres a KnitnPrint",
-        "Thank you for choosing KnitnPrint",
-        "Gracias por elegir KnitnPrint",
-    );
-    let items_title = tr(
-        "As tuas escolhas",
-        "Your chosen pieces",
-        "Tus piezas elegidas",
-    );
     let html = format!(
-        r##"<!doctype html><html lang="{lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>@media(max-width:480px){{.content{{padding:20px!important}}.heading{{font-size:30px!important}}.product-image{{width:80px!important;padding-right:8px!important}}.product-image img{{width:72px!important}}.product-price{{display:none!important}}.mobile-price{{display:block!important}}}}</style></head><body style="margin:0;padding:0;background:#f7f3ef;color:#2e2e2d;font:14px/1.65 Arial,Helvetica,sans-serif"><table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr><td align="center" style="padding:24px 8px"><table role="presentation" width="620" cellspacing="0" cellpadding="0" style="width:100%;max-width:620px;background:#fffdfc;border:1px solid #ded4cc;table-layout:fixed"><tr><td align="center" style="background:#5f4652;color:#fffdfc;padding:10px 16px;font-size:11px;letter-spacing:1.8px">{ribbon}</td></tr><tr><td align="center" style="background:#f7f3ef;padding:28px 20px"><img src="cid:knitnprint-logo" alt="KnitnPrint" width="280" style="display:block;width:280px;max-width:90%;height:auto"></td></tr><tr><td class="content" align="center" style="background:#f7f3ef;padding:30px 40px;border-top:1px solid #ded4cc"><span style="color:#5f4652;font-size:24px">✓</span><p style="text-transform:uppercase;font-size:11px;letter-spacing:1.4px;color:#5f4652">{eyebrow}</p><h1 class="heading" style="font:35px/1.15 Georgia,serif;color:#5f4652;margin:10px 0">{title}</h1><p style="color:#6e6864;line-height:1.8">{intro}</p></td></tr><tr><td class="content" style="padding:24px 36px"><table role="presentation" width="100%"><tr><td style="font-size:12px;color:#6e6864">{order_label}<br><strong style="color:#2e2e2d">{number}</strong></td><td align="right" style="font-size:12px;color:#6e6864">{date_label}<br><strong style="color:#2e2e2d">{date}</strong></td></tr></table><h2 style="font:21px Georgia,serif;margin:28px 0 0">{items_title}</h2><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="table-layout:fixed">{rows}</table><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:16px">{totals}</table><table role="presentation" width="100%" style="margin:26px 0 8px"><tr><td align="center" bgcolor="#5f4652" style="border-radius:5px"><a href="{url}" style="display:block;padding:14px 16px;color:#fffdfc;text-decoration:none">{cta} ↗</a></td></tr></table><p style="text-align:center;font-size:12px;color:#6e6864">{cta_note}</p><table role="presentation" width="100%" bgcolor="#f7f3ef" style="margin-top:24px"><tr><td valign="top" style="padding:20px"><strong>{delivery_title}</strong><p style="font-size:12px;color:#6e6864">{address_html}</p></td><td valign="top" style="padding:20px"><strong>{payment}</strong><p style="color:#5f4652">✓ {confirmed}</p></td></tr></table><h2 style="font:bold 14px Arial,sans-serif;margin-top:26px">{next_title}</h2><p style="font-size:13px;color:#6e6864">{next}</p></td></tr><tr><td align="center" style="background:#f7f3ef;padding:26px 24px"><p style="font:22px Georgia,serif;color:#5f4652;margin:0 0 8px">{footer_title}</p><p style="font-size:12px;color:#6e6864">{footer_subtitle}</p><p style="font-size:12px;color:#6e6864;margin-top:24px">{help}<br><a style="color:#5f4652" href="mailto:support@knitnprint.com">support@knitnprint.com</a></p><p style="font-size:11px;color:#6e6864">KnitnPrint · {ribbon}</p></td></tr></table></td></tr></table></body></html>"##,
-        lang = locale.as_str(),
-        ribbon = e(ribbon),
-        eyebrow = e(eyebrow),
-        title = e(title),
-        intro = e(&intro),
-        order_label = tr("Encomenda", "Order", "Pedido"),
-        number = e(&order.order_number),
-        date_label = tr("Data", "Date", "Fecha"),
-        date = e(&locale.date(&order.created_at)),
-        items_title = e(items_title),
-        url = e(&action_url)
+        r#"<!doctype html>
+<html lang="{locale}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{subject}</title>
+</head>
+<body style="margin:0;padding:0;background:#f7f3ef;color:#2e2e2d;font:14px/1.65 Arial,Helvetica,sans-serif">
+<div style="display:none;max-height:0;overflow:hidden">{title} {order_number}</div>
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#f7f3ef">
+<tr>
+<td align="center" style="padding:24px 8px">
+<table role="presentation" width="620" cellspacing="0" cellpadding="0" border="0" style="width:100%;max-width:620px;background:#fffdfc;border:1px solid #ded4cc">
+<tr>
+<td align="center" style="padding:10px 18px;background:#5f4652;color:#fffdfc;font-size:11px;letter-spacing:2px">{ribbon}</td>
+</tr>
+<tr>
+<td align="center" style="padding:28px 24px;background:#f7f3ef">
+<img src="cid:wordmark@knitnprint" width="280" alt="KnitnPrint" style="display:block;width:280px;max-width:90%;height:auto;border:0">
+</td>
+</tr>
+<tr>
+<td align="center" style="padding:30px 24px;background:#f7f3ef;border-top:1px solid #ded4cc">
+<span style="color:#5f4652;font-size:32px">&#10003;</span>
+<p style="font-size:10px;letter-spacing:2px;color:#8a6877">{eyebrow}</p>
+<h1 style="margin:12px 0;color:#5f4652;font:32px/1.15 Georgia,serif">{title}</h1>
+<p style="color:#6e6864">{greeting} {name}. {intro}</p>
+</td>
+</tr>
+<tr>
+<td style="padding:24px">
+<table role="presentation" width="100%">
+<tr>
+<td style="color:#6e6864;font-size:11px">{order_label}<br>
+<strong style="color:#5f4652;font-size:13px">{order_number}</strong>
+</td>
+<td align="right" style="color:#6e6864;font-size:11px">{date_label}<br>
+<strong style="color:#5f4652;font-size:13px">{date}</strong>
+</td>
+</tr>
+</table>
+<h2 style="margin:28px 0 0;font:24px Georgia,serif;color:#5f4652">{items_title}</h2>
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0">{items}</table>
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top:18px">{totals}</table>
+<table role="presentation" width="100%">
+<tr>
+<td align="center" style="padding:30px 0">
+<a href="{url}" style="display:inline-block;padding:14px 28px;background:#5f4652;color:#fffdfc;text-decoration:none;font-weight:bold;border-radius:4px">{cta}</a>
+<p style="font-size:11px;color:#6e6864">{cta_note}</p>
+</td>
+</tr>
+</table>
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f7f3ef">
+<tr>
+<td valign="top" style="padding:20px 12px">
+<h2 style="font-size:14px;color:#5f4652">{delivery_title}</h2>
+<p style="font-size:12px;color:#6e6864">{address_html}</p>
+</td>
+<td valign="top" style="padding:20px 12px">
+<h2 style="font-size:14px;color:#5f4652">{payment_title}</h2>
+<p style="font-size:12px;color:#5f4652">&#10003; {confirmed}</p>
+</td>
+</tr>
+</table>
+<h2 style="margin-top:28px;font-size:16px;color:#5f4652">{next_title}</h2>
+<p style="color:#6e6864;font-size:12px">{next_body}</p>
+</td>
+</tr>
+<tr>
+<td align="center" style="padding:30px 24px;border-top:1px solid #ded4cc;background:#f7f3ef">
+<p style="font:24px Georgia,serif;color:#5f4652">{footer_title}</p>
+<p style="color:#6e6864;font-size:12px">{footer_subtitle}</p>
+<p style="margin-top:24px;font-size:12px">{help}<br>
+<a href="mailto:support@knitnprint.com" style="color:#5f4652">support@knitnprint.com</a>
+</p>
+<p style="font-size:10px;color:#6e6864">KnitnPrint · {ribbon}</p>
+</td>
+</tr>
+</table>
+</td>
+</tr>
+</table>
+</body></html>"#,
+        subject = h(t("subject")),
+        title = h(t("title")),
+        order_number = h(&order.order_number),
+        ribbon = h(t("ribbon")),
+        eyebrow = h(t("eyebrow")),
+        greeting = h(t("greeting")),
+        name = h(&order.customer.first_name),
+        intro = h(t("introBody")),
+        order_label = h(t("orderLabel")),
+        date_label = h(t("dateLabel")),
+        date = h(&date),
+        items_title = h(t("itemsTitle")),
+        url = h(&url),
+        cta = h(t("cta")),
+        cta_note = h(t("ctaNote")),
+        delivery_title = h(t("deliveryTitle")),
+        payment_title = h(t("paymentTitle")),
+        confirmed = h(t("paymentConfirmed")),
+        next_title = h(t("nextTitle")),
+        next_body = h(t("nextBody")),
+        footer_title = h(t("footerTitle")),
+        footer_subtitle = h(t("footerSubtitle")),
+        help = h(t("help"))
     );
-    text.push_str(&format!("\n{delivery_title}:\n{}\n\n{payment}: {confirmed}\n\n{cta}: {action_url}\n\n{next_title}\n{next}\n\nsupport@knitnprint.com\n", address_lines.join("\n")));
-    let mut logo = Cursor::new(Vec::new());
-    image::load_from_memory(include_bytes!(
-        "../../apps/storefront/public/knitnprint-wordmark.webp"
-    ))
-    .and_then(|image| image.write_to(&mut logo, ImageFormat::Png))
-    .map_err(|_| "could not prepare email logo")?;
-    images.push(InlineImage {
-        cid: "knitnprint-logo".into(),
-        bytes: logo.into_inner(),
-        content_type: "image/png".into(),
-    });
-    Ok(ConfirmationContent {
-        subject,
+    RenderedConfirmation {
+        subject: format!("{} · {}", t("subject"), order.order_number),
         text,
         html,
-        images,
-        action_url,
-    })
+    }
+}
+
+fn describe_area(area: &Value, text_label: &str, photo_label: &str) -> String {
+    let mut details = Vec::new();
+    for key in ["view_label", "area_label"] {
+        if let Some(value) = area.get(key).and_then(Value::as_str) {
+            details.push(value.to_owned());
+        }
+    }
+    if let Some(value) = area.pointer("/text/content").and_then(Value::as_str) {
+        details.push(format!("{text_label}: “{value}”"));
+    }
+    if area.get("photo").is_some_and(|value| !value.is_null()) {
+        details.push(photo_label.to_owned());
+    }
+    details.join(" · ")
+}
+
+pub fn format_money(amount: i64, currency: &str, locale: &str) -> String {
+    let absolute = amount.unsigned_abs();
+    let decimal = if locale == "en" { '.' } else { ',' };
+    let number = format!(
+        "{}{}{decimal}{:02}",
+        if amount < 0 { "−" } else { "" },
+        absolute / 100,
+        absolute % 100
+    );
+    if currency == "EUR" {
+        if locale == "en" {
+            format!("€{number}")
+        } else {
+            format!("{number} €")
+        }
+    } else {
+        format!("{currency} {number}")
+    }
+}
+
+fn localized_date(value: &str, locale: &str) -> String {
+    let date = value.get(..10).unwrap_or(value);
+    let parts: Vec<_> = date.split('-').collect();
+    if parts.len() != 3 {
+        return date.to_owned();
+    }
+    let month = parts[1]
+        .parse::<usize>()
+        .ok()
+        .filter(|month| (1..=12).contains(month));
+    let Some(month) = month else {
+        return date.to_owned();
+    };
+    let names = match locale {
+        "pt" => [
+            "janeiro",
+            "fevereiro",
+            "março",
+            "abril",
+            "maio",
+            "junho",
+            "julho",
+            "agosto",
+            "setembro",
+            "outubro",
+            "novembro",
+            "dezembro",
+        ],
+        "es" => [
+            "enero",
+            "febrero",
+            "marzo",
+            "abril",
+            "mayo",
+            "junio",
+            "julio",
+            "agosto",
+            "septiembre",
+            "octubre",
+            "noviembre",
+            "diciembre",
+        ],
+        _ => [
+            "January",
+            "February",
+            "March",
+            "April",
+            "May",
+            "June",
+            "July",
+            "August",
+            "September",
+            "October",
+            "November",
+            "December",
+        ],
+    };
+    let day = parts[2].trim_start_matches('0');
+    if locale == "en" {
+        format!("{} {} {}", day, names[month - 1], parts[0])
+    } else {
+        format!("{} de {} de {}", day, names[month - 1], parts[0])
+    }
+}
+
+pub async fn load_images(
+    pool: &sqlx::PgPool,
+    storage: Option<&crate::object_storage::ObjectStorage>,
+    order: &Order,
+) -> Result<Vec<InlineImage>, String> {
+    let logo = png(include_bytes!("../assets/wordmark.webp"))?;
+    let mut images = vec![InlineImage {
+        cid: "wordmark@knitnprint".into(),
+        bytes: logo,
+    }];
+    let mut seen = std::collections::BTreeSet::new();
+    for line in &order.lines {
+        let previews: Vec<crate::carts::PersonalizationPreview> =
+            serde_json::from_value(line.personalization_previews.clone())
+                .map_err(|_| "order preview snapshot is invalid")?;
+        for preview in previews {
+            if !seen.insert(preview.media_id) {
+                continue;
+            }
+            let storage = storage.ok_or("object storage is required for saved order previews")?;
+            let key = sqlx::query_scalar::<_, String>("SELECT variant.object_key FROM media_variants variant JOIN media_assets media ON media.id=variant.media_asset_id JOIN order_line_personalization_media retained ON retained.media_asset_id=media.id WHERE retained.order_line_id=$1 AND media.id=$2 AND media.status='ready' AND media.scan_status='clean' AND variant.kind='card'")
+                .bind(line.id).bind(preview.media_id).fetch_optional(pool).await.map_err(|_| "saved order preview could not be loaded")?.ok_or("saved order preview is unavailable")?;
+            let object = storage
+                .get(&key)
+                .await
+                .map_err(|_| "saved order preview could not be read")?;
+            let bytes = tokio::task::spawn_blocking(move || png(&object.bytes))
+                .await
+                .map_err(|_| "saved order preview could not be decoded")??;
+            images.push(InlineImage {
+                cid: preview_cid(preview.media_id),
+                bytes,
+            });
+            if images.iter().map(|image| image.bytes.len()).sum::<usize>() > 15_000_000 {
+                return Err("order preview attachments exceed the email size limit".into());
+            }
+        }
+    }
+    Ok(images)
+}
+
+fn png(bytes: &[u8]) -> Result<Vec<u8>, String> {
+    let image = image::load_from_memory(bytes)
+        .map_err(|_| "email image could not be decoded")?
+        .thumbnail(600, 600);
+    let mut output = std::io::Cursor::new(Vec::new());
+    image
+        .write_to(&mut output, image::ImageFormat::Png)
+        .map_err(|_| "email image could not be encoded")?;
+    Ok(output.into_inner())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     #[test]
-    fn locales_normalize_and_fall_back_to_english() {
-        for code in [None, Some("fr"), Some("")] {
-            assert_eq!(EmailLocale::from_code(code), EmailLocale::En);
-        }
-        assert_eq!(EmailLocale::from_code(Some("PT-pt")), EmailLocale::Pt);
-        assert_eq!(EmailLocale::from_code(Some("es_ES")), EmailLocale::Es);
+    fn localized_money_is_exact_and_handles_negative_discounts() {
+        assert_eq!(format_money(4392, "EUR", "pt"), "43,92 €");
+        assert_eq!(format_money(-438, "EUR", "en"), "€−4.38");
+        assert_eq!(
+            format_money(i64::MIN, "USD", "es"),
+            "USD −92233720368547758,08"
+        );
     }
     #[test]
-    fn dates_and_money_do_not_use_floating_point() {
-        assert_eq!(EmailLocale::Pt.money(2490, "EUR"), "24,90 €");
-        assert_eq!(EmailLocale::En.money(2490, "EUR"), "€24.90");
-        assert_eq!(EmailLocale::Es.money(-100, "EUR"), "−1,00 €");
+    fn dates_use_the_checkout_language() {
         assert_eq!(
-            EmailLocale::Pt.date("2026-10-22T00:00:00Z"),
-            "22 de outubro de 2026"
+            localized_date("2026-10-20T12:00:00Z", "pt"),
+            "20 de outubro de 2026"
         );
         assert_eq!(
-            EmailLocale::En.date("2026-10-22T00:00:00Z"),
-            "22 October 2026"
+            localized_date("2026-10-20T12:00:00Z", "en"),
+            "20 October 2026"
         );
         assert_eq!(
-            EmailLocale::Es.date("2026-10-22T00:00:00Z"),
-            "22 de octubre de 2026"
+            localized_date("2026-10-20T12:00:00Z", "es"),
+            "20 de octubre de 2026"
         );
+    }
+    #[test]
+    fn logo_is_a_mail_compatible_png_and_translations_have_identical_keys() {
+        assert!(
+            png(include_bytes!("../assets/wordmark.webp"))
+                .unwrap()
+                .starts_with(b"\x89PNG")
+        );
+        let copies: BTreeMap<String, BTreeMap<String, String>> =
+            serde_json::from_str(include_str!("../assets/order-email-copy.json")).unwrap();
+        for locale in ["pt", "es"] {
+            assert_eq!(
+                copies[locale].keys().collect::<Vec<_>>(),
+                copies["en"].keys().collect::<Vec<_>>()
+            );
+        }
     }
 }

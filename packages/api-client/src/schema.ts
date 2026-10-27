@@ -8,6 +8,7 @@ export interface AddCartItemRequest {
   "customization"?: unknown
   "customization_media_asset_id"?: string | null
   "customization_media_asset_ids"?: Array<string>
+  "personalization_previews"?: Array<PersonalizationPreview>
   "quantity": number
   "variant_id": string
 }
@@ -237,7 +238,7 @@ export interface CreateFulfillmentRequest {
 }
 
 export interface CreateOrderRequest {
-  "locale"?: string | null
+  "locale"?: string
   "payment_method": string
   "shipping_rate_revision"?: number | null
 }
@@ -706,10 +707,12 @@ export interface OrderLine {
   "id": string
   "line_total_minor": number
   "personalization_context"?: unknown
+  "personalization_previews": unknown
   "product_title": string
   "quantity": number
   "sku": string
   "unit_price_minor": number
+  "variant_options": unknown
   "variant_title": string
 }
 
@@ -825,6 +828,12 @@ export interface PersonalizationConfig {
 export interface PersonalizationMediaRecord {
   "id": string
   "preview_url": string
+}
+
+export interface PersonalizationPreview {
+  "media_id": string
+  "view_id": string
+  "view_label": string
 }
 
 export interface Product {

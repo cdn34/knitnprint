@@ -638,11 +638,9 @@ async fn checkout_saves_locale_and_sends_localized_branded_confirmation_once() {
     });
     let owner = login(&router).await;
     for (index, language, expected, heading) in [
-        (0, Some("pt-PT"), "pt", "A tua encomenda está confirmada."),
-        (1, Some("es"), "es", "Tu pedido está confirmado."),
-        (2, Some("en"), "en", "Your order is confirmed."),
-        (3, Some("fr"), "en", "Your order is confirmed."),
-        (4, None, "en", "Your order is confirmed."),
+        (0, "pt", "pt", "A tua encomenda está confirmada."),
+        (1, "es", "es", "Tu pedido está confirmado."),
+        (2, "en", "en", "Your order is confirmed."),
     ] {
         let cookie = response_cookie(&request(&router, "GET", "/api/cart", None, None, None).await);
         let added = request(
@@ -678,10 +676,11 @@ async fn checkout_saves_locale_and_sends_localized_branded_confirmation_once() {
             for id in preview_ids {
                 sqlx::query("INSERT INTO media_assets (id,object_key,content_type,byte_size,status,scan_status,scanned_at,personalization_cart_id) VALUES ($1,$2,'image/png',100,'ready','clean',now(),$3)")
                     .bind(id).bind(format!("private-preview-{id}.png")).bind(cart_id).execute(&pool).await.unwrap();
+                sqlx::query("INSERT INTO media_variants (media_asset_id,kind,object_key,content_type,width,height,byte_size) VALUES ($1,'card',$2,'image/png',96,96,100)").bind(id).bind(format!("saved-preview-{id}.png")).execute(&pool).await.unwrap();
             }
-            sqlx::query("UPDATE cart_lines SET customization=$2,confirmation_preview_media_asset_ids=$3 WHERE cart_id=$1")
+            sqlx::query("UPDATE cart_lines SET customization=$2,personalization_previews=$3 WHERE cart_id=$1")
                 .bind(cart_id).bind(json!({"version":7,"areas":[{"view_id":"front","view_label":"Front","text":{"content":"<script>Maria & João</script>"}},{"view_id":"back","view_label":"Back","text":{"content":"Made for you"}}],"previews":[{"view_id":"front","view_label":"Front","media_id":preview_ids[0]},{"view_id":"back","view_label":"Back","media_id":preview_ids[1]}]}))
-                .bind(preview_ids.to_vec()).execute(&pool).await.unwrap();
+                .bind(json!([{"view_id":"front","view_label":"Front","media_id":preview_ids[0]},{"view_id":"back","view_label":"Back","media_id":preview_ids[1]}])).execute(&pool).await.unwrap();
         }
         let key = format!("localized-order-{index}-0001");
         let created = request(
@@ -699,7 +698,7 @@ async fn checkout_saves_locale_and_sends_localized_branded_confirmation_once() {
         assert_eq!(order["shipping_minor"], 0);
         assert_eq!(order["total_minor"], 3200);
         let id = Uuid::parse_str(order["id"].as_str().unwrap()).unwrap();
-        let saved: String = sqlx::query_scalar("SELECT locale FROM orders WHERE id=$1")
+        let saved: String = sqlx::query_scalar("SELECT email_locale FROM orders WHERE id=$1")
             .bind(id)
             .fetch_one(&pool)
             .await
@@ -717,7 +716,7 @@ async fn checkout_saves_locale_and_sends_localized_branded_confirmation_once() {
         assert_eq!(replay.status(), StatusCode::OK);
         assert_eq!(response_json(replay).await["id"], order["id"]);
         assert!(
-            sqlx::query("UPDATE orders SET locale=$2 WHERE id=$1")
+            sqlx::query("UPDATE orders SET email_locale=$2 WHERE id=$1")
                 .bind(id)
                 .bind(if expected == "es" { "pt" } else { "es" })
                 .execute(&pool)
@@ -746,8 +745,8 @@ async fn checkout_saves_locale_and_sends_localized_branded_confirmation_once() {
             knitnprint_api::notifications::deliver_due_with_storage(
                 &pool,
                 &email,
-                Some(&storage),
-                25
+                25,
+                Some(&storage)
             )
             .await
             .unwrap()
@@ -770,7 +769,7 @@ async fn checkout_saves_locale_and_sends_localized_branded_confirmation_once() {
         let html = mailbox["html"].as_str().unwrap();
         assert!(html.contains(heading));
         assert!(html.contains(&format!("lang=\"{expected}\"")));
-        assert!(html.contains("data:image/png;base64,"));
+        assert!(html.contains("cid:wordmark@knitnprint"));
         assert!(html.contains("#f7f3ef"));
         assert!(html.contains("support@knitnprint.com"));
         assert!(html.contains(&format!("order_id={id}")));

@@ -6256,6 +6256,12 @@
               "format": "uuid"
             }
           },
+          "personalization_previews": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PersonalizationPreview"
+            }
+          },
           "quantity": {
             "type": "integer",
             "format": "int32"
@@ -7165,10 +7171,7 @@
         ],
         "properties": {
           "locale": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": "string"
           },
           "payment_method": {
             "type": "string"
@@ -8927,7 +8930,9 @@
           "unit_price_minor",
           "line_total_minor",
           "currency",
-          "customization_media_asset_ids"
+          "customization_media_asset_ids",
+          "personalization_previews",
+          "variant_options"
         ],
         "properties": {
           "currency": {
@@ -8961,6 +8966,7 @@
             "format": "int64"
           },
           "personalization_context": {},
+          "personalization_previews": {},
           "product_title": {
             "type": "string"
           },
@@ -8975,6 +8981,7 @@
             "type": "integer",
             "format": "int64"
           },
+          "variant_options": {},
           "variant_title": {
             "type": "string"
           }
@@ -9420,6 +9427,26 @@
             "format": "uuid"
           },
           "preview_url": {
+            "type": "string"
+          }
+        }
+      },
+      "PersonalizationPreview": {
+        "type": "object",
+        "required": [
+          "view_id",
+          "view_label",
+          "media_id"
+        ],
+        "properties": {
+          "media_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "view_id": {
+            "type": "string"
+          },
+          "view_label": {
             "type": "string"
           }
         }

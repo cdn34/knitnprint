@@ -1,10 +1,11 @@
 import { expect, test } from '@playwright/test'
+import { signInVerifiedCustomer } from '../helpers/customer'
 
 const ownerEmail = process.env.E2E_OWNER_EMAIL ?? 'owner@knitnprint.local'
 const ownerPassword =
   process.env.E2E_OWNER_PASSWORD ?? 'local-development-passphrase'
 
-test('lets an owner manage the catalog while checkout is suspended', async ({
+test('lets an owner manage the catalog and place an order with unconfigured delivery pricing', async ({
   page,
 }) => {
   const unique = `${Date.now()}-${test.info().retry}`
@@ -215,6 +216,8 @@ test('lets an owner manage the catalog while checkout is suspended', async ({
   await inventory.getByLabel('Low-stock threshold').fill('3')
   await inventory.getByRole('button', { name: 'Apply adjustment' }).click()
   await expect(plumInventoryRow).toContainText('2')
+  await expect(inventory.getByLabel('Quantity change')).toHaveValue('')
+  await expect(inventory).toContainText('Small plum batch')
 
   const defaultInventoryRow = inventory
     .getByRole('button')
@@ -290,6 +293,7 @@ test('lets an owner manage the catalog while checkout is suspended', async ({
     .filter({ hasText: slug })
   await expect(persistedProduct.locator('.product-thumbnail img')).toBeVisible()
 
+  await signInVerifiedCustomer(page.request, orderEmail, 'Order', 'Browser')
   await page.goto(`http://127.0.0.1:3000/products/${slug}`)
   await page.waitForLoadState('networkidle')
   await expect(page.getByRole('heading', { level: 1 })).toHaveText(title)
@@ -337,6 +341,8 @@ test('lets an owner manage the catalog while checkout is suspended', async ({
   await page.getByLabel('City').fill('Lisbon')
   await page.getByLabel('Postal code').fill('1000-008')
   await page.getByRole('button', { name: 'Save delivery details' }).click()
-  await expect(page.getByRole('button', { name: 'Checkout temporarily unavailable' })).toBeDisabled()
-  await expect(page.locator('.cart-checkout-notice')).toContainText('Checkout is temporarily suspended')
+  await expect(page.getByRole('button', { name: 'Place order', exact: true })).toBeEnabled()
+  await page.getByRole('button', { name: 'Place order', exact: true }).click()
+  await expect(page.locator('.order-confirmation')).toContainText('Thank you, Order.')
+  await expect(page.locator('.order-confirmation')).toContainText(title)
 })

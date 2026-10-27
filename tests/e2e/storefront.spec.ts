@@ -67,7 +67,7 @@ test('filters published products when the catalog is available', async ({
 }) => {
   await page.goto('/')
   await page.waitForLoadState('networkidle')
-  const cards = page.locator('.product-card:not(.product-card--placeholder)')
+  const cards = page.locator('#shop .product-card:not(.product-card--placeholder)')
   if ((await cards.count()) === 0) return
 
   const title = await cards.first().getByRole('heading').textContent()
@@ -215,15 +215,13 @@ test('adds an available product, captures delivery, and creates an order', async
   await page.getByRole('button', { name: 'Save delivery details' }).click()
 
   await expect(page.getByRole('status')).toContainText('Delivery details saved.')
-  await expect(page.locator('.cart-ready-state')).toContainText(
-    'Cart and delivery details are ready.',
-  )
-  await page.getByRole('button', { name: 'Create order' }).click()
+  await expect(page.getByRole('button', { name: 'Place order', exact: true })).toBeEnabled()
+  await page.getByRole('button', { name: 'Place order', exact: true }).click()
   await expect(page.getByRole('heading', { level: 1, name: 'Order received' })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Thank you, Browser.' })).toBeVisible()
   await expect(page.locator('.order-confirmation')).toContainText(/KP-\d{4}-\d{6}/)
   await expect(page.locator('.order-confirmation')).toContainText(
-    'awaiting manual payment confirmation',
+    'awaiting payment confirmation',
   )
 
   const results = await new AxeBuilder({ page })

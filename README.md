@@ -91,7 +91,7 @@ There are two separate object-storage concerns:
 `docker compose up -d` starts SeaweedFS 4.48 in single-node `mini` mode and
 creates the private local media bucket automatically. Its S3 endpoint remains
 `http://127.0.0.1:9100`; the admin UI at port 9101 uses
-`knitnprint` / `knitnprint-local`. Browser CORS allows the local admin origins.
+`knitnprint` / `knitnprint-local`. Browser CORS allows the local storefront and admin origins.
 SeaweedFS stores data in a new `seaweedfs_data` volume. Existing MinIO volumes
 are not reused or deleted; old objects must be copied through the S3 API from
 a working MinIO instance if they need to be retained.
@@ -416,7 +416,7 @@ cancels the unpaid order, releases reserved inventory, and appends payment,
 order-timeline, and audit history. Set `PAYMENT_CLEANUP_BATCH` from 1 to 1000 to
 change the bound; repeated and concurrent runs are safe.
 
-Fulfillment and order emails use a durable PostgreSQL outbox. Run its delivery
+Paid-order confirmation emails use a durable PostgreSQL outbox. Run its delivery
 worker continuously or once per minute:
 
 ```bash
@@ -428,10 +428,24 @@ The worker claims at most 25 due jobs with `FOR UPDATE SKIP LOCKED`, records
 every delivery attempt, and retries failures with bounded exponential backoff
 for up to eight attempts. Set `NOTIFICATION_BATCH_SIZE` from 1 to 100 to change
 the batch. A stale processing claim becomes eligible again after 15 minutes.
-Order payment and fulfillment transactions only enqueue work; SES failure never
+Order payment transactions only enqueue work; SES failure never
 rolls back or duplicates the commercial operation. Development delivery uses
 the in-memory mailbox unless `EMAIL_DELIVERY=ses` is selected, while production
 always uses the configured SES sender.
+
+Confirmations use the approved branded design with English, Portuguese, or Spanish
+copy selected at checkout. They include saved order details, variant options,
+personalization descriptions, delivery, payment confirmation, and totals. The logo
+and each captured personalized face are embedded as inline PNGs; the worker needs
+S3 read access to saved previews. Earlier orders without flattened previews show
+an explicit note, not a generic product image. Development mailbox entries include
+rendered `html` and `text` for inspection. Apply `npm run db:migrate` before using
+the updated worker. Previously sent jobs are not resent automatically.
+
+Shipping updates come from the carrier. Store fulfillment emails are no longer
+enqueued; outstanding legacy fulfillment jobs are marked `suppressed` by the
+migration. The [approved design notes](guides/design/order-confirmation-email.md)
+describe the rendering and snapshot behavior.
 
 Run the operational backlog check from monitoring at least every five minutes:
 
