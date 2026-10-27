@@ -12,6 +12,7 @@ aws-sdk-s3 = { version = "1", default-features = false, features = ["default-htt
 aws-sdk-sesv2 = { version = "1", default-features = false, features = ["behavior-version-latest", "default-https-client", "rt-tokio"] }
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
 axum = "0.8"
+base64 = "0.22"
 axum-extra = { version = "0.12", features = ["cookie"] }
 hex = "0.4"
 hmac = "0.12"

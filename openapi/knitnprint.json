@@ -913,6 +913,300 @@
         }
       }
     },
+    "/api/admin/b2b/requests": {
+      "get": {
+        "tags": [
+          "admin B2B"
+        ],
+        "operationId": "list",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/B2bRequest"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/b2b/requests/{id}": {
+      "get": {
+        "tags": [
+          "admin B2B"
+        ],
+        "operationId": "detail",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/B2bRequest"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "admin B2B"
+        ],
+        "operationId": "delete",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/b2b/requests/{id}/attachment": {
+      "get": {
+        "tags": [
+          "admin B2B"
+        ],
+        "operationId": "attachment",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Private original attachment or image preview"
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/b2b/requests/{id}/status": {
+      "put": {
+        "tags": [
+          "admin B2B"
+        ],
+        "operationId": "update_status",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateB2bStatus"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/admin/categories": {
       "get": {
         "tags": [
@@ -1387,6 +1681,204 @@
             }
           },
           "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/delivery-rates": {
+      "get": {
+        "tags": [
+          "delivery rates"
+        ],
+        "operationId": "get",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeliveryRatesSettings"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "delivery rates"
+        ],
+        "operationId": "update",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateDeliveryRatesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeliveryRatesSettings"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/delivery-rates/test": {
+      "post": {
+        "tags": [
+          "delivery rates"
+        ],
+        "operationId": "test_destination",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TestDeliveryRateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeliveryQuote"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
             "description": "",
             "content": {
               "application/json": {
@@ -3612,6 +4104,107 @@
         }
       }
     },
+    "/api/admin/products/{product_id}/media/order": {
+      "put": {
+        "tags": [
+          "admin catalog"
+        ],
+        "operationId": "reorder_media",
+        "parameters": [
+          {
+            "name": "product_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReorderProductMediaRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Product"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/admin/products/{product_id}/media/{media_id}": {
       "delete": {
         "tags": [
@@ -3992,210 +4585,6 @@
         }
       }
     },
-    "/api/admin/shipping-packages": {
-      "get": {
-        "tags": [
-          "admin catalog"
-        ],
-        "operationId": "shipping_package_list",
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/ShippingPackageProfile"
-                  }
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "tags": [
-          "admin catalog"
-        ],
-        "operationId": "shipping_package_create",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ShippingPackageProfileRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ShippingPackageProfile"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/admin/shipping-packages/{profile_id}": {
-      "put": {
-        "tags": [
-          "admin catalog"
-        ],
-        "operationId": "shipping_package_update",
-        "parameters": [
-          {
-            "name": "profile_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ShippingPackageProfileRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ShippingPackageProfile"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "tags": [
-          "admin catalog"
-        ],
-        "operationId": "shipping_package_delete",
-        "parameters": [
-          {
-            "name": "profile_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": ""
-          },
-          "404": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/admin/staff": {
       "get": {
         "tags": [
@@ -4381,6 +4770,86 @@
           },
           "422": {
             "description": "A reason is required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/b2b/requests": {
+      "post": {
+        "tags": [
+          "B2B"
+        ],
+        "operationId": "create",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateB2bRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/B2bReceipt"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/B2bReceipt"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
             "content": {
               "application/json": {
                 "schema": {
@@ -4819,116 +5288,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/cart/shipping-method": {
-      "post": {
-        "tags": [
-          "cart"
-        ],
-        "operationId": "select_shipping_method",
-        "parameters": [
-          {
-            "name": "Idempotency-Key",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SelectShippingMethodRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Cart"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/cart/shipping-quotes": {
-      "post": {
-        "tags": [
-          "cart"
-        ],
-        "operationId": "refresh_shipping_quotes",
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Cart"
                 }
               }
             }
@@ -6064,6 +6423,107 @@
           }
         }
       },
+      "B2bReceipt": {
+        "type": "object",
+        "required": [
+          "id",
+          "reference"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "reference": {
+            "type": "string"
+          }
+        }
+      },
+      "B2bRequest": {
+        "type": "object",
+        "required": [
+          "id",
+          "reference",
+          "company",
+          "contact_name",
+          "email",
+          "phone",
+          "product_type",
+          "quantity",
+          "notes",
+          "status",
+          "attachment_name",
+          "attachment_type",
+          "attachment_size",
+          "has_preview",
+          "notification_status",
+          "notification_attempts",
+          "created_at"
+        ],
+        "properties": {
+          "attachment_name": {
+            "type": "string"
+          },
+          "attachment_size": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "attachment_type": {
+            "type": "string"
+          },
+          "company": {
+            "type": "string"
+          },
+          "contact_name": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "has_preview": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "notification_attempts": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "notification_sent_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "notification_status": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string"
+          },
+          "product_type": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "reference": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        }
+      },
       "CancelOrderRequest": {
         "type": "object",
         "required": [
@@ -6086,8 +6546,6 @@
           "item_count",
           "subtotal_minor",
           "discount_minor",
-          "shipping_methods",
-          "shipping_minor",
           "tax_minor",
           "total_minor",
           "checkout_ready",
@@ -6151,25 +6609,22 @@
               "$ref": "#/components/schemas/CartItem"
             }
           },
-          "shipping": {
+          "shipping_minor": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "shipping_quote": {
             "oneOf": [
               {
                 "type": "null"
               },
               {
-                "$ref": "#/components/schemas/ShippingSelection"
+                "$ref": "#/components/schemas/DeliveryQuote"
               }
             ]
-          },
-          "shipping_methods": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ShippingSelection"
-            }
-          },
-          "shipping_minor": {
-            "type": "integer",
-            "format": "int64"
           },
           "subtotal_minor": {
             "type": "integer",
@@ -6438,13 +6893,16 @@
           "support_email",
           "currency",
           "tax_enabled",
-          "shipping_zones",
+          "checkout_suspended",
           "tax_rules",
           "integrations",
           "history",
           "updated_at"
         ],
         "properties": {
+          "checkout_suspended": {
+            "type": "boolean"
+          },
           "currency": {
             "type": "string"
           },
@@ -6456,12 +6914,6 @@
           },
           "integrations": {
             "$ref": "#/components/schemas/IntegrationHealth"
-          },
-          "shipping_zones": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ShippingZone"
-            }
           },
           "store_name": {
             "type": "string"
@@ -6536,6 +6988,56 @@
           },
           "region": {
             "type": "string"
+          }
+        }
+      },
+      "CreateB2bRequest": {
+        "type": "object",
+        "required": [
+          "request_key",
+          "company",
+          "contact_name",
+          "email",
+          "phone",
+          "product_type",
+          "quantity",
+          "notes",
+          "attachment_name",
+          "attachment_base64"
+        ],
+        "properties": {
+          "attachment_base64": {
+            "type": "string",
+            "description": "Original file encoded as base64, at most 10 MiB decoded."
+          },
+          "attachment_name": {
+            "type": "string"
+          },
+          "company": {
+            "type": "string"
+          },
+          "contact_name": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string"
+          },
+          "product_type": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "request_key": {
+            "type": "string",
+            "format": "uuid"
           }
         }
       },
@@ -6673,6 +7175,13 @@
           },
           "payment_method": {
             "type": "string"
+          },
+          "shipping_rate_revision": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
           }
         }
       },
@@ -6712,9 +7221,6 @@
           },
           "search_keywords": {
             "type": "string"
-          },
-          "shipping": {
-            "$ref": "#/components/schemas/ShippingProfile"
           },
           "slug": {
             "type": "string"
@@ -7402,6 +7908,132 @@
           }
         }
       },
+      "DeliveryQuote": {
+        "type": "object",
+        "required": [
+          "available",
+          "pricing_enabled",
+          "revision",
+          "currency"
+        ],
+        "properties": {
+          "amount_minor": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "available": {
+            "type": "boolean"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "issue_code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pricing_enabled": {
+            "type": "boolean"
+          },
+          "rate_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "region_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "revision": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "DeliveryRate": {
+        "type": "object",
+        "required": [
+          "id",
+          "country_code",
+          "region_name",
+          "postal_prefixes",
+          "active"
+        ],
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "amount_minor": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "country_code": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "postal_prefixes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "region_name": {
+            "type": "string"
+          }
+        }
+      },
+      "DeliveryRatesSettings": {
+        "type": "object",
+        "required": [
+          "enabled",
+          "revision",
+          "currency",
+          "rates",
+          "country_codes",
+          "updated_at"
+        ],
+        "properties": {
+          "country_codes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "currency": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "rates": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DeliveryRate"
+            }
+          },
+          "revision": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        }
+      },
       "DisableStaffRequest": {
         "type": "object",
         "required": [
@@ -7724,8 +8356,7 @@
           "database",
           "media_storage",
           "email",
-          "payments",
-          "packlink"
+          "payments"
         ],
         "properties": {
           "database": {
@@ -7736,9 +8367,6 @@
           },
           "media_storage": {
             "type": "string"
-          },
-          "packlink": {
-            "$ref": "#/components/schemas/PacklinkConfigurationStatus"
           },
           "payments": {
             "type": "string"
@@ -8588,25 +9216,6 @@
           }
         }
       },
-      "PacklinkConfigurationStatus": {
-        "type": "object",
-        "required": [
-          "status",
-          "origin",
-          "package"
-        ],
-        "properties": {
-          "origin": {
-            "type": "string"
-          },
-          "package": {
-            "type": "string"
-          },
-          "status": {
-            "type": "string"
-          }
-        }
-      },
       "PaymentAttempt": {
         "type": "object",
         "required": [
@@ -8682,9 +9291,13 @@
         "type": "object",
         "required": [
           "stripe",
-          "manual"
+          "manual",
+          "checkout_suspended"
         ],
         "properties": {
+          "checkout_suspended": {
+            "type": "boolean"
+          },
           "manual": {
             "type": "boolean"
           },
@@ -8797,7 +9410,9 @@
             "type": "integer",
             "format": "int32"
           },
-          "views": {}
+          "views": {
+            "description": "Product photographs with independent mode and print areas; an empty area list disables printing on that photograph."
+          }
         }
       },
       "PersonalizationMediaRecord": {
@@ -8845,7 +9460,6 @@
           "description",
           "status",
           "search_keywords",
-          "shipping",
           "variants",
           "media",
           "categories",
@@ -8876,9 +9490,6 @@
           },
           "search_keywords": {
             "type": "string"
-          },
-          "shipping": {
-            "$ref": "#/components/schemas/ShippingProfile"
           },
           "slug": {
             "type": "string"
@@ -9174,6 +9785,22 @@
           }
         }
       },
+      "ReorderProductMediaRequest": {
+        "type": "object",
+        "required": [
+          "media_ids"
+        ],
+        "properties": {
+          "media_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Every currently displayed product photo, in the desired order. The first becomes the main photo."
+          }
+        }
+      },
       "ReplyToProductFeedbackRequest": {
         "type": "object",
         "properties": {
@@ -9211,18 +9838,6 @@
           }
         }
       },
-      "SelectShippingMethodRequest": {
-        "type": "object",
-        "required": [
-          "shipping_method_id"
-        ],
-        "properties": {
-          "shipping_method_id": {
-            "type": "string",
-            "format": "uuid"
-          }
-        }
-      },
       "SettingsHistoryRecord": {
         "type": "object",
         "required": [
@@ -9245,298 +9860,6 @@
             "format": "uuid"
           },
           "reason": {
-            "type": "string"
-          }
-        }
-      },
-      "ShippingMethod": {
-        "type": "object",
-        "required": [
-          "id",
-          "name",
-          "flat_rate_minor",
-          "currency",
-          "active"
-        ],
-        "properties": {
-          "active": {
-            "type": "boolean"
-          },
-          "currency": {
-            "type": "string"
-          },
-          "flat_rate_minor": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "name": {
-            "type": "string"
-          }
-        }
-      },
-      "ShippingMethodInput": {
-        "type": "object",
-        "required": [
-          "name",
-          "flat_rate_minor",
-          "active"
-        ],
-        "properties": {
-          "active": {
-            "type": "boolean"
-          },
-          "flat_rate_minor": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "name": {
-            "type": "string"
-          }
-        }
-      },
-      "ShippingPackageProfile": {
-        "type": "object",
-        "required": [
-          "id",
-          "name",
-          "width_cm",
-          "length_cm",
-          "height_cm",
-          "empty_weight_grams",
-          "active"
-        ],
-        "properties": {
-          "active": {
-            "type": "boolean"
-          },
-          "empty_weight_grams": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "height_cm": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "length_cm": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "name": {
-            "type": "string"
-          },
-          "width_cm": {
-            "type": "integer",
-            "format": "int32"
-          }
-        }
-      },
-      "ShippingPackageProfileRequest": {
-        "type": "object",
-        "required": [
-          "name",
-          "width_cm",
-          "length_cm",
-          "height_cm"
-        ],
-        "properties": {
-          "active": {
-            "type": "boolean"
-          },
-          "empty_weight_grams": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "height_cm": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "length_cm": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "name": {
-            "type": "string"
-          },
-          "width_cm": {
-            "type": "integer",
-            "format": "int32"
-          }
-        }
-      },
-      "ShippingProfile": {
-        "type": "object",
-        "required": [
-          "weight_grams",
-          "width_cm",
-          "length_cm",
-          "height_cm",
-          "units_per_package",
-          "configured"
-        ],
-        "properties": {
-          "configured": {
-            "type": "boolean"
-          },
-          "empty_weight_grams": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "height_cm": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "length_cm": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "package_profile_id": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "format": "uuid"
-          },
-          "package_profile_name": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "units_per_package": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "weight_grams": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "width_cm": {
-            "type": "integer",
-            "format": "int32"
-          }
-        }
-      },
-      "ShippingSelection": {
-        "type": "object",
-        "required": [
-          "id",
-          "zone_name",
-          "method_name",
-          "amount_minor",
-          "currency",
-          "provider",
-          "carrier_name",
-          "service_id",
-          "departure_dropoff",
-          "destination_dropoff",
-          "transit_hours"
-        ],
-        "properties": {
-          "amount_minor": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "carrier_name": {
-            "type": "string"
-          },
-          "currency": {
-            "type": "string"
-          },
-          "departure_dropoff": {
-            "type": "boolean"
-          },
-          "destination_dropoff": {
-            "type": "boolean"
-          },
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "method_name": {
-            "type": "string"
-          },
-          "provider": {
-            "type": "string"
-          },
-          "service_id": {
-            "type": "string"
-          },
-          "transit_hours": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "zone_name": {
-            "type": "string"
-          }
-        }
-      },
-      "ShippingZone": {
-        "type": "object",
-        "required": [
-          "id",
-          "name",
-          "country_codes",
-          "active",
-          "methods"
-        ],
-        "properties": {
-          "active": {
-            "type": "boolean"
-          },
-          "country_codes": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "methods": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ShippingMethod"
-            }
-          },
-          "name": {
-            "type": "string"
-          }
-        }
-      },
-      "ShippingZoneInput": {
-        "type": "object",
-        "required": [
-          "name",
-          "country_codes",
-          "active",
-          "methods"
-        ],
-        "properties": {
-          "active": {
-            "type": "boolean"
-          },
-          "country_codes": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "methods": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ShippingMethodInput"
-            }
-          },
-          "name": {
             "type": "string"
           }
         }
@@ -9712,6 +10035,21 @@
           }
         }
       },
+      "TestDeliveryRateRequest": {
+        "type": "object",
+        "required": [
+          "country_code",
+          "postal_code"
+        ],
+        "properties": {
+          "country_code": {
+            "type": "string"
+          },
+          "postal_code": {
+            "type": "string"
+          }
+        }
+      },
       "UpdateAccountProfileRequest": {
         "type": "object",
         "required": [
@@ -9726,6 +10064,17 @@
             "type": "string"
           },
           "phone": {
+            "type": "string"
+          }
+        }
+      },
+      "UpdateB2bStatus": {
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
             "type": "string"
           }
         }
@@ -9749,7 +10098,6 @@
           "support_email",
           "currency",
           "tax_enabled",
-          "shipping_zones",
           "tax_rules",
           "reason"
         ],
@@ -9759,12 +10107,6 @@
           },
           "reason": {
             "type": "string"
-          },
-          "shipping_zones": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ShippingZoneInput"
-            }
           },
           "store_name": {
             "type": "string"
@@ -9780,6 +10122,33 @@
             "items": {
               "$ref": "#/components/schemas/TaxRuleInput"
             }
+          }
+        }
+      },
+      "UpdateDeliveryRatesRequest": {
+        "type": "object",
+        "required": [
+          "enabled",
+          "revision",
+          "rates",
+          "reason"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "rates": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DeliveryRate"
+            }
+          },
+          "reason": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer",
+            "format": "int64"
           }
         }
       },
@@ -9871,9 +10240,6 @@
           },
           "search_keywords": {
             "type": "string"
-          },
-          "shipping": {
-            "$ref": "#/components/schemas/ShippingProfile"
           },
           "sku": {
             "type": "string"

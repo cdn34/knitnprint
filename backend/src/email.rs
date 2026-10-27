@@ -303,6 +303,67 @@ impl EmailService {
         }
     }
 
+    pub async fn send_b2b_notification(
+        &self,
+        request: &crate::b2b::B2bRequest,
+    ) -> Result<(), String> {
+        let to = "support@knitnprint.com";
+        self.ensure_recipient_allowed(to)?;
+        let subject = format!(
+            "Novo pedido B2B {} — {}",
+            request.reference, request.company
+        );
+        let text = format!(
+            "Novo pedido de proposta recebido.\n\nReferência: {}\nEmpresa: {}\nContacto: {}\nEmail: {}\nTelefone: {}\nProduto: {}\nQuantidade: {}\n\nNotas:\n{}\n\nAnexo: {}\n\nO pedido e o ficheiro estão guardados na área B2B do painel de administração.\n",
+            request.reference,
+            request.company,
+            request.contact_name,
+            request.email,
+            request.phone,
+            request.product_type,
+            request.quantity,
+            request.notes,
+            request.attachment_name,
+        );
+        match &self.delivery {
+            Delivery::Development(mailbox) => {
+                mailbox.write().await.push(DevelopmentEmail {
+                    to: to.into(),
+                    kind: "b2b_request".into(),
+                    subject,
+                    action_url: format!("/#b2b/{}", request.id),
+                    html: None,
+                    text: None,
+                });
+                Ok(())
+            }
+            Delivery::Ses {
+                client,
+                from,
+                configuration_set,
+            } => {
+                let html = format!(
+                    "<pre style=\"font-family:Arial,sans-serif;white-space:pre-wrap\">{}</pre>",
+                    escape_html(&text)
+                );
+                send_ses(
+                    client,
+                    from,
+                    configuration_set.as_deref(),
+                    to,
+                    &crate::order_email::RenderedConfirmation {
+                        subject,
+                        text,
+                        html,
+                    },
+                    Vec::new(),
+                )
+                .await
+            }
+            Delivery::Disabled => Err("email delivery is not configured".into()),
+        }
+    }
+
     async fn latest_development_email(&self, to: &str, kind: &str) -> Option<DevelopmentEmail> {
         let Delivery::Development(mailbox) = &self.delivery else {
             return None;

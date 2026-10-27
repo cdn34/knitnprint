@@ -100,7 +100,7 @@ export const accountEs = {
   'account.city': 'Ciudad',
   'account.region': 'Provincia o región (opcional)',
   'account.postalCode': 'Código postal',
-  'account.countryCode': 'Código del país',
+  'account.countryCode': 'País',
   'account.deliveryPhone': 'Teléfono de entrega (opcional)',
   'account.saving': 'Guardando…',
   'account.saveAddress': 'Guardar dirección',

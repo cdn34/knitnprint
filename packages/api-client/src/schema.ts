@@ -50,6 +50,32 @@ export interface AssignCategoriesRequest {
   "category_ids": Array<string>
 }
 
+export interface B2bReceipt {
+  "id": string
+  "reference": string
+}
+
+export interface B2bRequest {
+  "attachment_name": string
+  "attachment_size": number
+  "attachment_type": string
+  "company": string
+  "contact_name": string
+  "created_at": string
+  "email": string
+  "has_preview": boolean
+  "id": string
+  "notes": string
+  "notification_attempts": number
+  "notification_sent_at"?: string | null
+  "notification_status": string
+  "phone": string
+  "product_type": string
+  "quantity": number
+  "reference": string
+  "status": string
+}
+
 export interface CancelOrderRequest {
   "internal_note"?: string
   "reason": string
@@ -66,9 +92,8 @@ export interface Cart {
   "issues": Array<CartIssue>
   "item_count": number
   "items": Array<CartItem>
-  "shipping"?: null | ShippingSelection
-  "shipping_methods": Array<ShippingSelection>
-  "shipping_minor": number
+  "shipping_minor"?: number | null
+  "shipping_quote"?: null | DeliveryQuote
   "subtotal_minor": number
   "tax"?: null | TaxSelection
   "tax_minor": number
@@ -139,10 +164,10 @@ export interface ChangeProductStatusRequest {
 }
 
 export interface CommercialSettings {
+  "checkout_suspended": boolean
   "currency": string
   "history": Array<SettingsHistoryRecord>
   "integrations": IntegrationHealth
-  "shipping_zones": Array<ShippingZone>
   "store_name": string
   "support_email": string
   "tax_enabled": boolean
@@ -165,6 +190,19 @@ export interface CreateAccountAddressRequest {
   "postal_code": string
   "recipient_name": string
   "region"?: string
+}
+
+export interface CreateB2bRequest {
+  "attachment_base64": string
+  "attachment_name": string
+  "company": string
+  "contact_name": string
+  "email": string
+  "notes": string
+  "phone": string
+  "product_type": string
+  "quantity": number
+  "request_key": string
 }
 
 export interface CreateCategoryRequest {
@@ -202,6 +240,7 @@ export interface CreateFulfillmentRequest {
 export interface CreateOrderRequest {
   "locale"?: string
   "payment_method": string
+  "shipping_rate_revision"?: number | null
 }
 
 export interface CreateProductFeedbackRequest {
@@ -214,7 +253,6 @@ export interface CreateProductRequest {
   "description"?: string
   "personalization"?: PersonalizationConfig
   "search_keywords"?: string
-  "shipping"?: ShippingProfile
   "slug": string
   "title": string
   "variants": Array<CreateVariantRequest>
@@ -400,6 +438,35 @@ export interface DeleteCustomerAccountRequest {
   "reason": string
 }
 
+export interface DeliveryQuote {
+  "amount_minor"?: number | null
+  "available": boolean
+  "currency": string
+  "issue_code"?: string | null
+  "pricing_enabled": boolean
+  "rate_id"?: string | null
+  "region_name"?: string | null
+  "revision": number
+}
+
+export interface DeliveryRate {
+  "active": boolean
+  "amount_minor"?: number | null
+  "country_code": string
+  "id": string
+  "postal_prefixes": Array<string>
+  "region_name": string
+}
+
+export interface DeliveryRatesSettings {
+  "country_codes": Array<string>
+  "currency": string
+  "enabled": boolean
+  "rates": Array<DeliveryRate>
+  "revision": number
+  "updated_at": string
+}
+
 export interface DisableStaffRequest {
   "reason": string
 }
@@ -492,7 +559,6 @@ export interface IntegrationHealth {
   "database": string
   "email": string
   "media_storage": string
-  "packlink": PacklinkConfigurationStatus
   "payments": string
 }
 
@@ -707,12 +773,6 @@ export interface OrderTax {
   "taxable_amount_minor": number
 }
 
-export interface PacklinkConfigurationStatus {
-  "origin": string
-  "package": string
-  "status": string
-}
-
 export interface PaymentAttempt {
   "attempt_number": number
   "created_at": string
@@ -732,6 +792,7 @@ export interface PaymentCheckout {
 }
 
 export interface PaymentOptions {
+  "checkout_suspended": boolean
   "manual": boolean
   "stripe": boolean
 }
@@ -782,7 +843,6 @@ export interface Product {
   "media": Array<ProductMedia>
   "personalization": PersonalizationConfig
   "search_keywords": string
-  "shipping": ShippingProfile
   "slug": string
   "status": string
   "title": string
@@ -855,6 +915,10 @@ export interface ReorderCategoriesRequest {
   "category_ids": Array<string>
 }
 
+export interface ReorderProductMediaRequest {
+  "media_ids": Array<string>
+}
+
 export interface ReplyToProductFeedbackRequest {
   "reply"?: string | null
 }
@@ -868,89 +932,11 @@ export interface ResetPasswordRequest {
   "token": string
 }
 
-export interface SelectShippingMethodRequest {
-  "shipping_method_id": string
-}
-
 export interface SettingsHistoryRecord {
   "actor_display_name"?: string | null
   "created_at": string
   "id": string
   "reason": string
-}
-
-export interface ShippingMethod {
-  "active": boolean
-  "currency": string
-  "flat_rate_minor": number
-  "id": string
-  "name": string
-}
-
-export interface ShippingMethodInput {
-  "active": boolean
-  "flat_rate_minor": number
-  "name": string
-}
-
-export interface ShippingPackageProfile {
-  "active": boolean
-  "empty_weight_grams": number
-  "height_cm": number
-  "id": string
-  "length_cm": number
-  "name": string
-  "width_cm": number
-}
-
-export interface ShippingPackageProfileRequest {
-  "active"?: boolean
-  "empty_weight_grams"?: number
-  "height_cm": number
-  "length_cm": number
-  "name": string
-  "width_cm": number
-}
-
-export interface ShippingProfile {
-  "configured": boolean
-  "empty_weight_grams"?: number
-  "height_cm": number
-  "length_cm": number
-  "package_profile_id"?: string | null
-  "package_profile_name"?: string | null
-  "units_per_package": number
-  "weight_grams": number
-  "width_cm": number
-}
-
-export interface ShippingSelection {
-  "amount_minor": number
-  "carrier_name": string
-  "currency": string
-  "departure_dropoff": boolean
-  "destination_dropoff": boolean
-  "id": string
-  "method_name": string
-  "provider": string
-  "service_id": string
-  "transit_hours": number
-  "zone_name": string
-}
-
-export interface ShippingZone {
-  "active": boolean
-  "country_codes": Array<string>
-  "id": string
-  "methods": Array<ShippingMethod>
-  "name": string
-}
-
-export interface ShippingZoneInput {
-  "active": boolean
-  "country_codes": Array<string>
-  "methods": Array<ShippingMethodInput>
-  "name": string
 }
 
 export interface StaffProfile {
@@ -998,10 +984,19 @@ export interface TaxSelection {
   "taxable_amount_minor": number
 }
 
+export interface TestDeliveryRateRequest {
+  "country_code": string
+  "postal_code": string
+}
+
 export interface UpdateAccountProfileRequest {
   "first_name": string
   "last_name": string
   "phone"?: string
+}
+
+export interface UpdateB2bStatus {
+  "status": string
 }
 
 export interface UpdateCartItemRequest {
@@ -1011,11 +1006,17 @@ export interface UpdateCartItemRequest {
 export interface UpdateCommercialSettingsRequest {
   "currency": string
   "reason": string
-  "shipping_zones": Array<ShippingZoneInput>
   "store_name": string
   "support_email": string
   "tax_enabled": boolean
   "tax_rules": Array<TaxRuleInput>
+}
+
+export interface UpdateDeliveryRatesRequest {
+  "enabled": boolean
+  "rates": Array<DeliveryRate>
+  "reason": string
+  "revision": number
 }
 
 export interface UpdateDiscountRequest {
@@ -1038,7 +1039,6 @@ export interface UpdateProductRequest {
   "personalization"?: PersonalizationConfig
   "price_minor": number
   "search_keywords"?: string
-  "shipping"?: ShippingProfile
   "sku": string
   "slug": string
   "title": string

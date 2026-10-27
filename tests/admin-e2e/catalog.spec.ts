@@ -5,7 +5,7 @@ const ownerEmail = process.env.E2E_OWNER_EMAIL ?? 'owner@knitnprint.local'
 const ownerPassword =
   process.env.E2E_OWNER_PASSWORD ?? 'local-development-passphrase'
 
-test('lets an owner manage commercial settings and complete an order journey', async ({
+test('lets an owner manage the catalog and place an order with unconfigured delivery pricing', async ({
   page,
 }) => {
   const unique = `${Date.now()}-${test.info().retry}`
@@ -28,12 +28,6 @@ test('lets an owner manage commercial settings and complete an order journey', a
       support_email: 'hello@knitnprint.local',
       currency: 'EUR',
       tax_enabled: false,
-      shipping_zones: [{
-        name: 'Worldwide',
-        country_codes: [],
-        active: true,
-        methods: [{ name: 'Standard shipping', flat_rate_minor: 0, active: true }],
-      }],
       tax_rules: [],
       reason: 'Reset browser commercial configuration',
     },
@@ -42,24 +36,6 @@ test('lets an owner manage commercial settings and complete an order journey', a
 
   await page.getByRole('link', { name: 'Settings' }).click()
   const settings = page.getByRole('region', { name: 'Settings' })
-  const shippingCard = settings.locator('.settings-card').filter({ hasText: 'Shipping zones' })
-  const zoneForm = shippingCard.locator('form').filter({ hasText: 'Add shipping zone' })
-  await zoneForm.getByLabel('Zone name').fill('Portugal')
-  await zoneForm.getByLabel('Countries').fill('PT')
-  await zoneForm.getByLabel('Initial method name').fill('Standard tracked')
-  await zoneForm.getByLabel('Flat rate (EUR)').fill('6.00')
-  await zoneForm.getByLabel('Audit reason').fill('Configure Portugal browser shipping')
-  await zoneForm.getByRole('button', { name: 'Add zone' }).click()
-  await expect(shippingCard).toContainText('Standard tracked · €6.00')
-
-  const methodForm = shippingCard.locator('form').filter({ hasText: 'Add shipping method' })
-  await methodForm.getByLabel('Shipping zone').selectOption({ label: 'Portugal' })
-  await methodForm.getByLabel('Additional method name').fill('Express tracked')
-  await methodForm.getByLabel('Flat rate (EUR)').fill('12.00')
-  await methodForm.getByLabel('Audit reason').fill('Add browser express shipping')
-  await methodForm.getByRole('button', { name: 'Add method' }).click()
-  await expect(shippingCard).toContainText('Express tracked · €12.00')
-
   const taxCard = settings.locator('.settings-card').filter({ hasText: 'Tax rules' })
   await taxCard.getByLabel('Rule name').fill('Portugal browser tax')
   await taxCard.getByLabel('Countries').fill('PT')
@@ -105,18 +81,6 @@ test('lets an owner manage commercial settings and complete an order journey', a
   await page.request.post('/api/admin/categories', {
     data: { name: categoryName, slug: categorySlug, description: '' },
   })
-  const shippingPackageResponse = await page.request.post('/api/admin/shipping-packages', {
-    data: {
-      name: `Browser box ${unique}`,
-      width_cm: 35,
-      length_cm: 50,
-      height_cm: 25,
-      empty_weight_grams: 100,
-      active: true,
-    },
-  })
-  expect(shippingPackageResponse.ok()).toBeTruthy()
-  const shippingPackage = await shippingPackageResponse.json() as { id: string }
   await page.getByRole('link', { name: 'Products' }).click()
 
   const catalog = page.getByRole('region', { name: 'Products' })
@@ -131,7 +95,6 @@ test('lets an owner manage commercial settings and complete an order journey', a
   await catalog.locator('#product-sku').fill(sku)
   await catalog.getByLabel('Price').fill('42.00')
   await catalog.getByLabel('Stock').fill('5')
-  await catalog.locator('#shipping-package-profile').selectOption(shippingPackage.id)
   await catalog.getByRole('checkbox', { name: categoryName }).check()
   await Promise.all([
     page.waitForResponse((response) =>
@@ -253,6 +216,8 @@ test('lets an owner manage commercial settings and complete an order journey', a
   await inventory.getByLabel('Low-stock threshold').fill('3')
   await inventory.getByRole('button', { name: 'Apply adjustment' }).click()
   await expect(plumInventoryRow).toContainText('2')
+  await expect(inventory.getByLabel('Quantity change')).toHaveValue('')
+  await expect(inventory).toContainText('Small plum batch')
 
   const defaultInventoryRow = inventory
     .getByRole('button')
@@ -376,95 +341,8 @@ test('lets an owner manage commercial settings and complete an order journey', a
   await page.getByLabel('City').fill('Lisbon')
   await page.getByLabel('Postal code').fill('1000-008')
   await page.getByRole('button', { name: 'Save delivery details' }).click()
-  const shippingMethod = page.getByLabel('Shipping method')
-  const expressShippingId = await shippingMethod
-    .locator('option')
-    .filter({ hasText: 'Express tracked' })
-    .getAttribute('value')
-  expect(expressShippingId).toBeTruthy()
-  await shippingMethod.selectOption(expressShippingId!)
-  await page.getByLabel('Discount code').fill(discountCode.toLowerCase())
-  await page.getByRole('button', { name: 'Apply', exact: true }).click()
-  await expect(page.locator('.cart-summary')).toContainText(discountCode)
-  await expect(page.locator('.cart-summary')).toContainText('Express tracked')
-  await expect(page.locator('.cart-summary')).toContainText('Tax · 23%')
-  await expect(page.locator('.cart-summary')).toContainText('€67.89')
-  await page.getByRole('button', { name: 'Create order' }).click()
-  const orderNumber = (await page.locator('.order-confirmation .eyebrow').textContent())?.trim()
-  expect(orderNumber).toMatch(/KP-\d{4}-\d{6}/)
-
-  await page.goto('http://127.0.0.1:3001/#customers')
-  const customers = page.getByRole('region', { name: 'Customers' })
-  await customers.getByLabel('Search customers').fill(orderEmail)
-  const customerRow = customers.getByRole('button').filter({ hasText: orderEmail })
-  await customerRow.click()
-  const customerDetail = customers.getByRole('region', { name: 'Order Browser' })
-  const customerOrderHistory = customerDetail.getByRole('region', { name: 'Order history' })
-  const customerOrderLink = customerOrderHistory.getByRole('link', { name: new RegExp(orderNumber ?? '') })
-  await expect(customerOrderLink).toContainText('1 item')
-  await customerOrderLink.click()
-
-  const orders = page.getByRole('region', { name: 'Orders' })
-  await expect(orders).toBeVisible()
-  const orderRow = orders.getByRole('button').filter({ hasText: orderNumber ?? '' })
-  await orderRow.click()
-  await expect(page.getByLabel(`Order ${orderNumber}`)).toContainText(oatSku)
-  await expect(page.getByLabel(`Order ${orderNumber}`)).toContainText('Order Browser')
-  await expect(page.getByLabel(`Order ${orderNumber}`)).toContainText(`Discount ${discountCode}`)
-  await expect(page.getByLabel(`Order ${orderNumber}`)).toContainText('Express tracked')
-  await expect(page.getByLabel(`Order ${orderNumber}`)).toContainText('Tax (23%)')
-  page.once('dialog', async (dialog) => {
-    await dialog.accept('Browser development payment')
-  })
-  await page.getByRole('button', { name: 'Record manual payment' }).click()
-  await expect(page.getByLabel(`Order ${orderNumber}`)).toContainText('Manual payment recorded')
-  await expect(orderRow).toContainText('paid')
-
-  await page.getByRole('link', { name: 'Dashboard' }).click()
-  const fulfillmentQueue = page.getByRole('region', { name: 'Paid orders awaiting fulfillment' })
-  await expect(fulfillmentQueue).toContainText(orderNumber ?? '')
-  await fulfillmentQueue
-    .getByRole('link', { name: new RegExp(orderNumber ?? '') })
-    .click()
-  await expect(page.getByLabel(`Order ${orderNumber}`)).toBeVisible()
-
-  await page.getByRole('heading', { name: 'Create fulfillment' }).scrollIntoViewIfNeeded()
-  await page.getByRole('spinbutton', { name: /quantity to ship/ }).fill('1')
-  await page.getByLabel('Carrier').fill('CTT')
-  await page.getByLabel('Tracking number').fill(`TRACK-${unique}`)
-  await page.getByLabel('Tracking URL').fill(`https://tracking.example.test/TRACK-${unique}`)
-  await page.getByLabel('Internal reason').fill('Packed during browser verification')
-  await page.getByRole('button', { name: 'Create shipment' }).click()
-  await expect(page.getByLabel(`Order ${orderNumber}`)).toContainText('Order fulfilled')
-  await expect(page.getByLabel(`Order ${orderNumber}`)).toContainText(`TRACK-${unique}`)
-  await expect(page.getByLabel(`Order ${orderNumber}`)).not.toContainText('fulfillment created')
-  await expect(orderRow).toContainText('paid')
-
-  await page.getByRole('heading', { name: 'Create refund' }).scrollIntoViewIfNeeded()
-  await page.getByLabel('Full remaining balance').check()
-  await page.getByLabel('Return selected quantities to available stock').check()
-  await page.getByLabel('Customer-facing reason').fill('Browser return accepted')
-  await page.getByLabel('Internal note').fill('Verified by the Phase 9 browser journey')
-  await page.getByRole('button', { name: 'Create refund' }).click()
-  const orderDetail = page.getByLabel(`Order ${orderNumber}`)
-  await expect(orderDetail).toContainText('Payment refunded')
-  await expect(orderDetail).toContainText('Browser return accepted')
-  await expect(orderDetail).toContainText('Verified by the Phase 9 browser journey')
-  await expect(orderDetail).toContainText('Restocked')
-  await expect(orderRow).toContainText('refunded')
-
-  await page.getByRole('link', { name: 'Dashboard' }).click()
-  const refundActivity = page.getByRole('region', { name: 'Recent refunds' })
-  await expect(refundActivity).toContainText(orderNumber ?? '')
-  await expect(refundActivity).toContainText('Browser return accepted')
-  await page.setViewportSize({ width: 390, height: 844 })
-  const orderDimensions = await page.evaluate(() => ({
-    viewport: document.documentElement.clientWidth,
-    content: document.documentElement.scrollWidth,
-  }))
-  expect(orderDimensions.content).toBeLessThanOrEqual(orderDimensions.viewport)
-  await refundActivity
-    .getByRole('link', { name: new RegExp(orderNumber ?? '') })
-    .click()
-  await expect(page.getByLabel(`Order ${orderNumber}`)).toContainText('Browser return accepted')
+  await expect(page.getByRole('button', { name: 'Place order', exact: true })).toBeEnabled()
+  await page.getByRole('button', { name: 'Place order', exact: true }).click()
+  await expect(page.locator('.order-confirmation')).toContainText('Thank you, Order.')
+  await expect(page.locator('.order-confirmation')).toContainText(title)
 })

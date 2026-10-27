@@ -8,7 +8,6 @@ import { ApiError } from '@knitnprint/api-client'
 import { createFileRoute } from '@tanstack/react-router'
 import {
   ArrowLeft,
-  CircleCheck,
   PackageOpen,
   ReceiptText,
   ShoppingBag,
@@ -18,6 +17,7 @@ import {
 import { useEffect, useState, type FormEvent } from 'react'
 import { announceCartUpdate, cartApi, cartMutationKey } from '../cart-api'
 import { ContextualFaqs } from '../components/contextual-faqs'
+import { CountrySelect } from '../components/country-select'
 import { VerifiedCustomerGate } from '../components/verified-customer-gate'
 import { StorefrontAnnouncement, StorefrontFooter, StorefrontHeader } from '../components/storefront-shell'
 import { useI18n } from '../i18n'
@@ -39,13 +39,14 @@ function personalizationSummary(value: unknown, mediaIds: string[], t: ReturnTyp
   if (!value || typeof value !== 'object') return t('personalization.summary')
   const customization = value as { areas?: Array<{ view_id?: unknown; photo?: unknown; text?: { content?: unknown } }>; photo?: unknown; text?: { content?: unknown } }
   if (Array.isArray(customization.areas)) {
+    const photoCount = customization.areas.filter((area) => Boolean(area.photo)).length
     const textCount = customization.areas.filter((area) => typeof area.text?.content === 'string').length
     const viewCount = new Set(customization.areas.flatMap((area) => typeof area.view_id === 'string' ? [area.view_id] : [])).size
     const parts = [
       viewCount > 1 ? t('personalization.summarySides', { count: viewCount }) : '',
       t(customization.areas.length === 1 ? 'personalization.summaryArea' : 'personalization.summaryAreas', { count: customization.areas.length }),
     ].filter(Boolean)
-    if (mediaIds.length) parts.push(t(mediaIds.length === 1 ? 'personalization.summaryPhoto' : 'personalization.summaryPhotos', { count: mediaIds.length }))
+    if (photoCount) parts.push(t(photoCount === 1 ? 'personalization.summaryPhoto' : 'personalization.summaryPhotos', { count: photoCount }))
     if (textCount) parts.push(t(textCount === 1 ? 'personalization.summaryText' : 'personalization.summaryTexts', { count: textCount }))
     return `${t('personalization.summary')} · ${parts.join(' · ')}`
   }
@@ -73,25 +74,7 @@ function CartContent() {
   const [submittingOrder, setSubmittingOrder] = useState(false)
   const [paymentOptions, setPaymentOptions] = useState<PaymentOptions | null>(null)
   const [discountBusy, setDiscountBusy] = useState(false)
-  const [shippingBusy, setShippingBusy] = useState(false)
-
-  function shippingErrorMessage(error: unknown) {
-    const code = error instanceof ApiError ? error.body.error.code : ''
-    if (code === 'shipping_package_invalid') return t('cart.shippingPackageInvalid')
-    if (code === 'packlink_no_services') return t('cart.shippingNoServices')
-    return t('cart.shippingUnavailable')
-  }
-
-  async function refreshShippingQuotes(nextCart: Cart) {
-    if (!nextCart.delivery) return nextCart
-    setShippingBusy(true)
-    try {
-      return await cartApi.refreshCartShippingQuotes()
-    } finally {
-      setShippingBusy(false)
-    }
-  }
-
+  const [checkoutKey, setCheckoutKey] = useState<string | null>(null)
   useEffect(() => {
     let active = true
     const orderId = new URLSearchParams(window.location.search).get('order_id')
@@ -106,23 +89,8 @@ function CartContent() {
         if (orderId) setOrder(resource as Order)
         else {
           const loadedCart = resource as Cart
-          if (loadedCart.delivery) {
-            refreshShippingQuotes(loadedCart)
-              .then((quotedCart) => {
-                if (!active) return
-                setCart(quotedCart)
-                announceCartUpdate(quotedCart)
-              })
-              .catch((error) => {
-                if (!active) return
-                setCart(loadedCart)
-                announceCartUpdate(loadedCart)
-                setMessage(shippingErrorMessage(error))
-              })
-          } else {
-            setCart(loadedCart)
-            announceCartUpdate(loadedCart)
-          }
+          setCart(loadedCart)
+          announceCartUpdate(loadedCart)
         }
       })
       .catch(() => {
@@ -175,13 +143,6 @@ function CartContent() {
       const changedCart = await cartApi.updateCartItem(lineId, { quantity }, cartMutationKey())
       setCart(changedCart)
       announceCartUpdate(changedCart)
-      try {
-        const nextCart = await refreshShippingQuotes(changedCart)
-        setCart(nextCart)
-        announceCartUpdate(nextCart)
-      } catch (error) {
-        setMessage(shippingErrorMessage(error))
-      }
     } catch {
       setMessage(t('cart.quantityUnavailable'))
     } finally {
@@ -194,7 +155,7 @@ function CartContent() {
     setMessage('')
     try {
       const changedCart = await cartApi.removeCartItem(lineId, cartMutationKey())
-      const nextCart = changedCart.items.length ? await refreshShippingQuotes(changedCart) : changedCart
+      const nextCart = changedCart
       setCart(nextCart)
       announceCartUpdate(nextCart)
     } catch {
@@ -229,14 +190,7 @@ function CartContent() {
       const deliveryCart = await cartApi.setCartDelivery(input, cartMutationKey())
       setCart(deliveryCart)
       announceCartUpdate(deliveryCart)
-      try {
-        const nextCart = await refreshShippingQuotes(deliveryCart)
-        setCart(nextCart)
-        announceCartUpdate(nextCart)
-        setMessage(t('cart.deliverySaved'))
-      } catch (error) {
-        setMessage(shippingErrorMessage(error))
-      }
+      setMessage(t('cart.deliverySaved'))
     } catch {
       setMessage(t('cart.deliveryError'))
     }
@@ -271,75 +225,34 @@ function CartContent() {
     }
   }
 
-  async function selectShippingMethod(shippingMethodId: string) {
-    setShippingBusy(true)
-    setMessage('')
-    try {
-      setCart(
-        await cartApi.selectCartShippingMethod(
-          { shipping_method_id: shippingMethodId },
-          cartMutationKey(),
-        ),
-      )
-      setMessage(t('cart.shippingUpdated'))
-    } catch {
-      setMessage(t('cart.shippingError'))
-    } finally {
-      setShippingBusy(false)
-    }
-  }
-
   async function createOrder() {
+    if (!cart?.checkout_ready || !paymentOptions || submittingOrder) return
+    const method = paymentOptions.stripe ? 'stripe' : paymentOptions.manual ? 'manual' : null
+    if (!method) return
+    const key = checkoutKey ?? cartMutationKey()
+    setCheckoutKey(key)
     setSubmittingOrder(true)
     setMessage('')
-    if (cart?.delivery) {
-      try {
-        const currentCart = await refreshShippingQuotes(cart)
-        setCart(currentCart)
-        announceCartUpdate(currentCart)
-        if (!currentCart.checkout_ready) {
-          setMessage(t('cart.shippingUnavailable'))
-          setSubmittingOrder(false)
-          return
-        }
-      } catch (error) {
-        setMessage(shippingErrorMessage(error))
-        setSubmittingOrder(false)
-        return
-      }
-    }
     try {
-      if (!paymentOptions) return
-      const method = paymentOptions.stripe ? 'stripe' : 'manual'
-      const nextOrder = await cartApi.createOrder(
-        { payment_method: method, locale },
-        cartMutationKey(),
-      )
+      const nextOrder = await cartApi.createOrder({ payment_method: method, locale, shipping_rate_revision: cart.shipping_quote?.revision }, key)
       setOrder(nextOrder)
       announceCartUpdate({ item_count: 0 })
-      if (method === 'stripe') {
-        window.history.replaceState(
-          null,
-          '',
-          `/cart?payment=pending&order_id=${nextOrder.id}`,
-        )
-        await redirectToPayment(nextOrder.id)
+      window.history.replaceState(null, '', `/cart?order_id=${nextOrder.id}`)
+      if (method === 'stripe') await redirectToPayment(nextOrder.id)
+    } catch (error) {
+      setMessage(t(error instanceof ApiError && error.body.error.code === 'cart_changed' ? 'cart.pricingChanged' : 'cart.orderError'))
+      if (error instanceof ApiError && ['cart_changed', 'cart_not_ready', 'shipping_destination_unavailable'].includes(error.body.error.code)) {
+        setCheckoutKey(null)
+        try { setCart(await cartApi.cart()) } catch { /* Keep the checkout error visible. */ }
       }
-    } catch {
-      setMessage(t('cart.orderError'))
-      try {
-        const nextCart = await cartApi.cart()
-        setCart(nextCart)
-        announceCartUpdate(nextCart)
-      } catch {
-        // Preserve the actionable checkout error when reconciliation is unavailable.
-      }
-    } finally {
-      setSubmittingOrder(false)
-    }
+    } finally { setSubmittingOrder(false) }
   }
 
   async function redirectToPayment(orderId: string) {
+    if (paymentOptions?.checkout_suspended !== false) {
+      setMessage(t('cart.checkoutSuspended'))
+      return
+    }
     setSubmittingOrder(true)
     setMessage(t('cart.openingSecureCheckout'))
     try {
@@ -352,6 +265,7 @@ function CartContent() {
   }
 
   const currency = cart?.currency ?? 'EUR'
+  const checkoutSuspended = paymentOptions?.checkout_suspended !== false
 
   return (
     <>
@@ -368,6 +282,7 @@ function CartContent() {
           {!order && cart && <p>{cart.item_count} {t(cart.item_count === 1 ? 'cart.piece' : 'cart.pieces')}</p>}
         </div>
 
+        {checkoutSuspended && (!order || order.payment_status === 'pending') && <p className="cart-notice cart-checkout-notice" role="status">{t('cart.checkoutSuspended')}</p>}
         {loading && <p className="cart-notice" role="status">{t('cart.loading')}</p>}
         {!loading && !cart && <p className="cart-notice" role="alert">{message}</p>}
 
@@ -376,6 +291,7 @@ function CartContent() {
             order={order}
             fromAccount={fromAccount}
             busy={submittingOrder}
+            checkoutSuspended={checkoutSuspended}
             onResumePayment={redirectToPayment}
           />
         )}
@@ -397,7 +313,7 @@ function CartContent() {
                   <TriangleAlert aria-hidden="true" />
                   <div>
                     <h2 id="cart-issues-title">{t('cart.changedTitle')}</h2>
-                    <ul>{cart.issues.map((issue, index) => <li key={`${issue.code}-${index}`}>{issue.message}</li>)}</ul>
+                    <ul>{cart.issues.map((issue, index) => <li key={`${issue.code}-${index}`}>{issue.code === 'shipping_invalid_postal_code' ? t('cart.shippingInvalidPostal') : issue.code.startsWith('shipping_') ? t('cart.shippingUnavailable') : issue.message}</li>)}</ul>
                   </div>
                 </section>
               )}
@@ -456,31 +372,11 @@ function CartContent() {
                   <strong>−{formatCurrency(cart.discount_minor, currency)}</strong>
                 </div>
               )}
-              {cart.shipping ? (
-                <div><span>{t('cart.shipping')} · {shippingDetails(cart.shipping)}</span><strong>{formatCurrency(cart.shipping_minor, currency)}</strong></div>
-              ) : (
-                <div><span>{t('cart.shipping')}</span><span>{t('cart.addDelivery')}</span></div>
-              )}
               {cart.tax && (
                 <div><span>{t('cart.tax')} · {cart.tax.rate_basis_points / 100}%</span><strong>{formatCurrency(cart.tax_minor, currency)}</strong></div>
               )}
+              <div><span>{t(cart.shipping_quote && !cart.shipping_quote.pricing_enabled ? 'cart.shippingNotCharged' : 'cart.shipping')}</span><strong>{cart.shipping_minor != null ? formatCurrency(cart.shipping_minor, currency) : t(cart.delivery ? 'cart.shippingNoRate' : 'cart.shippingPending')}</strong></div>
               <div className="cart-total"><span>{t('cart.total')}</span><strong>{formatCurrency(cart.total_minor, currency)}</strong></div>
-              {cart.shipping_methods.length > 1 && cart.shipping && (
-                <label className="cart-shipping-select">
-                  {t('cart.shippingMethod')}
-                  <select
-                    value={cart.shipping.id}
-                    disabled={shippingBusy}
-                    onChange={(event) => selectShippingMethod(event.target.value)}
-                  >
-                    {cart.shipping_methods.map((method, index) => (
-                      <option value={method.id} key={method.id}>
-                        {index === 0 ? 'Mais barato' : 'Mais rápido'} — {shippingDetails(method)} · {formatCurrency(method.amount_minor, method.currency)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              )}
               {cart.discount ? (
                 <button className="text-button cart-discount-remove" type="button" disabled={discountBusy} onClick={removeDiscount}>{t('cart.removeDiscount')}</button>
               ) : (
@@ -489,25 +385,15 @@ function CartContent() {
                   <div><input id="discount-code" name="discount_code" minLength={3} maxLength={32} required autoCapitalize="characters" /><button type="submit" disabled={discountBusy}>{t(discountBusy ? 'cart.applying' : 'cart.apply')}</button></div>
                 </form>
               )}
-              <p>{t('cart.recalculationNote')}</p>
+              <p>{t(cart.shipping_quote?.pricing_enabled ? 'cart.shippingCalculatedNote' : cart.delivery ? 'cart.recalculationNote' : 'cart.shippingAwaitingAddress')}</p>
               <button
                 className="button button--primary"
                 type="button"
-                disabled={!cart.checkout_ready || submittingOrder || !paymentOptions}
-                onClick={createOrder}
+                disabled={checkoutSuspended || !cart.checkout_ready || submittingOrder || (!paymentOptions?.stripe && !paymentOptions?.manual)}
+                onClick={() => void createOrder()}
               >
-                {submittingOrder
-                  ? t('cart.openingCheckout')
-                  : paymentOptions?.stripe
-                    ? t('cart.paySecurely')
-                    : t('cart.createOrder')}
+                {t(submittingOrder ? 'cart.openingCheckout' : 'cart.placeOrder')}
               </button>
-              <span className="cart-ready-state">
-                {cart.checkout_ready ? <CircleCheck aria-hidden="true" /> : <TriangleAlert aria-hidden="true" />}
-                {cart.checkout_ready
-                  ? t('cart.ready')
-                  : t('cart.notReady')}
-              </span>
             </aside>
           </div>
         )}
@@ -537,11 +423,13 @@ function OrderConfirmation({
   fromAccount,
   busy,
   onResumePayment,
+  checkoutSuspended,
 }: Readonly<{
   order: Order
   fromAccount: boolean
   busy: boolean
   onResumePayment: (orderId: string) => Promise<void>
+  checkoutSuspended: boolean
 }>) {
   const { t, formatCurrency } = useI18n()
   const stripePending =
@@ -574,7 +462,7 @@ function OrderConfirmation({
         <div><dt>{t('order.payment')}</dt><dd>{order.payment_status}</dd></div>
         <div><dt>{t('cart.subtotal')}</dt><dd>{formatCurrency(order.subtotal_minor, order.currency)}</dd></div>
         {order.discount && <div><dt>{t('order.discount')} ({order.discount.code})</dt><dd>−{formatCurrency(order.discount_minor, order.currency)}</dd></div>}
-        <div><dt>{t('cart.shipping')} ({shippingDetails(order.shipping)})</dt><dd>{formatCurrency(order.shipping_minor, order.currency)}</dd></div>
+        <div><dt>{order.shipping.method_name === 'Shipping not charged' ? t('cart.shippingNotCharged') : order.shipping.method_name === 'Destination flat rate' ? t('cart.shipping') : `${t('cart.shipping')} (${shippingDetails(order.shipping)})`}</dt><dd>{formatCurrency(order.shipping_minor, order.currency)}</dd></div>
         <div><dt>{t('cart.tax')} ({order.tax.rate_basis_points / 100}%)</dt><dd>{formatCurrency(order.tax_minor, order.currency)}</dd></div>
         <div><dt>{t('cart.total')}</dt><dd>{formatCurrency(order.total_minor, order.currency)}</dd></div>
       </dl>
@@ -597,7 +485,7 @@ function OrderConfirmation({
         <button
           className="button button--primary"
           type="button"
-          disabled={busy}
+          disabled={busy || checkoutSuspended}
           onClick={() => onResumePayment(order.id)}
         >
           {busy ? t('cart.openingCheckout') : t('order.continuePayment')}
@@ -640,7 +528,7 @@ function DeliveryForm({
         </div>
         <div className="field-row field-row--postal">
           <label>{t('delivery.postalCode')}<input required name="postal_code" defaultValue={delivery?.address.postal_code} /></label>
-          <label>{t('delivery.countryCode')}<input required name="country_code" minLength={2} maxLength={2} defaultValue={delivery?.address.country_code ?? 'PT'} /></label>
+          <label>{t('delivery.countryCode')}<CountrySelect defaultValue={delivery?.address.country_code ?? 'PT'} /></label>
         </div>
         <label>{t('delivery.phone')}<input name="address_phone" defaultValue={delivery?.address.phone} /></label>
         <button className="button button--secondary" type="submit">{t('delivery.save')}</button>

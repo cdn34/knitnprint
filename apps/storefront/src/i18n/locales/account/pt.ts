@@ -100,7 +100,7 @@ export const accountPt = {
   'account.city': 'Localidade',
   'account.region': 'Distrito ou região (opcional)',
   'account.postalCode': 'Código postal',
-  'account.countryCode': 'Código do país',
+  'account.countryCode': 'País',
   'account.deliveryPhone': 'Telefone para entrega (opcional)',
   'account.saving': 'A guardar…',
   'account.saveAddress': 'Guardar morada',

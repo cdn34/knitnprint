@@ -27,6 +27,7 @@ import {
   StorefrontHeader,
 } from "../components/storefront-shell";
 import { useI18n } from "../i18n";
+import { CountrySelect } from "../components/country-select";
 
 export const Route = createFileRoute("/account")({
   component: AccountPage,
@@ -787,13 +788,7 @@ function AuthenticatedAccount({
               name="postal_code"
               autoComplete="postal-code"
             />
-            <Field
-              label={t("account.countryCode")}
-              name="country_code"
-              autoComplete="country"
-              minLength={2}
-              maxLength={2}
-            />
+            <label className="account-field"><span>{t("account.countryCode")}</span><CountrySelect /></label>
           </div>
           <Field
             label={t("account.deliveryPhone")}
@@ -826,7 +821,7 @@ function AddressEditForm({ address, pending, onSubmit }: Readonly<{ address: Cus
     <Field label={t("account.region")} name="region" defaultValue={address.region} required={false} />
     <div className="account-form-row account-form-row--location">
       <Field label={t("account.postalCode")} name="postal_code" defaultValue={address.postal_code} />
-      <Field label={t("account.countryCode")} name="country_code" defaultValue={address.country_code} minLength={2} maxLength={2} />
+      <label className="account-field"><span>{t("account.countryCode")}</span><CountrySelect defaultValue={address.country_code} /></label>
     </div>
     <Field label={t("account.deliveryPhone")} name="address_phone" type="tel" defaultValue={address.phone} required={false} />
     <button className="button button--primary account-submit" disabled={pending} type="submit">{t(pending ? "account.saving" : "account.saveAddressChanges")}</button>

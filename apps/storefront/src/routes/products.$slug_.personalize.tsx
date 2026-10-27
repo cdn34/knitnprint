@@ -1,13 +1,14 @@
 import { ApiError } from '@knitnprint/api-client'
 import { createFileRoute, notFound } from '@tanstack/react-router'
 import { ArrowLeft, Eye, ShoppingBag } from 'lucide-react'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { announceCartUpdate, cartApi, cartMutationKey } from '../cart-api'
 import { mediaUrl, preferredVariant, publishedProduct, variantStock } from '../catalog-api'
-import { ProductPersonalizer, type PersonalizerChange } from '../components/product-personalizer'
+import { ProductPersonalizer, type CustomerCustomization } from '../components/product-personalizer'
 import { VerifiedCustomerGate } from '../components/verified-customer-gate'
 import { StorefrontAnnouncement, StorefrontHeader } from '../components/storefront-shell'
 import { useI18n } from '../i18n'
+import { activePersonalizationViews } from '../personalization-views'
 
 export const Route = createFileRoute('/products/$slug_/personalize')({
   validateSearch: (search: Record<string, unknown>) => ({ variant: typeof search.variant === 'string' ? search.variant : undefined }),
@@ -27,19 +28,20 @@ function PersonalizeProductPage() {
 function PersonalizeProductContent() {
   const { t } = useI18n()
   const product = Route.useLoaderData()
+  const productMedia = useMemo(() => product.media.map((media) => ({ id: media.id, url: mediaUrl(media.detail_url) })), [product.media])
   const search = Route.useSearch()
   const defaultVariant = preferredVariant(product)
   const [variantId, setVariantId] = useState(product.variants.some(({ id }) => id === search.variant) ? search.variant! : defaultVariant?.id ?? '')
   const variant = product.variants.find(({ id }) => id === variantId) ?? defaultVariant
-  const personalizationViews = Array.isArray(product.personalization.views) ? product.personalization.views : []
-  const hasMeasuredSide = personalizationViews.some((raw) => raw && typeof raw === 'object' && raw.article_reference?.configured === true)
+  const personalizationViews = activePersonalizationViews(product.personalization)
+  const hasMeasuredSide = personalizationViews.some((raw) => raw && typeof raw === 'object' && raw.article_reference && typeof raw.article_reference === 'object' && 'configured' in raw.article_reference && raw.article_reference.configured === true)
   const calibrationReady = !hasMeasuredSide || personalizationViews.every((raw) => {
-    if (!raw || typeof raw !== 'object' || raw.article_reference?.configured !== true) return false
+    if (!raw || typeof raw !== 'object' || !raw.article_reference || typeof raw.article_reference !== 'object' || !('configured' in raw.article_reference) || raw.article_reference.configured !== true) return false
     const references = raw.variant_references
     if (product.variants.length <= 1 && (!Array.isArray(references) || references.length === 0)) return true
     return Array.isArray(references) && references.some((reference) => reference && typeof reference === 'object' && reference.variant_id === variant?.id && reference.configured === true)
   })
-  const [design, setDesign] = useState<PersonalizerChange>({ customization: null, mediaIds: [], ready: false, missing: [], savePreviews: async () => [] })
+  const [design, setDesign] = useState<{ customization: CustomerCustomization | null; mediaIds: string[]; ready: boolean; missing: string[]; savePreviews?: () => Promise<NonNullable<CustomerCustomization['previews']>> }>({ customization: null, mediaIds: [], ready: false, missing: [] })
   const [status, setStatus] = useState<'idle' | 'adding' | 'added' | 'error'>('idle')
   const [errorMessage, setErrorMessage] = useState('')
   const [confirmingIncomplete, setConfirmingIncomplete] = useState(false)
@@ -53,8 +55,10 @@ function PersonalizeProductContent() {
     setErrorMessage('')
     setConfirmingIncomplete(false)
     try {
-      const previews = design.customization ? await design.savePreviews() : []
-      const cart = await cartApi.addCartItem({ personalization_previews: previews, variant_id: variant.id, quantity: 1, ...(design.customization ? { customization: design.customization } : {}), ...(design.mediaIds.length ? { customization_media_asset_ids: design.mediaIds } : {}) }, cartMutationKey())
+      const previews = design.customization ? await design.savePreviews?.() : undefined
+      if (design.customization && !previews?.length) throw new Error('Personalized preview could not be saved')
+      const customization = design.customization
+      const cart = await cartApi.addCartItem({ variant_id: variant.id, quantity: 1, personalization_previews: previews ?? [], ...(customization ? { customization } : {}), ...(design.mediaIds.length ? { customization_media_asset_ids: design.mediaIds } : {}) }, cartMutationKey())
       announceCartUpdate(cart)
       setStatus('added')
     } catch (error) {
@@ -94,7 +98,7 @@ function PersonalizeProductContent() {
         </div>
         <div className="personalization-page-intro"><p>{t('personalization.studio')}</p><h1>{creationTitle}</h1><span>{t('personalization.intro')}</span></div>
       </header>
-      <ProductPersonalizer busy={status === 'adding'} config={product.personalization} variantId={variant?.id ?? ''} variantLabel={product.variants.length > 1 ? variant?.title : undefined} productMedia={product.media.map((media) => ({ id: media.id, url: mediaUrl(media.detail_url) }))} onChange={setDesign} previewOpen={previewOpen} onPreviewClose={() => setPreviewOpen(false)} onAddToCart={requestAddToCart} addToCartDisabled={!variant || soldOut || !calibrationReady || status === 'adding'} addToCartLabel={addToCartLabel} />
+      <ProductPersonalizer saving={status === 'adding'} config={product.personalization} variantId={variant?.id ?? ''} variantLabel={product.variants.length > 1 ? variant?.title : undefined} productMedia={productMedia} onChange={setDesign} previewOpen={previewOpen} onPreviewClose={() => setPreviewOpen(false)} onAddToCart={requestAddToCart} addToCartDisabled={!variant || soldOut || !calibrationReady || status === 'adding'} addToCartLabel={addToCartLabel} />
       <div className="personalization-checkout-bar">
         <span>{!calibrationReady ? t('personalization.sizeCalibrationPending') : t(soldOut ? 'personalization.soldOutDetail' : design.ready ? 'personalization.ready' : 'personalization.optionalReady')}</span>
         <button className="button button--secondary personalization-preview-button" type="button" disabled={!calibrationReady} onClick={() => setPreviewOpen(true)}><Eye /> {t('personalization.previewResult')}</button>
