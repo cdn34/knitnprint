@@ -49,70 +49,10 @@ pub struct Product {
     pub description: String,
     pub status: String,
     pub search_keywords: String,
-    pub shipping: ShippingProfile,
     pub variants: Vec<Variant>,
     pub media: Vec<ProductMedia>,
     pub categories: Vec<Category>,
     pub personalization: PersonalizationConfig,
-}
-
-#[derive(Clone, Serialize, Deserialize, ToSchema)]
-pub struct ShippingProfile {
-    #[serde(default)]
-    pub package_profile_id: Option<Uuid>,
-    #[serde(default)]
-    pub package_profile_name: Option<String>,
-    pub weight_grams: i32,
-    pub width_cm: i32,
-    pub length_cm: i32,
-    pub height_cm: i32,
-    #[serde(default)]
-    pub empty_weight_grams: i32,
-    pub units_per_package: i32,
-    pub configured: bool,
-}
-
-impl Default for ShippingProfile {
-    fn default() -> Self {
-        Self {
-            package_profile_id: None,
-            package_profile_name: None,
-            weight_grams: 500,
-            width_cm: 35,
-            length_cm: 50,
-            height_cm: 25,
-            empty_weight_grams: 0,
-            units_per_package: 1,
-            configured: false,
-        }
-    }
-}
-
-#[derive(Clone, Serialize, Deserialize, ToSchema, FromRow)]
-pub struct ShippingPackageProfile {
-    pub id: Uuid,
-    pub name: String,
-    pub width_cm: i32,
-    pub length_cm: i32,
-    pub height_cm: i32,
-    pub empty_weight_grams: i32,
-    pub active: bool,
-}
-
-#[derive(Deserialize, ToSchema)]
-pub struct ShippingPackageProfileRequest {
-    pub name: String,
-    pub width_cm: i32,
-    pub length_cm: i32,
-    pub height_cm: i32,
-    #[serde(default)]
-    pub empty_weight_grams: i32,
-    #[serde(default = "default_true")]
-    pub active: bool,
-}
-
-fn default_true() -> bool {
-    true
 }
 
 #[derive(Clone, Serialize, Deserialize, ToSchema, FromRow)]
@@ -220,12 +160,6 @@ struct ProductRow {
     description: String,
     status: String,
     search_keywords: String,
-    shipping_weight_grams: i32,
-    shipping_width_cm: i32,
-    shipping_length_cm: i32,
-    shipping_height_cm: i32,
-    shipping_units_per_package: i32,
-    shipping_profile_configured: bool,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -236,8 +170,6 @@ pub struct CreateProductRequest {
     pub description: String,
     #[serde(default)]
     pub search_keywords: String,
-    #[serde(default)]
-    pub shipping: ShippingProfile,
     pub variants: Vec<CreateVariantRequest>,
     #[serde(default)]
     pub personalization: PersonalizationConfig,
@@ -267,8 +199,6 @@ pub struct UpdateProductRequest {
     pub price_minor: i64,
     pub currency: String,
     pub available_quantity: i64,
-    #[serde(default)]
-    pub shipping: ShippingProfile,
     #[serde(default)]
     pub personalization: PersonalizationConfig,
 }
@@ -397,14 +327,6 @@ pub async fn create(
     if !valid_product(&input) {
         return invalid_input();
     }
-    let package_profile =
-        match resolve_shipping_package(&pool, input.shipping.package_profile_id).await {
-            Ok(profile) => profile,
-            Err(error) => return error.into_response(),
-        };
-    if input.shipping.configured && package_profile.is_none() {
-        return invalid_input();
-    }
     let product_id = Uuid::now_v7();
     let mut transaction = match pool.begin().await {
         Ok(transaction) => transaction,
@@ -413,12 +335,9 @@ pub async fn create(
     if let Err(error) = sqlx::query(
         r#"
         INSERT INTO products (
-            id, title, slug, description, search_keywords,
-            shipping_weight_grams, shipping_width_cm, shipping_length_cm,
-            shipping_height_cm, shipping_units_per_package, shipping_profile_configured,
-            shipping_package_profile_id
+            id, title, slug, description, search_keywords
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        VALUES ($1, $2, $3, $4, $5)
         "#,
     )
     .bind(product_id)
@@ -426,25 +345,6 @@ pub async fn create(
     .bind(input.slug.trim())
     .bind(input.description.trim())
     .bind(input.search_keywords.trim())
-    .bind(input.shipping.weight_grams)
-    .bind(
-        package_profile
-            .as_ref()
-            .map_or(input.shipping.width_cm, |profile| profile.width_cm),
-    )
-    .bind(
-        package_profile
-            .as_ref()
-            .map_or(input.shipping.length_cm, |profile| profile.length_cm),
-    )
-    .bind(
-        package_profile
-            .as_ref()
-            .map_or(input.shipping.height_cm, |profile| profile.height_cm),
-    )
-    .bind(input.shipping.units_per_package)
-    .bind(input.shipping.configured && package_profile.is_some())
-    .bind(package_profile.as_ref().map(|profile| profile.id))
     .execute(&mut *transaction)
     .await
     {
@@ -544,7 +444,6 @@ pub async fn update(
         || input.description.len() > 50_000
         || input.search_keywords.len() > 2_000
         || !valid_variant_details(&variant)
-        || !valid_shipping(&input.shipping)
         || !valid_personalization(&input.personalization)
     {
         return invalid_input();
@@ -552,14 +451,6 @@ pub async fn update(
     let Some(pool) = state.database else {
         return unavailable();
     };
-    let package_profile =
-        match resolve_shipping_package(&pool, input.shipping.package_profile_id).await {
-            Ok(profile) => profile,
-            Err(error) => return error.into_response(),
-        };
-    if input.shipping.configured && package_profile.is_none() {
-        return invalid_input();
-    }
     let mut tx = match pool.begin().await {
         Ok(tx) => tx,
         Err(_) => return unavailable(),
@@ -573,10 +464,7 @@ pub async fn update(
         return not_found();
     };
     if let Err(error) = sqlx::query(
-        r#"UPDATE products SET title=$2, slug=$3, description=$4, search_keywords=$5,
-        shipping_weight_grams=$6, shipping_width_cm=$7, shipping_length_cm=$8,
-        shipping_height_cm=$9, shipping_units_per_package=$10,
-        shipping_profile_configured=$11, shipping_package_profile_id=$12, updated_at=now()
+        r#"UPDATE products SET title=$2, slug=$3, description=$4, search_keywords=$5, updated_at=now()
         WHERE id=$1"#,
     )
     .bind(product_id)
@@ -584,43 +472,10 @@ pub async fn update(
     .bind(input.slug.trim())
     .bind(input.description.trim())
     .bind(input.search_keywords.trim())
-    .bind(input.shipping.weight_grams)
-    .bind(
-        package_profile
-            .as_ref()
-            .map_or(input.shipping.width_cm, |profile| profile.width_cm),
-    )
-    .bind(
-        package_profile
-            .as_ref()
-            .map_or(input.shipping.length_cm, |profile| profile.length_cm),
-    )
-    .bind(
-        package_profile
-            .as_ref()
-            .map_or(input.shipping.height_cm, |profile| profile.height_cm),
-    )
-    .bind(input.shipping.units_per_package)
-    .bind(input.shipping.configured && package_profile.is_some())
-    .bind(package_profile.as_ref().map(|profile| profile.id))
     .execute(&mut *tx)
     .await
     {
         return database_write_error(error);
-    }
-    if sqlx::query(
-        r#"DELETE FROM cart_shipping_quotes quote
-        USING cart_lines line, product_variants variant
-        WHERE quote.cart_id = line.cart_id
-          AND line.variant_id = variant.id
-          AND variant.product_id = $1"#,
-    )
-    .bind(product_id)
-    .execute(&mut *tx)
-    .await
-    .is_err()
-    {
-        return unavailable();
     }
     if let Err(error) = sqlx::query("UPDATE product_variants SET sku=$2, price_minor=$3, currency=$4, updated_at=now() WHERE id=$1")
         .bind(variant_id).bind(input.sku.trim()).bind(input.price_minor).bind(input.currency.trim()).execute(&mut *tx).await { return database_write_error(error); }
@@ -1124,280 +979,6 @@ pub async fn category_create(
 }
 
 #[utoipa::path(
-    get,
-    path = "/api/admin/shipping-packages",
-    tag = "admin catalog",
-    responses(
-        (status = 200, body = [ShippingPackageProfile]),
-        (status = 401, body = ErrorBody),
-        (status = 403, body = ErrorBody)
-    )
-)]
-pub async fn shipping_package_list(
-    State(state): State<AppState>,
-    actor: AuthenticatedStaff,
-) -> Response {
-    if let Err(response) = require_capability(&actor, CATALOG_READ) {
-        return response.into_response();
-    }
-    let Some(pool) = state.database else {
-        return unavailable();
-    };
-    match sqlx::query_as::<_, ShippingPackageProfile>(
-        r#"SELECT id, name, width_cm, length_cm, height_cm, empty_weight_grams, active
-           FROM shipping_package_profiles
-           ORDER BY active DESC, lower(name), id"#,
-    )
-    .fetch_all(&pool)
-    .await
-    {
-        Ok(profiles) => Json(profiles).into_response(),
-        Err(_) => unavailable(),
-    }
-}
-
-#[utoipa::path(
-    post,
-    path = "/api/admin/shipping-packages",
-    tag = "admin catalog",
-    request_body = ShippingPackageProfileRequest,
-    responses(
-        (status = 201, body = ShippingPackageProfile),
-        (status = 409, body = ErrorBody),
-        (status = 422, body = ErrorBody)
-    )
-)]
-pub async fn shipping_package_create(
-    State(state): State<AppState>,
-    actor: AuthenticatedStaff,
-    Json(input): Json<ShippingPackageProfileRequest>,
-) -> Response {
-    if let Err(response) = require_capability(&actor, CATALOG_WRITE) {
-        return response.into_response();
-    }
-    if !valid_shipping_package(&input) {
-        return invalid_input();
-    }
-    let Some(pool) = state.database else {
-        return unavailable();
-    };
-    let profile = ShippingPackageProfile {
-        id: Uuid::now_v7(),
-        name: input.name.trim().into(),
-        width_cm: input.width_cm,
-        length_cm: input.length_cm,
-        height_cm: input.height_cm,
-        empty_weight_grams: input.empty_weight_grams,
-        active: input.active,
-    };
-    let mut transaction = match pool.begin().await {
-        Ok(transaction) => transaction,
-        Err(_) => return unavailable(),
-    };
-    if let Err(error) = sqlx::query(
-        r#"INSERT INTO shipping_package_profiles
-           (id, name, width_cm, length_cm, height_cm, empty_weight_grams, active)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)"#,
-    )
-    .bind(profile.id)
-    .bind(&profile.name)
-    .bind(profile.width_cm)
-    .bind(profile.length_cm)
-    .bind(profile.height_cm)
-    .bind(profile.empty_weight_grams)
-    .bind(profile.active)
-    .execute(&mut *transaction)
-    .await
-    {
-        return database_write_error(error);
-    }
-    if audit_entity(
-        &mut transaction,
-        actor.id,
-        "shipping_package.create",
-        "shipping_package_profile",
-        profile.id,
-        None,
-    )
-    .await
-    .is_err()
-        || transaction.commit().await.is_err()
-    {
-        return unavailable();
-    }
-    (StatusCode::CREATED, Json(profile)).into_response()
-}
-
-#[utoipa::path(
-    put,
-    path = "/api/admin/shipping-packages/{profile_id}",
-    params(("profile_id" = Uuid, Path)),
-    tag = "admin catalog",
-    request_body = ShippingPackageProfileRequest,
-    responses(
-        (status = 200, body = ShippingPackageProfile),
-        (status = 404, body = ErrorBody),
-        (status = 409, body = ErrorBody),
-        (status = 422, body = ErrorBody)
-    )
-)]
-pub async fn shipping_package_update(
-    State(state): State<AppState>,
-    actor: AuthenticatedStaff,
-    Path(profile_id): Path<Uuid>,
-    Json(input): Json<ShippingPackageProfileRequest>,
-) -> Response {
-    if let Err(response) = require_capability(&actor, CATALOG_WRITE) {
-        return response.into_response();
-    }
-    if !valid_shipping_package(&input) {
-        return invalid_input();
-    }
-    let Some(pool) = state.database else {
-        return unavailable();
-    };
-    let profile = ShippingPackageProfile {
-        id: profile_id,
-        name: input.name.trim().into(),
-        width_cm: input.width_cm,
-        length_cm: input.length_cm,
-        height_cm: input.height_cm,
-        empty_weight_grams: input.empty_weight_grams,
-        active: input.active,
-    };
-    let mut transaction = match pool.begin().await {
-        Ok(transaction) => transaction,
-        Err(_) => return unavailable(),
-    };
-    let updated = sqlx::query(
-        r#"UPDATE shipping_package_profiles
-           SET name=$2, width_cm=$3, length_cm=$4, height_cm=$5,
-               empty_weight_grams=$6, active=$7, updated_at=now()
-           WHERE id=$1"#,
-    )
-    .bind(profile.id)
-    .bind(&profile.name)
-    .bind(profile.width_cm)
-    .bind(profile.length_cm)
-    .bind(profile.height_cm)
-    .bind(profile.empty_weight_grams)
-    .bind(profile.active)
-    .execute(&mut *transaction)
-    .await;
-    let updated = match updated {
-        Ok(updated) => updated,
-        Err(error) => return database_write_error(error),
-    };
-    if updated.rows_affected() == 0 {
-        return not_found();
-    }
-    if sqlx::query(
-        r#"DELETE FROM cart_shipping_quotes quote
-           USING cart_lines line, product_variants variant, products product
-           WHERE quote.cart_id=line.cart_id
-             AND line.variant_id=variant.id
-             AND variant.product_id=product.id
-             AND product.shipping_package_profile_id=$1"#,
-    )
-    .bind(profile.id)
-    .execute(&mut *transaction)
-    .await
-    .is_err()
-    {
-        return unavailable();
-    }
-    if audit_entity(
-        &mut transaction,
-        actor.id,
-        "shipping_package.update",
-        "shipping_package_profile",
-        profile.id,
-        None,
-    )
-    .await
-    .is_err()
-        || transaction.commit().await.is_err()
-    {
-        return unavailable();
-    }
-    Json(profile).into_response()
-}
-
-#[utoipa::path(
-    delete,
-    path = "/api/admin/shipping-packages/{profile_id}",
-    params(("profile_id" = Uuid, Path)),
-    tag = "admin catalog",
-    responses(
-        (status = 204),
-        (status = 404, body = ErrorBody),
-        (status = 409, body = ErrorBody)
-    )
-)]
-pub async fn shipping_package_delete(
-    State(state): State<AppState>,
-    actor: AuthenticatedStaff,
-    Path(profile_id): Path<Uuid>,
-) -> Response {
-    if let Err(response) = require_capability(&actor, CATALOG_WRITE) {
-        return response.into_response();
-    }
-    let Some(pool) = state.database else {
-        return unavailable();
-    };
-    let mut transaction = match pool.begin().await {
-        Ok(transaction) => transaction,
-        Err(_) => return unavailable(),
-    };
-    let used: bool = match sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM products WHERE shipping_package_profile_id=$1)",
-    )
-    .bind(profile_id)
-    .fetch_one(&mut *transaction)
-    .await
-    {
-        Ok(used) => used,
-        Err(_) => return unavailable(),
-    };
-    if used {
-        return (
-            StatusCode::CONFLICT,
-            Json(ErrorBody::new(
-                "shipping_package_in_use",
-                "This package is assigned to one or more products.",
-            )),
-        )
-            .into_response();
-    }
-    let deleted = match sqlx::query("DELETE FROM shipping_package_profiles WHERE id=$1")
-        .bind(profile_id)
-        .execute(&mut *transaction)
-        .await
-    {
-        Ok(deleted) => deleted,
-        Err(error) => return database_write_error(error),
-    };
-    if deleted.rows_affected() == 0 {
-        return not_found();
-    }
-    if audit_entity(
-        &mut transaction,
-        actor.id,
-        "shipping_package.delete",
-        "shipping_package_profile",
-        profile_id,
-        None,
-    )
-    .await
-    .is_err()
-        || transaction.commit().await.is_err()
-    {
-        return unavailable();
-    }
-    StatusCode::NO_CONTENT.into_response()
-}
-
-#[utoipa::path(
     post,
     path = "/api/admin/products/{product_id}/variants",
     params(("product_id" = Uuid, Path)),
@@ -1721,9 +1302,7 @@ pub async fn public_detail(State(state): State<AppState>, Path(slug): Path<Strin
     };
     let row = sqlx::query_as::<_, ProductRow>(
         r#"
-        SELECT id, title, slug, description, status, search_keywords,
-               shipping_weight_grams, shipping_width_cm, shipping_length_cm,
-               shipping_height_cm, shipping_units_per_package, shipping_profile_configured
+        SELECT id, title, slug, description, status, search_keywords
         FROM products
         WHERE slug = $1 AND status = 'active'
         "#,
@@ -1750,9 +1329,7 @@ async fn product_rows(
     let category = category.unwrap_or("").trim();
     sqlx::query_as(
         r#"
-        SELECT id, title, slug, description, status, search_keywords,
-               shipping_weight_grams, shipping_width_cm, shipping_length_cm,
-               shipping_height_cm, shipping_units_per_package, shipping_profile_configured
+        SELECT id, title, slug, description, status, search_keywords
         FROM products
         WHERE ($1 = '' OR status = $1)
           AND (
@@ -1837,9 +1414,7 @@ fn hide_inventory(product: &mut Product) {
 
 async fn product_by_id(pool: &PgPool, id: Uuid) -> Response {
     match sqlx::query_as::<_, ProductRow>(
-        r#"SELECT id, title, slug, description, status, search_keywords,
-        shipping_weight_grams, shipping_width_cm, shipping_length_cm,
-        shipping_height_cm, shipping_units_per_package, shipping_profile_configured
+        r#"SELECT id, title, slug, description, status, search_keywords
         FROM products WHERE id = $1"#,
     )
     .bind(id)
@@ -1873,17 +1448,6 @@ fn use_admin_media_urls(product: &mut Product) {
 }
 
 async fn hydrate_product(pool: &PgPool, row: ProductRow) -> Result<Product, sqlx::Error> {
-    let package_profile = sqlx::query_as::<_, ShippingPackageProfile>(
-        r#"SELECT profile.id, profile.name, profile.width_cm, profile.length_cm,
-                  profile.height_cm, profile.empty_weight_grams, profile.active
-           FROM products product
-           JOIN shipping_package_profiles profile
-             ON profile.id=product.shipping_package_profile_id
-           WHERE product.id=$1"#,
-    )
-    .bind(row.id)
-    .fetch_optional(pool)
-    .await?;
     let variants = sqlx::query_as::<_, Variant>(
         r#"
         SELECT
@@ -1960,28 +1524,6 @@ async fn hydrate_product(pool: &PgPool, row: ProductRow) -> Result<Product, sqlx
         description: row.description,
         status: row.status,
         search_keywords: row.search_keywords,
-        shipping: ShippingProfile {
-            package_profile_id: package_profile.as_ref().map(|profile| profile.id),
-            package_profile_name: package_profile.as_ref().map(|profile| profile.name.clone()),
-            weight_grams: row.shipping_weight_grams,
-            width_cm: package_profile
-                .as_ref()
-                .map_or(row.shipping_width_cm, |profile| profile.width_cm),
-            length_cm: package_profile
-                .as_ref()
-                .map_or(row.shipping_length_cm, |profile| profile.length_cm),
-            height_cm: package_profile
-                .as_ref()
-                .map_or(row.shipping_height_cm, |profile| profile.height_cm),
-            empty_weight_grams: package_profile
-                .as_ref()
-                .map_or(0, |profile| profile.empty_weight_grams),
-            units_per_package: row.shipping_units_per_package,
-            configured: row.shipping_profile_configured
-                && package_profile
-                    .as_ref()
-                    .is_some_and(|profile| profile.active),
-        },
         variants,
         media,
         categories,
@@ -2006,64 +1548,9 @@ fn valid_product(input: &CreateProductRequest) -> bool {
         && valid_slug(slug)
         && input.description.len() <= 50_000
         && input.search_keywords.len() <= 2_000
-        && valid_shipping(&input.shipping)
         && currency_and_variants_valid
         && unique_skus
         && valid_personalization(&input.personalization)
-}
-
-fn valid_shipping(shipping: &ShippingProfile) -> bool {
-    (1..=1_000_000).contains(&shipping.weight_grams)
-        && (1..=300).contains(&shipping.width_cm)
-        && (1..=300).contains(&shipping.length_cm)
-        && (1..=300).contains(&shipping.height_cm)
-        && (0..=100_000).contains(&shipping.empty_weight_grams)
-        && (1..=100).contains(&shipping.units_per_package)
-        && (!shipping.configured || shipping.package_profile_id.is_some())
-}
-
-fn valid_shipping_package(input: &ShippingPackageProfileRequest) -> bool {
-    !input.name.trim().is_empty()
-        && input.name.trim().len() <= 120
-        && (1..=300).contains(&input.width_cm)
-        && (1..=300).contains(&input.length_cm)
-        && (1..=300).contains(&input.height_cm)
-        && (0..=100_000).contains(&input.empty_weight_grams)
-}
-
-async fn resolve_shipping_package(
-    pool: &PgPool,
-    profile_id: Option<Uuid>,
-) -> Result<Option<ShippingPackageProfile>, ResolveShippingPackageError> {
-    let Some(profile_id) = profile_id else {
-        return Ok(None);
-    };
-    match sqlx::query_as::<_, ShippingPackageProfile>(
-        r#"SELECT id, name, width_cm, length_cm, height_cm, empty_weight_grams, active
-           FROM shipping_package_profiles WHERE id=$1"#,
-    )
-    .bind(profile_id)
-    .fetch_optional(pool)
-    .await
-    {
-        Ok(Some(profile)) if profile.active => Ok(Some(profile)),
-        Ok(_) => Err(ResolveShippingPackageError::InvalidInput),
-        Err(_) => Err(ResolveShippingPackageError::Unavailable),
-    }
-}
-
-enum ResolveShippingPackageError {
-    InvalidInput,
-    Unavailable,
-}
-
-impl ResolveShippingPackageError {
-    fn into_response(self) -> Response {
-        match self {
-            Self::InvalidInput => invalid_input(),
-            Self::Unavailable => unavailable(),
-        }
-    }
 }
 
 fn valid_personalization(config: &PersonalizationConfig) -> bool {

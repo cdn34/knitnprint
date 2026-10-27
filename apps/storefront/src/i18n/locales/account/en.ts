@@ -100,7 +100,7 @@ export const accountEn = {
   'account.city': 'City',
   'account.region': 'Region (optional)',
   'account.postalCode': 'Postal code',
-  'account.countryCode': 'Country code',
+  'account.countryCode': 'Country',
   'account.deliveryPhone': 'Delivery phone (optional)',
   'account.saving': 'Saving…',
   'account.saveAddress': 'Save address',

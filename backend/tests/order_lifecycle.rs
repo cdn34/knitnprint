@@ -154,15 +154,6 @@ async fn checkout_snapshots_reserves_and_manual_payment_are_idempotent() {
             "support_email": "support@example.com",
             "currency": "eur",
             "tax_enabled": true,
-            "shipping_zones": [{
-                "name": "Portugal",
-                "country_codes": ["pt"],
-                "active": true,
-                "methods": [
-                    { "name": "Standard tracked", "flat_rate_minor": 500, "active": true },
-                    { "name": "Express tracked", "flat_rate_minor": 900, "active": true }
-                ]
-            }],
             "tax_rules": [{
                 "name": "Test destination tax",
                 "country_codes": ["pt"],
@@ -175,6 +166,14 @@ async fn checkout_snapshots_reserves_and_manual_payment_are_idempotent() {
     )
     .await;
     assert_eq!(configured.status(), StatusCode::OK);
+    sqlx::query("UPDATE delivery_rates SET active=true, amount_minor=900 WHERE country_code='PT'")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE delivery_pricing_config SET enabled=true")
+        .execute(&pool)
+        .await
+        .unwrap();
     let configured_body = response_json(configured).await;
     assert_eq!(configured_body["currency"], "EUR");
     assert_eq!(
@@ -270,31 +269,12 @@ async fn checkout_snapshots_reserves_and_manual_payment_are_idempotent() {
     .await;
     assert_eq!(delivered.status(), StatusCode::OK);
     let delivered_body = response_json(delivered).await;
+    assert_eq!(delivered_body["shipping_quote"]["available"], true);
     assert_eq!(
-        delivered_body["shipping_methods"].as_array().unwrap().len(),
-        2
+        delivered_body["shipping_quote"]["region_name"],
+        "Mainland Portugal"
     );
-    assert_eq!(
-        delivered_body["shipping"]["method_name"],
-        "Standard tracked"
-    );
-    let express_method_id = delivered_body["shipping_methods"][1]["id"]
-        .as_str()
-        .unwrap();
-    let selected_shipping = request(
-        &router,
-        "POST",
-        "/api/cart/shipping-method",
-        Some(&cart_cookie),
-        Some(json!({ "shipping_method_id": express_method_id })),
-        Some("order-shipping-method-0001"),
-    )
-    .await;
-    assert_eq!(selected_shipping.status(), StatusCode::OK);
-    assert_eq!(
-        response_json(selected_shipping).await["shipping"]["method_name"],
-        "Express tracked"
-    );
+    assert_eq!(delivered_body["shipping_minor"], 900);
     let discounted = request(
         &router,
         "POST",
@@ -318,7 +298,7 @@ async fn checkout_snapshots_reserves_and_manual_payment_are_idempotent() {
         "POST",
         "/api/orders",
         Some(&cart_cookie),
-        Some(json!({ "payment_method": "manual" })),
+        Some(json!({ "payment_method": "manual", "shipping_rate_revision": 0 })),
         Some("order-checkout-0001"),
     )
     .await;
@@ -333,7 +313,10 @@ async fn checkout_snapshots_reserves_and_manual_payment_are_idempotent() {
     assert_eq!(created_body["subtotal_minor"], 6400);
     assert_eq!(created_body["discount_minor"], 640);
     assert_eq!(created_body["shipping_minor"], 900);
-    assert_eq!(created_body["shipping"]["method_name"], "Express tracked");
+    assert_eq!(
+        created_body["shipping"]["method_name"],
+        "Destination flat rate"
+    );
     assert_eq!(created_body["tax_minor"], 1531);
     assert_eq!(created_body["tax"]["rate_basis_points"], 2300);
     assert_eq!(created_body["total_minor"], 8191);
@@ -369,7 +352,7 @@ async fn checkout_snapshots_reserves_and_manual_payment_are_idempotent() {
         "POST",
         "/api/orders",
         Some(&cart_cookie),
-        Some(json!({ "payment_method": "manual" })),
+        Some(json!({ "payment_method": "manual", "shipping_rate_revision": 0 })),
         Some("order-checkout-0001"),
     )
     .await;
@@ -410,12 +393,6 @@ async fn checkout_snapshots_reserves_and_manual_payment_are_idempotent() {
             "support_email": "support@example.com",
             "currency": "EUR",
             "tax_enabled": false,
-            "shipping_zones": [{
-                "name": "Worldwide",
-                "country_codes": [],
-                "active": true,
-                "methods": [{ "name": "Free shipping", "flat_rate_minor": 0, "active": true }]
-            }],
             "tax_rules": [],
             "reason": "Verify historical commercial snapshots remain stable"
         })),
@@ -423,6 +400,14 @@ async fn checkout_snapshots_reserves_and_manual_payment_are_idempotent() {
     )
     .await;
     assert_eq!(reconfigured.status(), StatusCode::OK);
+    sqlx::query("UPDATE delivery_pricing_config SET enabled=false")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE delivery_rates SET amount_minor=0")
+        .execute(&pool)
+        .await
+        .unwrap();
 
     let disabled = request(
         &router,
@@ -459,7 +444,10 @@ async fn checkout_snapshots_reserves_and_manual_payment_are_idempotent() {
     assert_eq!(detail_body["lines"][0]["unit_price_minor"], 3200);
     assert_eq!(detail_body["discount"]["code"], "ORDER10");
     assert_eq!(detail_body["discount"]["amount_minor"], 640);
-    assert_eq!(detail_body["shipping"]["method_name"], "Express tracked");
+    assert_eq!(
+        detail_body["shipping"]["method_name"],
+        "Destination flat rate"
+    );
     assert_eq!(detail_body["shipping_minor"], 900);
     assert_eq!(detail_body["tax"]["rule_name"], "Test destination tax");
     assert_eq!(detail_body["tax_minor"], 1531);
@@ -990,7 +978,7 @@ async fn checkout_snapshots_reserves_and_manual_payment_are_idempotent() {
         "POST",
         "/api/orders",
         Some(&cancellable_cookie),
-        Some(json!({ "payment_method": "manual" })),
+        Some(json!({ "payment_method": "manual", "shipping_rate_revision": 0 })),
         Some("cancel-checkout-0001"),
     )
     .await;
@@ -1449,7 +1437,7 @@ async fn concurrent_checkout_cannot_exceed_a_discount_usage_limit() {
         "POST",
         "/api/orders",
         Some(&first_cookie),
-        Some(json!({ "payment_method": "manual" })),
+        Some(json!({ "payment_method": "manual", "shipping_rate_revision": 0 })),
         Some("discount-limit-checkout-first"),
     );
     let second = request(
@@ -1457,7 +1445,7 @@ async fn concurrent_checkout_cannot_exceed_a_discount_usage_limit() {
         "POST",
         "/api/orders",
         Some(&second_cookie),
-        Some(json!({ "payment_method": "manual" })),
+        Some(json!({ "payment_method": "manual", "shipping_rate_revision": 0 })),
         Some("discount-limit-checkout-second"),
     );
     let (first, second) = tokio::join!(first, second);
@@ -2242,4 +2230,342 @@ impl knitnprint_api::object_storage::StorageBackend for PreviewStorage {
     async fn delete(&self, _: &str) -> Result<(), knitnprint_api::object_storage::StorageError> {
         Err(knitnprint_api::object_storage::StorageError::Delete)
     }
+}
+
+#[tokio::test]
+async fn editable_destination_rates_control_cart_checkout_and_immutable_order_prices() {
+    let Ok(url) = env::var("DATABASE_URL") else {
+        return;
+    };
+    let schema = format!("delivery_rates_{}", Uuid::new_v4().simple());
+    let admin = PgPool::connect(&url).await.unwrap();
+    sqlx::query(&format!("CREATE SCHEMA \"{schema}\""))
+        .execute(&admin)
+        .await
+        .unwrap();
+    let pool = isolated_pool(&url, &schema).await;
+    sqlx::migrate!("../migrations").run(&pool).await.unwrap();
+    let variant = insert_product(&pool).await;
+    insert_owner(&pool).await;
+    insert_order_reader(&pool).await;
+    create_verified_customer(&pool).await;
+    let router = app(AppState {
+        database: Some(pool.clone()),
+        manual_payments_enabled: true,
+        ..AppState::default()
+    });
+    let owner = login(&router).await;
+    let reader = login_as(
+        &router,
+        "orders-reader@test.invalid",
+        "integration-test-passphrase",
+    )
+    .await;
+    for (method, path, body) in [
+        ("GET", "/api/admin/delivery-rates", None),
+        (
+            "PUT",
+            "/api/admin/delivery-rates",
+            Some(json!({"enabled":true,"revision":0,"rates":[],"reason":"Access test"})),
+        ),
+        (
+            "POST",
+            "/api/admin/delivery-rates/test",
+            Some(json!({"country_code":"PT","postal_code":"9000-001"})),
+        ),
+    ] {
+        assert_eq!(
+            request(&router, method, path, Some(&reader), body, None)
+                .await
+                .status(),
+            StatusCode::FORBIDDEN
+        );
+    }
+    let mut settings = response_json(
+        request(
+            &router,
+            "GET",
+            "/api/admin/delivery-rates",
+            Some(&owner),
+            None,
+            None,
+        )
+        .await,
+    )
+    .await;
+    assert_eq!(settings["enabled"], false);
+    assert_eq!(settings["rates"].as_array().unwrap().len(), 4);
+    assert!(
+        settings["rates"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|rate| rate["amount_minor"].is_null() && rate["active"] == false)
+    );
+    let mut invalid = settings.clone();
+    invalid["enabled"] = json!(true);
+    invalid["rates"][0]["active"] = json!(true);
+    invalid["reason"] = json!("Reject unpriced destination");
+    assert_eq!(
+        request(
+            &router,
+            "PUT",
+            "/api/admin/delivery-rates",
+            Some(&owner),
+            Some(invalid),
+            None
+        )
+        .await
+        .status(),
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    for (index, amount) in [450, 800, 900, 650].iter().enumerate() {
+        settings["rates"][index]["amount_minor"] = json!(amount);
+        settings["rates"][index]["active"] = json!(true);
+    }
+    settings["enabled"] = json!(true);
+    settings["reason"] = json!("Configure initial shipping destinations");
+    let saved = request(
+        &router,
+        "PUT",
+        "/api/admin/delivery-rates",
+        Some(&owner),
+        Some(settings.clone()),
+        None,
+    )
+    .await;
+    assert_eq!(saved.status(), StatusCode::OK);
+    let mut saved = response_json(saved).await;
+    assert_eq!(saved["revision"], 1);
+    assert_eq!(
+        request(
+            &router,
+            "PUT",
+            "/api/admin/delivery-rates",
+            Some(&owner),
+            Some(settings.clone()),
+            None
+        )
+        .await
+        .status(),
+        StatusCode::CONFLICT
+    );
+    for (country, postal, amount, region) in [
+        ("PT", "1000-001", 450, "Mainland Portugal"),
+        ("PT", "8999-999", 450, "Mainland Portugal"),
+        ("PT", "9000-001", 800, "Madeira"),
+        ("PT", "9499-999", 800, "Madeira"),
+        ("PT", "9500-001", 900, "Azores"),
+        ("PT", "9999-999", 900, "Azores"),
+        ("ES", "28001", 650, "All regions"),
+    ] {
+        let quote = response_json(
+            request(
+                &router,
+                "POST",
+                "/api/admin/delivery-rates/test",
+                Some(&owner),
+                Some(json!({"country_code":country,"postal_code":postal})),
+                None,
+            )
+            .await,
+        )
+        .await;
+        assert_eq!(quote["available"], true, "{quote}");
+        assert_eq!(quote["amount_minor"], amount);
+        assert_eq!(quote["region_name"], region);
+    }
+    let cookie = response_cookie(&request(&router, "GET", "/api/cart", None, None, None).await);
+    assert_eq!(
+        request(
+            &router,
+            "POST",
+            "/api/cart/items",
+            Some(&cookie),
+            Some(json!({"variant_id":variant,"quantity":1})),
+            Some("delivery-rate-add-0001")
+        )
+        .await
+        .status(),
+        StatusCode::CREATED
+    );
+    let mut delivery = delivery_fixture();
+    delivery["address"]["postal_code"] = json!("9000-001");
+    delivery["address"]["region"] = json!("Mainland Portugal");
+    let cart = response_json(
+        request(
+            &router,
+            "POST",
+            "/api/cart/delivery",
+            Some(&cookie),
+            Some(delivery.clone()),
+            Some("delivery-rate-address-0001"),
+        )
+        .await,
+    )
+    .await;
+    assert_eq!(cart["shipping_minor"], 800);
+    assert_eq!(cart["total_minor"], 4000);
+    assert_eq!(cart["shipping_quote"]["region_name"], "Madeira");
+    // A change between cart review and checkout must not silently charge a new price.
+    saved["rates"][1]["amount_minor"] = json!(1000);
+    saved["reason"] = json!("Update Madeira shipping price");
+    let revised = request(
+        &router,
+        "PUT",
+        "/api/admin/delivery-rates",
+        Some(&owner),
+        Some(saved),
+        None,
+    )
+    .await;
+    assert_eq!(revised.status(), StatusCode::OK);
+    let mut revised = response_json(revised).await;
+    let stale = request(
+        &router,
+        "POST",
+        "/api/orders",
+        Some(&cookie),
+        Some(json!({"payment_method":"manual","shipping_rate_revision":1})),
+        Some("delivery-rate-checkout-0001"),
+    )
+    .await;
+    assert_eq!(stale.status(), StatusCode::CONFLICT);
+    assert_eq!(response_json(stale).await["error"]["code"], "cart_changed");
+    let cart =
+        response_json(request(&router, "GET", "/api/cart", Some(&cookie), None, None).await).await;
+    assert_eq!(cart["shipping_minor"], 1000);
+    assert_eq!(cart["total_minor"], 4200);
+    let order = request(
+        &router,
+        "POST",
+        "/api/orders",
+        Some(&cookie),
+        Some(json!({"payment_method":"manual","locale":"pt","shipping_rate_revision":2})),
+        Some("delivery-rate-checkout-0001"),
+    )
+    .await;
+    let status = order.status();
+    let order = response_json(order).await;
+    assert_eq!(status, StatusCode::CREATED, "{order}");
+    assert_eq!(order["shipping_minor"], 1000);
+    assert_eq!(order["shipping"]["zone_name"], "Madeira");
+    assert_eq!(order["total_minor"], 4200);
+    let order_id = order["id"].as_str().unwrap();
+    revised["rates"][1]["active"] = json!(false);
+    revised["rates"].as_array_mut().unwrap().push(json!({"id":Uuid::new_v4(),"country_code":"FR","region_name":"All regions","postal_prefixes":[],"amount_minor":700,"active":true}));
+    revised["rates"].as_array_mut().unwrap().push(json!({"id":Uuid::new_v4(),"country_code":"PT","region_name":"Whole country fallback","postal_prefixes":[],"amount_minor":100,"active":true}));
+    revised["reason"] = json!("Disable Madeira and add France");
+    let changed = request(
+        &router,
+        "PUT",
+        "/api/admin/delivery-rates",
+        Some(&owner),
+        Some(revised),
+        None,
+    )
+    .await;
+    assert_eq!(changed.status(), StatusCode::OK);
+    let mut changed = response_json(changed).await;
+    let historical = response_json(
+        request(
+            &router,
+            "GET",
+            &format!("/api/orders/{order_id}"),
+            Some(&cookie),
+            None,
+            None,
+        )
+        .await,
+    )
+    .await;
+    assert_eq!(historical["shipping_minor"], 1000);
+    assert_eq!(historical["total_minor"], 4200);
+    let quote = response_json(
+        request(
+            &router,
+            "POST",
+            "/api/admin/delivery-rates/test",
+            Some(&owner),
+            Some(json!({"country_code":"FR","postal_code":"75001"})),
+            None,
+        )
+        .await,
+    )
+    .await;
+    assert_eq!(quote["amount_minor"], 700);
+    let cookie2 = response_cookie(&request(&router, "GET", "/api/cart", None, None, None).await);
+    assert_eq!(
+        request(
+            &router,
+            "POST",
+            "/api/cart/items",
+            Some(&cookie2),
+            Some(json!({"variant_id":variant,"quantity":1})),
+            Some("delivery-rate-add-0002")
+        )
+        .await
+        .status(),
+        StatusCode::CREATED
+    );
+    let unavailable = response_json(
+        request(
+            &router,
+            "POST",
+            "/api/cart/delivery",
+            Some(&cookie2),
+            Some(delivery),
+            Some("delivery-rate-address-0002"),
+        )
+        .await,
+    )
+    .await;
+    assert_eq!(unavailable["checkout_ready"], false);
+    assert!(unavailable["shipping_minor"].is_null());
+    assert_eq!(
+        unavailable["issues"][0]["code"],
+        "shipping_destination_unavailable"
+    );
+    let blocked = request(
+        &router,
+        "POST",
+        "/api/orders",
+        Some(&cookie2),
+        Some(json!({"payment_method":"manual","shipping_rate_revision":3})),
+        Some("delivery-rate-blocked-0001"),
+    )
+    .await;
+    assert_eq!(blocked.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    changed["enabled"] = json!(false);
+    changed["reason"] = json!("Disable destination pricing temporarily");
+    assert_eq!(
+        request(
+            &router,
+            "PUT",
+            "/api/admin/delivery-rates",
+            Some(&owner),
+            Some(changed),
+            None
+        )
+        .await
+        .status(),
+        StatusCode::OK
+    );
+    let free =
+        response_json(request(&router, "GET", "/api/cart", Some(&cookie2), None, None).await).await;
+    assert_eq!(free["shipping_minor"], 0);
+    assert_eq!(free["total_minor"], 3200);
+    assert_eq!(free["checkout_ready"], true);
+    let audited: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM audit_log WHERE action='delivery_rates.update'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(audited, 4);
+    pool.close().await;
+    sqlx::query(&format!("DROP SCHEMA \"{schema}\" CASCADE"))
+        .execute(&admin)
+        .await
+        .unwrap();
+    admin.close().await;
 }

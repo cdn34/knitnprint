@@ -61,7 +61,6 @@ import {
   type Discount,
   type Product,
   type AdminProductFeedback,
-  type ShippingPackageProfile,
   type InventoryRecord,
   type Order,
   type OrderSummary,
@@ -72,6 +71,7 @@ import {
 import { printAreaOffsets } from './personalization-measurements'
 import { uploadImagesWithProgress } from './product-image-uploads'
 import { NotificationManagement } from './notifications'
+import { DeliveryRatesManagement } from './delivery-rates'
 import './styles.css'
 
 const api = createApiClient()
@@ -227,7 +227,6 @@ function AdminShell({ profile }: Readonly<{ profile: StaffProfile }>) {
     ...(profile.capabilities.includes('catalog.read')
       ? [
           { id: 'products', label: 'Products', icon: Package },
-          { id: 'shipping-packages', label: 'Shipping packages', icon: Boxes },
           { id: 'feedback', label: 'Feedback validation', icon: MessageSquareText },
         ]
       : []),
@@ -241,7 +240,7 @@ function AdminShell({ profile }: Readonly<{ profile: StaffProfile }>) {
       ? [{ id: 'discounts', label: 'Discounts', icon: BadgePercent }]
       : []),
     ...(profile.capabilities.includes('settings.manage')
-      ? [{ id: 'settings', label: 'Settings', icon: SlidersHorizontal }]
+      ? [{ id: 'delivery-rates', label: 'Shipping rates', icon: SlidersHorizontal }, { id: 'settings', label: 'Settings', icon: SlidersHorizontal }]
       : []),
     ...(profile.capabilities.includes('staff.manage')
       ? [{ id: 'staff', label: 'Staff', icon: ShieldCheck }]
@@ -330,8 +329,6 @@ function AdminShell({ profile }: Readonly<{ profile: StaffProfile }>) {
                   ? 'Product catalog.'
                   : page === 'feedback'
                     ? 'Customer feedback.'
-                  : page === 'shipping-packages'
-                    ? 'Shipping packages.'
                   : page === 'notifications'
                     ? 'Email notifications.'
                   : page === 'inventory'
@@ -340,6 +337,8 @@ function AdminShell({ profile }: Readonly<{ profile: StaffProfile }>) {
                       ? 'Customer directory.'
                       : page === 'discounts'
                         ? 'Discount codes.'
+                        : page === 'delivery-rates'
+                          ? 'Shipping destinations.'
                         : page === 'settings'
                           ? 'Store settings.'
                           : 'Staff access.'}
@@ -370,12 +369,6 @@ function AdminShell({ profile }: Readonly<{ profile: StaffProfile }>) {
             canWrite={profile.capabilities.includes('catalog.write')}
           />
         )}
-        {page === 'shipping-packages' &&
-          profile.capabilities.includes('catalog.read') && (
-            <ShippingPackageManagement
-              canWrite={profile.capabilities.includes('catalog.write')}
-            />
-          )}
         {page === 'feedback' && profile.capabilities.includes('catalog.read') && (
           <FeedbackManagement canModerate={profile.capabilities.includes('catalog.write')} />
         )}
@@ -398,6 +391,7 @@ function AdminShell({ profile }: Readonly<{ profile: StaffProfile }>) {
           profile.capabilities.includes('settings.manage') && (
             <SettingsManagement />
           )}
+        {page === 'delivery-rates' && profile.capabilities.includes('settings.manage') && <DeliveryRatesManagement />}
         {page === 'staff' && profile.capabilities.includes('staff.manage') && (
           <StaffManagement currentStaffId={profile.id} />
         )}
@@ -668,19 +662,6 @@ function OrderDetail({
         <span>{order.shipping.method_name} <b>{formatMoney(order.shipping_minor, order.currency)}</b></span>
         <span>Tax ({order.tax.rate_basis_points / 100}%) <b>{formatMoney(order.tax_minor, order.currency)}</b></span>
       </div>
-      {order.shipping.provider === 'packlink' && (
-        <section className="order-shipping-service" aria-label="Packlink shipping service">
-          <div>
-            <span>Packlink PRO</span>
-            <strong>{order.shipping.carrier_name} · {order.shipping.method_name}</strong>
-          </div>
-          <dl>
-            <div><dt>Origin handoff</dt><dd>{order.shipping.departure_dropoff ? 'Take to a drop-off point' : 'Carrier collection in Anadia'}</dd></div>
-            <div><dt>Estimated transit</dt><dd>{order.shipping.transit_hours > 0 ? `${Math.max(1, Math.ceil(order.shipping.transit_hours / 24))} day(s)` : 'Provided by carrier'}</dd></div>
-            <div><dt>Service reference</dt><dd>{order.shipping.external_service_id}</dd></div>
-          </dl>
-        </section>
-      )}
       {canRecordPayment && order.payment.provider === 'manual' && order.payment_status === 'pending' && (
         <button className="primary-button" type="button" disabled={paymentPending} onClick={() => onRecordPayment(order)}>
           {paymentPending ? 'Recording…' : 'Record manual payment'}
@@ -1186,16 +1167,6 @@ function settingsInput(settings: CommercialSettings) {
     support_email: settings.support_email,
     currency: settings.currency,
     tax_enabled: settings.tax_enabled,
-    shipping_zones: settings.shipping_zones.map((zone) => ({
-      name: zone.name,
-      country_codes: zone.country_codes,
-      active: zone.active,
-      methods: zone.methods.map((method) => ({
-        name: method.name,
-        flat_rate_minor: method.flat_rate_minor,
-        active: method.active,
-      })),
-    })),
     tax_rules: settings.tax_rules.map((rule) => ({
       name: rule.name,
       country_codes: rule.country_codes,
@@ -1246,72 +1217,6 @@ function SettingsManagement() {
     )
   }
 
-  function addZone(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    if (!settings.data) return
-    const form = new FormData(event.currentTarget)
-    const current = settingsInput(settings.data)
-    update(
-      {
-        shipping_zones: [
-          ...current.shipping_zones,
-          {
-            name: String(form.get('zone-name') ?? ''),
-            country_codes: countryList(form.get('zone-countries')),
-            active: true,
-            methods: [{
-              name: String(form.get('method-name') ?? ''),
-              flat_rate_minor: Math.round(Number(form.get('shipping-rate') ?? 0) * 100),
-              active: true,
-            }],
-          },
-        ],
-      },
-      String(form.get('zone-reason') ?? ''),
-    )
-  }
-
-  function removeZone(index: number, name: string) {
-    if (!settings.data || settings.data.shipping_zones.length <= 1) return
-    const reason = window.prompt(`Remove shipping zone ${name}. Why is this changing?`)
-    if (!reason?.trim()) return
-    const current = settingsInput(settings.data)
-    update(
-      { shipping_zones: current.shipping_zones.filter((_, position) => position !== index) },
-      reason.trim(),
-    )
-  }
-
-  function addShippingMethod(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    if (!settings.data) return
-    const form = new FormData(event.currentTarget)
-    const zoneId = String(form.get('shipping-method-zone') ?? '')
-    const zoneIndex = settings.data.shipping_zones.findIndex((zone) => zone.id === zoneId)
-    if (zoneIndex < 0) return
-    const current = settingsInput(settings.data)
-    current.shipping_zones[zoneIndex].methods.push({
-      name: String(form.get('shipping-method-name') ?? ''),
-      flat_rate_minor: Math.round(Number(form.get('shipping-method-rate') ?? 0) * 100),
-      active: true,
-    })
-    update(
-      { shipping_zones: current.shipping_zones },
-      String(form.get('shipping-method-reason') ?? ''),
-    )
-  }
-
-  function removeShippingMethod(zoneIndex: number, methodIndex: number, name: string) {
-    if (!settings.data || settings.data.shipping_zones[zoneIndex].methods.length <= 1) return
-    const reason = window.prompt(`Remove shipping method ${name}. Why is this changing?`)
-    if (!reason?.trim()) return
-    const current = settingsInput(settings.data)
-    current.shipping_zones[zoneIndex].methods = current.shipping_zones[zoneIndex].methods.filter(
-      (_, position) => position !== methodIndex,
-    )
-    update({ shipping_zones: current.shipping_zones }, reason.trim())
-  }
-
   function addTaxRule(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!settings.data) return
@@ -1356,6 +1261,7 @@ function SettingsManagement() {
           <div className="settings-column">
             <form className="settings-card" key={settings.data.updated_at} onSubmit={saveIdentity}>
               <h3>Store identity</h3>
+              {settings.data.checkout_suspended && <p className="settings-note" role="status">Checkout is temporarily suspended while delivery pricing is updated.</p>}
               <label>Store name<input name="store-name" defaultValue={settings.data.store_name} minLength={2} maxLength={100} required /></label>
               <label>Support email<input name="support-email" type="email" defaultValue={settings.data.support_email} required /></label>
               <label>Store currency<input name="store-currency" defaultValue={settings.data.currency} pattern="[A-Za-z]{3}" required /></label>
@@ -1364,44 +1270,12 @@ function SettingsManagement() {
               <button className="primary-button" disabled={updateSettings.isPending}>Save store settings</button>
             </form>
 
-            <div className="settings-card">
-              <h3>Shipping zones</h3>
-              {settings.data.shipping_zones.map((zone, index) => (
-                <article className="settings-record" key={zone.id}>
-                  <div><strong>{zone.name}</strong><span>{zone.country_codes.length ? zone.country_codes.join(', ') : 'Worldwide fallback'}</span></div>
-                  {zone.methods.map((method, methodIndex) => (
-                    <div className="settings-method-row" key={method.id}>
-                      <small>{method.name} · {formatMoney(method.flat_rate_minor, method.currency)}</small>
-                      <button type="button" disabled={zone.methods.length <= 1 || updateSettings.isPending} onClick={() => removeShippingMethod(index, methodIndex, method.name)}>Remove method</button>
-                    </div>
-                  ))}
-                  <button type="button" disabled={settings.data.shipping_zones.length <= 1 || updateSettings.isPending} onClick={() => removeZone(index, zone.name)}>Remove zone</button>
-                </article>
-              ))}
-              <form className="settings-inline-form" onSubmit={addZone}>
-                <h4>Add shipping zone</h4>
-                <label>Zone name<input name="zone-name" required placeholder="Portugal" /></label>
-                <label>Countries<input name="zone-countries" placeholder="PT, ES" /><small>Comma-separated ISO codes. Leave empty only for one worldwide fallback.</small></label>
-                <label>Initial method name<input name="method-name" required placeholder="Standard tracked" /></label>
-                <label>Flat rate ({settings.data.currency})<input name="shipping-rate" type="number" min="0" step="0.01" defaultValue="0" required /></label>
-                <label>Audit reason<textarea name="zone-reason" minLength={3} maxLength={500} defaultValue="Add a shipping destination and method" required /></label>
-                <button disabled={updateSettings.isPending}>Add zone</button>
-              </form>
-              <form className="settings-inline-form" onSubmit={addShippingMethod}>
-                <h4>Add shipping method</h4>
-                <label>Shipping zone<select name="shipping-method-zone" required>{settings.data.shipping_zones.map((zone) => <option value={zone.id} key={zone.id}>{zone.name}</option>)}</select></label>
-                <label>Additional method name<input name="shipping-method-name" required placeholder="Express tracked" /></label>
-                <label>Flat rate ({settings.data.currency})<input name="shipping-method-rate" type="number" min="0" step="0.01" required /></label>
-                <label>Audit reason<textarea name="shipping-method-reason" minLength={3} maxLength={500} defaultValue="Add a shipping service level" required /></label>
-                <button disabled={updateSettings.isPending}>Add method</button>
-              </form>
-            </div>
           </div>
 
           <div className="settings-column">
             <div className="settings-card">
               <h3>Tax rules</h3>
-              <p className="settings-note">Rates are exclusive and apply to discounted merchandise plus shipping. Configure them only after confirming the store’s tax obligations.</p>
+              <p className="settings-note">Rates are exclusive and apply to the taxable order amount. Configure them only after confirming the store’s tax obligations.</p>
               {settings.data.tax_rules.length === 0 && <p className="panel-message">No destination tax rules configured.</p>}
               {settings.data.tax_rules.map((rule, index) => (
                 <article className="settings-record" key={rule.id}>
@@ -1424,15 +1298,7 @@ function SettingsManagement() {
               <h3>Integration health</h3>
               <div className="integration-grid">
                 {Object.entries(settings.data.integrations).map(([name, status]) => (
-                  typeof status === 'string' ? (
-                    <div key={name}><span>{name.replaceAll('_', ' ')}</span><strong>{status.replaceAll('_', ' ')}</strong></div>
-                  ) : (
-                    <div key={name} className="integration-packlink">
-                      <span>Packlink PRO</span>
-                      <strong>{status.status === 'configured' ? 'configured' : 'awaiting API key'}</strong>
-                      <small>{status.origin} · {status.package}</small>
-                    </div>
-                  )
+                  <div key={name}><span>{name.replaceAll('_', ' ')}</span><strong>{status.replaceAll('_', ' ')}</strong></div>
                 ))}
               </div>
               <p className="settings-note">This page reports configuration state only. Credentials and secrets remain in the runtime environment.</p>
@@ -2277,7 +2143,6 @@ function EditablePrintArea({ area, label, kind = 'print', active, onActivate, on
   </div>
 }
 
-const shippingPackagesKey = ['shipping-packages'] as const
 
 const feedbackKey = ['product-feedback'] as const
 
@@ -2469,147 +2334,6 @@ function FeedbackManagement({ canModerate }: Readonly<{ canModerate: boolean }>)
   )
 }
 
-function ShippingPackageManagement({ canWrite }: Readonly<{ canWrite: boolean }>) {
-  const client = useQueryClient()
-  const profiles = useQuery({
-    queryKey: shippingPackagesKey,
-    queryFn: api.listShippingPackages,
-  })
-  const [editing, setEditing] = useState<ShippingPackageProfile | null>(null)
-  const [message, setMessage] = useState('')
-
-  const save = useMutation({
-    mutationFn: ({ id, input }: {
-      id?: string
-      input: Parameters<typeof api.createShippingPackage>[0]
-    }) => id
-      ? api.updateShippingPackage(id, input)
-      : api.createShippingPackage(input),
-    onSuccess: (profile) => {
-      client.invalidateQueries({ queryKey: shippingPackagesKey })
-      client.invalidateQueries({ queryKey: productsKey })
-      setEditing(null)
-      setMessage(`“${profile.name}” was saved.`)
-    },
-    onError: (error) => {
-      setMessage(error instanceof ApiError
-        ? error.body.error.message
-        : 'The shipping package could not be saved.')
-    },
-  })
-  const remove = useMutation({
-    mutationFn: api.deleteShippingPackage,
-    onSuccess: () => {
-      client.invalidateQueries({ queryKey: shippingPackagesKey })
-      setEditing(null)
-      setMessage('The shipping package was deleted.')
-    },
-    onError: (error) => {
-      setMessage(error instanceof ApiError && error.body.error.code === 'shipping_package_in_use'
-        ? 'This package is assigned to products. Change those products first or deactivate the package.'
-        : 'The shipping package could not be deleted.')
-    },
-  })
-
-  function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    setMessage('')
-    const form = new FormData(event.currentTarget)
-    save.mutate({
-      id: editing?.id,
-      input: {
-        name: String(form.get('package-name') ?? ''),
-        width_cm: Number(form.get('package-width')),
-        length_cm: Number(form.get('package-length')),
-        height_cm: Number(form.get('package-height')),
-        empty_weight_grams: Number(form.get('package-weight')),
-        active: form.get('package-active') === 'on',
-      },
-    })
-  }
-
-  return (
-    <section className="shipping-packages-section" aria-labelledby="shipping-packages-heading">
-      <div className="section-heading">
-        <div>
-          <p>Catalog · Logistics</p>
-          <h2 id="shipping-packages-heading">Reusable shipping packages</h2>
-        </div>
-        <span>{profiles.data?.filter(({ active }) => active).length ?? '—'} active</span>
-      </div>
-      <p className="shipping-packages-intro">
-        Define each box or envelope once. On each product, choose the package,
-        the weight of one unit, and how many units fit in the same parcel.
-      </p>
-      <div className="shipping-packages-layout">
-        <div className="shipping-package-list">
-          {profiles.isPending && <p className="panel-message">Loading shipping packages…</p>}
-          {profiles.isError && <p className="panel-message error">Shipping packages could not be loaded.</p>}
-          {profiles.data?.length === 0 && (
-            <div className="shipping-package-empty">
-              <Boxes aria-hidden="true" />
-              <strong>Start with the package you use most.</strong>
-              <span>For example: small envelope, medium box, or large box.</span>
-            </div>
-          )}
-          {profiles.data?.map((profile) => (
-            <article className={`shipping-package-card${profile.active ? '' : ' inactive'}`} key={profile.id}>
-              <div className="shipping-package-icon"><Package aria-hidden="true" /></div>
-              <div>
-                <div className="shipping-package-name">
-                  <strong>{profile.name}</strong>
-                  <span>{profile.active ? 'Active' : 'Inactive'}</span>
-                </div>
-                <p>{profile.width_cm} × {profile.length_cm} × {profile.height_cm} cm</p>
-                <small>{profile.empty_weight_grams} g empty package weight</small>
-              </div>
-              {canWrite && (
-                <button type="button" onClick={() => { setEditing(profile); setMessage('') }}>
-                  <Pencil size={15} /> Edit
-                </button>
-              )}
-            </article>
-          ))}
-        </div>
-        {canWrite && (
-          <form className="shipping-package-form" onSubmit={submit} key={editing?.id ?? 'new'}>
-            <div className="panel-title">
-              <Ruler size={17} />
-              <div>
-                <strong>{editing ? 'Edit shipping package' : 'New shipping package'}</strong>
-                <span>Measure the outside of the package when closed.</span>
-              </div>
-            </div>
-            <label htmlFor="package-name">Name</label>
-            <input id="package-name" name="package-name" maxLength={120} placeholder="Medium box" defaultValue={editing?.name} required />
-            <div className="shipping-package-dimensions">
-              <label>Width <span>cm</span><input name="package-width" type="number" min="1" max="300" defaultValue={editing?.width_cm} required /></label>
-              <label>Length <span>cm</span><input name="package-length" type="number" min="1" max="300" defaultValue={editing?.length_cm} required /></label>
-              <label>Height <span>cm</span><input name="package-height" type="number" min="1" max="300" defaultValue={editing?.height_cm} required /></label>
-            </div>
-            <label htmlFor="package-weight">Empty package weight <span className="label-unit">grams</span></label>
-            <input id="package-weight" name="package-weight" type="number" min="0" max="100000" defaultValue={editing?.empty_weight_grams ?? 0} required />
-            <label className="shipping-package-active">
-              <input name="package-active" type="checkbox" defaultChecked={editing?.active ?? true} />
-              <span><strong>Available for products</strong><small>Deactivate it without losing existing product assignments.</small></span>
-            </label>
-            {message && <p className="shipping-package-message" role="status">{message}</p>}
-            <div className="shipping-package-form-actions">
-              <button className="primary-action" type="submit" disabled={save.isPending}>
-                {save.isPending ? 'Saving…' : editing ? 'Save changes' : 'Create package'}
-              </button>
-              {editing && <button type="button" onClick={() => { setEditing(null); setMessage('') }}>Cancel</button>}
-              {editing && <button className="danger-action" type="button" disabled={remove.isPending} onClick={() => {
-                if (window.confirm(`Delete “${editing.name}”?`)) remove.mutate(editing.id)
-              }}><Trash2 size={15} /> Delete</button>}
-            </div>
-          </form>
-        )}
-      </div>
-    </section>
-  )
-}
-
 type PendingProductImage = {
   id: string
   file: File
@@ -2674,9 +2398,6 @@ function CatalogManagement({
   const [productSku, setProductSku] = useState('')
   const [productPrice, setProductPrice] = useState('')
   const [productQuantity, setProductQuantity] = useState('0')
-  const [shippingWeightGrams, setShippingWeightGrams] = useState('500')
-  const [shippingPackageProfileId, setShippingPackageProfileId] = useState('')
-  const [shippingUnitsPerPackage, setShippingUnitsPerPackage] = useState('1')
   const [pendingProductImages, setPendingProductImages] = useState<PendingProductImage[]>([])
   const [photoUploadMessage, setPhotoUploadMessage] = useState('')
   const pendingProductImagesRef = useRef<PendingProductImage[]>([])
@@ -2733,7 +2454,7 @@ function CatalogManagement({
   const activePrintAreaPhysical = effectivePrintAreaDimensions(activePersonalizationView, activePrintArea)
   const editorDirty = useMemo(() => {
     if (!preview) {
-      return Boolean(productTitle || productSlug || productDescription || productKeywords || productSku || productPrice || productQuantity !== '0' || shippingWeightGrams !== '500' || shippingPackageProfileId || shippingUnitsPerPackage !== '1' || pendingProductImages.length)
+      return Boolean(productTitle || productSlug || productDescription || productKeywords || productSku || productPrice || productQuantity !== '0' || pendingProductImages.length)
     }
     const base = preview.variants[0]
     return variantCalibrationDirty
@@ -2744,11 +2465,8 @@ function CatalogManagement({
       || productSku !== (base?.sku ?? '')
       || Number(productPrice) !== (base?.price_minor ?? 0) / 100
       || Number(productQuantity) !== (base?.available_quantity ?? 0)
-      || Number(shippingWeightGrams) !== preview.shipping.weight_grams
-      || shippingPackageProfileId !== (preview.shipping.package_profile_id ?? '')
-      || Number(shippingUnitsPerPackage) !== preview.shipping.units_per_package
       || pendingProductImages.length > 0
-  }, [preview, variantCalibrationDirty, productTitle, productSlug, productDescription, productKeywords, productSku, productPrice, productQuantity, shippingWeightGrams, shippingPackageProfileId, shippingUnitsPerPackage, pendingProductImages.length])
+  }, [preview, variantCalibrationDirty, productTitle, productSlug, productDescription, productKeywords, productSku, productPrice, productQuantity, pendingProductImages.length])
   useEffect(() => {
     pendingProductImagesRef.current = pendingProductImages
   }, [pendingProductImages])
@@ -2771,14 +2489,6 @@ function CatalogManagement({
     queryKey: categoriesKey,
     queryFn: api.listCategories,
   })
-  const shippingPackages = useQuery({
-    queryKey: shippingPackagesKey,
-    queryFn: api.listShippingPackages,
-  })
-  const selectedShippingPackage = shippingPackages.data?.find(
-    ({ id }) => id === shippingPackageProfileId,
-  )
-
   const completedProductImages = useRef(new Map<string, string>())
 
   async function uploadProductImages(product: Product, images: ProductImageUpload[]): Promise<ProductSaveResult> {
@@ -2831,7 +2541,6 @@ function CatalogManagement({
           slug: input.slug,
           description: input.description,
           search_keywords: input.search_keywords,
-          shipping: input.shipping,
           sku: variant.sku,
           price_minor: variant.price_minor,
           currency: variant.currency,
@@ -3220,17 +2929,6 @@ function CatalogManagement({
         price_minor: Math.round(price * 100),
         currency: 'EUR',
         available_quantity: Number(productQuantity),
-        shipping: {
-          package_profile_id: selectedShippingPackage?.id ?? null,
-          package_profile_name: selectedShippingPackage?.name ?? null,
-          weight_grams: Number(shippingWeightGrams),
-          width_cm: selectedShippingPackage?.width_cm ?? 1,
-          length_cm: selectedShippingPackage?.length_cm ?? 1,
-          height_cm: selectedShippingPackage?.height_cm ?? 1,
-          empty_weight_grams: selectedShippingPackage?.empty_weight_grams ?? 0,
-          units_per_package: Number(shippingUnitsPerPackage),
-          configured: Boolean(selectedShippingPackage),
-        },
         personalization,
       })
       return
@@ -3241,17 +2939,6 @@ function CatalogManagement({
         slug: productSlug,
         description: productDescription,
         search_keywords: productKeywords,
-        shipping: {
-          package_profile_id: selectedShippingPackage?.id ?? null,
-          package_profile_name: selectedShippingPackage?.name ?? null,
-          weight_grams: Number(shippingWeightGrams),
-          width_cm: selectedShippingPackage?.width_cm ?? 1,
-          length_cm: selectedShippingPackage?.length_cm ?? 1,
-          height_cm: selectedShippingPackage?.height_cm ?? 1,
-          empty_weight_grams: selectedShippingPackage?.empty_weight_grams ?? 0,
-          units_per_package: Number(shippingUnitsPerPackage),
-          configured: Boolean(selectedShippingPackage),
-        },
         variants: [
           {
             title: 'Default',
@@ -3281,9 +2968,6 @@ function CatalogManagement({
     setProductSku(base?.sku ?? '')
     setProductPrice(base ? String(base.price_minor / 100) : '')
     setProductQuantity(String(base?.available_quantity ?? 0))
-    setShippingWeightGrams(String(product.shipping.weight_grams))
-    setShippingPackageProfileId(product.shipping.package_profile_id ?? '')
-    setShippingUnitsPerPackage(String(product.shipping.units_per_package))
     setProductCategoryIds(product.categories.map(({ id }) => id))
     const config = product.personalization
     setPersonalizationMode(config.mode as typeof personalizationMode)
@@ -3316,9 +3000,6 @@ function CatalogManagement({
     setProductSku('')
     setProductPrice('')
     setProductQuantity('0')
-    setShippingWeightGrams('500')
-    setShippingPackageProfileId('')
-    setShippingUnitsPerPackage('1')
     setProductCategoryIds([])
     setPersonalizationMode('none')
     setPersonalizationViews([{ ...DEFAULT_PERSONALIZATION_VIEW, printAreas: [{ ...DEFAULT_PRINT_AREA }] }])
@@ -3666,35 +3347,6 @@ function CatalogManagement({
                 <small className="field-help" id="product-quantity-help">A negative value represents sold units that need to be restocked.</small>
               </div>
             </div>
-            <fieldset className="shipping-profile-settings">
-              <legend>Shipping package</legend>
-              <p>Choose a reusable package. Packlink automatically receives the parcels created from the ordered quantity.</p>
-              <label htmlFor="shipping-package-profile">Package</label>
-              <select id="shipping-package-profile" value={shippingPackageProfileId} onChange={(event) => setShippingPackageProfileId(event.target.value)} required>
-                <option value="">Select a shipping package…</option>
-                {shippingPackages.data?.map((profile) => (
-                  <option value={profile.id} key={profile.id} disabled={!profile.active && profile.id !== shippingPackageProfileId}>
-                    {profile.name} · {profile.width_cm} × {profile.length_cm} × {profile.height_cm} cm{profile.active ? '' : ' · inactive'}
-                  </option>
-                ))}
-              </select>
-              {shippingPackages.data?.length === 0 && <p className="shipping-profile-warning" role="status">No shipping packages have been created yet. <a href="#shipping-packages">Create the first package</a></p>}
-              <div className="shipping-profile-grid">
-                <label htmlFor="shipping-weight">
-                  Weight of one unit <span>grams</span>
-                  <input id="shipping-weight" type="number" min="1" max="1000000" step="1" value={shippingWeightGrams} onChange={(event) => setShippingWeightGrams(event.target.value)} required />
-                </label>
-                <label className="shipping-capacity" htmlFor="shipping-capacity">
-                  Maximum units in this package
-                  <input id="shipping-capacity" type="number" min="1" max="100" step="1" value={shippingUnitsPerPackage} onChange={(event) => setShippingUnitsPerPackage(event.target.value)} required />
-                </label>
-              </div>
-              {selectedShippingPackage && <div className="shipping-profile-summary" aria-live="polite">
-                <strong>{selectedShippingPackage.name}</strong>
-                <span>{selectedShippingPackage.width_cm} × {selectedShippingPackage.length_cm} × {selectedShippingPackage.height_cm} cm · {selectedShippingPackage.empty_weight_grams} g empty · up to {shippingUnitsPerPackage || '—'} {Number(shippingUnitsPerPackage) === 1 ? 'unit' : 'units'}</span>
-              </div>}
-              <a className="shipping-package-manage-link" href="#shipping-packages">Manage shipping packages</a>
-            </fieldset>
             <fieldset className="product-categories">
               <legend>Categories</legend>
               <div className="category-order-intro">
