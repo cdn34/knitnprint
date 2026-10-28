@@ -43,6 +43,7 @@ pub struct CreateOrderRequest {
     pub payment_method: String,
     #[serde(default)]
     pub shipping_rate_revision: Option<i64>,
+    pub checkout_quote: String,
 }
 
 fn default_email_locale() -> String {
@@ -332,8 +333,7 @@ pub async fn create(
         token_hash,
         idempotency_hash,
         provider,
-        &input.locale,
-        input.shipping_rate_revision,
+        &input,
     )
     .await
     {
@@ -638,9 +638,10 @@ async fn create_order(
     token_hash: [u8; 32],
     idempotency_hash: [u8; 32],
     provider: &str,
-    locale: &str,
-    shipping_rate_revision: Option<i64>,
+    input: &CreateOrderRequest,
 ) -> Result<(Order, bool), CreateError> {
+    let locale = &input.locale;
+    let shipping_rate_revision = input.shipping_rate_revision;
     let mut transaction = pool.begin().await.map_err(|_| CreateError::Database)?;
     let cart = sqlx::query_as::<_, CheckoutCart>(
         r#"
@@ -730,6 +731,9 @@ async fn create_order(
         return Err(CreateError::NotReady);
     }
     let currency = cart.currency.as_deref().ok_or(CreateError::NotReady)?;
+    if currency != crate::CURRENCY {
+        return Err(CreateError::Changed);
+    }
     let mut subtotal_minor = 0_i64;
     for line in &lines {
         if line.product_status != "active"
@@ -815,6 +819,27 @@ async fn create_order(
         .and_then(|total| total.checked_add(shipping_minor))
         .and_then(|total| total.checked_add(tax_minor))
         .ok_or(CreateError::Changed)?;
+
+    let address = crate::carts::CartAddress {
+        recipient_name: delivery.recipient_name.clone(),
+        line1: delivery.line1.clone(),
+        line2: delivery.line2.clone(),
+        city: delivery.city.clone(),
+        region: delivery.region.clone(),
+        postal_code: delivery.postal_code.clone(),
+        country_code: delivery.country_code.clone(),
+        phone: delivery.address_phone.clone(),
+    };
+    let expected_quote = crate::checkout::quote_fingerprint(
+        cart.id,
+        currency,
+        &address,
+        &shipping,
+        [subtotal_minor, discount_minor, tax_minor, total_minor],
+    );
+    if input.checkout_quote != expected_quote {
+        return Err(CreateError::Changed);
+    }
 
     let order_id = Uuid::now_v7();
     let order_number: String = sqlx::query_scalar(

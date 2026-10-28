@@ -298,7 +298,7 @@ async fn checkout_snapshots_reserves_and_manual_payment_are_idempotent() {
         "POST",
         "/api/orders",
         Some(&cart_cookie),
-        Some(json!({ "payment_method": "manual", "shipping_rate_revision": 0 })),
+        Some(json!({ "payment_method": "manual", "shipping_rate_revision": 0, "checkout_quote": discounted_body["checkout_quote"] })),
         Some("order-checkout-0001"),
     )
     .await;
@@ -352,7 +352,7 @@ async fn checkout_snapshots_reserves_and_manual_payment_are_idempotent() {
         "POST",
         "/api/orders",
         Some(&cart_cookie),
-        Some(json!({ "payment_method": "manual", "shipping_rate_revision": 0 })),
+        Some(json!({ "payment_method": "manual", "shipping_rate_revision": 0, "checkout_quote": discounted_body["checkout_quote"] })),
         Some("order-checkout-0001"),
     )
     .await;
@@ -973,12 +973,24 @@ async fn checkout_snapshots_reserves_and_manual_payment_are_idempotent() {
         .status(),
         StatusCode::OK
     );
+    let cancellable_review = response_json(
+        request(
+            &router,
+            "GET",
+            "/api/cart",
+            Some(&cancellable_cookie),
+            None,
+            None,
+        )
+        .await,
+    )
+    .await;
     let cancellable_order = request(
         &router,
         "POST",
         "/api/orders",
         Some(&cancellable_cookie),
-        Some(json!({ "payment_method": "manual", "shipping_rate_revision": 0 })),
+        Some(json!({ "payment_method": "manual", "shipping_rate_revision": 0, "checkout_quote": cancellable_review["checkout_quote"] })),
         Some("cancel-checkout-0001"),
     )
     .await;
@@ -1431,13 +1443,30 @@ async fn concurrent_checkout_cannot_exceed_a_discount_usage_limit() {
         prepare_discount_cart(&router, variant_id, "first", "first@example.com").await;
     let second_cookie =
         prepare_discount_cart(&router, variant_id, "second", "second@example.com").await;
+    let first_review =
+        response_json(request(&router, "GET", "/api/cart", Some(&first_cookie), None, None).await)
+            .await;
+    let second_review = response_json(
+        request(
+            &router,
+            "GET",
+            "/api/cart",
+            Some(&second_cookie),
+            None,
+            None,
+        )
+        .await,
+    )
+    .await;
 
     let first = request(
         &router,
         "POST",
         "/api/orders",
         Some(&first_cookie),
-        Some(json!({ "payment_method": "manual", "shipping_rate_revision": 0 })),
+        Some(
+            json!({ "payment_method": "manual", "shipping_rate_revision": 0, "checkout_quote": first_review["checkout_quote"] }),
+        ),
         Some("discount-limit-checkout-first"),
     );
     let second = request(
@@ -1445,7 +1474,9 @@ async fn concurrent_checkout_cannot_exceed_a_discount_usage_limit() {
         "POST",
         "/api/orders",
         Some(&second_cookie),
-        Some(json!({ "payment_method": "manual", "shipping_rate_revision": 0 })),
+        Some(
+            json!({ "payment_method": "manual", "shipping_rate_revision": 0, "checkout_quote": second_review["checkout_quote"] }),
+        ),
         Some("discount-limit-checkout-second"),
     );
     let (first, second) = tokio::join!(first, second);
@@ -1930,12 +1961,13 @@ async fn create_stripe_order(
     )
     .await;
     assert_eq!(delivered.status(), StatusCode::OK);
+    let delivered = response_json(delivered).await;
     let created = request(
         router,
         "POST",
         "/api/orders",
         Some(&cookie),
-        Some(json!({ "payment_method": "stripe" })),
+        Some(json!({ "payment_method": "stripe", "checkout_quote": delivered["checkout_quote"] })),
         Some(&format!("stripe-checkout-{suffix}-0001")),
     )
     .await;
@@ -2426,7 +2458,7 @@ async fn editable_destination_rates_control_cart_checkout_and_immutable_order_pr
         "POST",
         "/api/orders",
         Some(&cookie),
-        Some(json!({"payment_method":"manual","shipping_rate_revision":1})),
+        Some(json!({"payment_method":"manual","shipping_rate_revision":1,"checkout_quote":cart["checkout_quote"]})),
         Some("delivery-rate-checkout-0001"),
     )
     .await;
@@ -2441,7 +2473,7 @@ async fn editable_destination_rates_control_cart_checkout_and_immutable_order_pr
         "POST",
         "/api/orders",
         Some(&cookie),
-        Some(json!({"payment_method":"manual","locale":"pt","shipping_rate_revision":2})),
+        Some(json!({"payment_method":"manual","locale":"pt","shipping_rate_revision":2,"checkout_quote":cart["checkout_quote"]})),
         Some("delivery-rate-checkout-0001"),
     )
     .await;
@@ -2531,7 +2563,7 @@ async fn editable_destination_rates_control_cart_checkout_and_immutable_order_pr
         "POST",
         "/api/orders",
         Some(&cookie2),
-        Some(json!({"payment_method":"manual","shipping_rate_revision":3})),
+        Some(json!({"payment_method":"manual","shipping_rate_revision":3,"checkout_quote":"stale-quote"})),
         Some("delivery-rate-blocked-0001"),
     )
     .await;
@@ -2568,4 +2600,358 @@ async fn editable_destination_rates_control_cart_checkout_and_immutable_order_pr
         .await
         .unwrap();
     admin.close().await;
+}
+
+async fn regression_database() -> Option<(PgPool, PgPool, String)> {
+    let url = env::var("DATABASE_URL").ok()?;
+    let schema = format!("checkout_regression_{}", Uuid::new_v4().simple());
+    let admin = PgPool::connect(&url).await.unwrap();
+    sqlx::query(&format!("CREATE SCHEMA \"{schema}\""))
+        .execute(&admin)
+        .await
+        .unwrap();
+    let pool = isolated_pool(&url, &schema).await;
+    Some((admin, pool, schema))
+}
+
+async fn cleanup_regression_database(admin: PgPool, pool: PgPool, schema: String) {
+    pool.close().await;
+    sqlx::query(&format!("DROP SCHEMA \"{schema}\" CASCADE"))
+        .execute(&admin)
+        .await
+        .unwrap();
+    admin.close().await;
+}
+
+#[tokio::test]
+async fn migration_upgrade_preserves_legacy_shipping_queries_and_data() {
+    let Some((admin, pool, schema)) = regression_database().await else {
+        return;
+    };
+    let migrations = sqlx::migrate!("../migrations");
+    let previous = sqlx::migrate::Migrator {
+        migrations: std::borrow::Cow::Owned(
+            migrations
+                .iter()
+                .filter(|migration| migration.version <= 52)
+                .cloned()
+                .collect(),
+        ),
+        ..sqlx::migrate::Migrator::DEFAULT
+    };
+    previous.run(&pool).await.unwrap();
+    let variant = insert_product(&pool).await;
+    sqlx::query("UPDATE products SET shipping_weight_grams=1234")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE shipping_methods SET flat_rate_minor=999")
+        .execute(&pool)
+        .await
+        .unwrap();
+    // An existing non-EUR price must not silently become a EUR price.
+    sqlx::query("UPDATE product_variants SET currency='USD' WHERE id=$1")
+        .bind(variant)
+        .execute(&pool)
+        .await
+        .unwrap();
+    migrations.run(&pool).await.unwrap();
+    sqlx::query("SELECT shipping_method_id,shipping_quote_id FROM carts LIMIT 0")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("SELECT shipping_package_profile_id,shipping_weight_grams,shipping_width_cm,shipping_length_cm,shipping_height_cm,shipping_units_per_package,shipping_profile_configured FROM products LIMIT 0").execute(&pool).await.unwrap();
+    for table in [
+        "shipping_zones",
+        "shipping_methods",
+        "cart_shipping_quotes",
+        "shipping_package_profiles",
+    ] {
+        sqlx::query(&format!("SELECT * FROM {table} LIMIT 0"))
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+    assert_eq!(
+        sqlx::query_scalar::<_, i32>("SELECT shipping_weight_grams FROM products")
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        1234
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT flat_rate_minor FROM shipping_methods")
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        999
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, String>("SELECT currency::text FROM product_variants WHERE id=$1")
+            .bind(variant)
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        "USD"
+    );
+    let rejected = sqlx::query("UPDATE product_variants SET currency='GBP' WHERE id=$1")
+        .bind(variant)
+        .execute(&pool)
+        .await
+        .unwrap_err();
+    assert_eq!(
+        rejected.as_database_error().unwrap().code().as_deref(),
+        Some("23514")
+    );
+    create_verified_customer(&pool).await;
+    let router = app(AppState {
+        database: Some(pool.clone()),
+        ..AppState::default()
+    });
+    let cookie = response_cookie(&request(&router, "GET", "/api/cart", None, None, None).await);
+    assert_eq!(
+        request(
+            &router,
+            "POST",
+            "/api/cart/items",
+            Some(&cookie),
+            Some(json!({"variant_id":variant,"quantity":1})),
+            Some("legacy-currency-add-0001")
+        )
+        .await
+        .status(),
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    cleanup_regression_database(admin, pool, schema).await;
+}
+
+#[tokio::test]
+async fn commercial_apis_reject_non_eur_currency() {
+    let Some((admin, pool, schema)) = regression_database().await else {
+        return;
+    };
+    sqlx::migrate!("../migrations").run(&pool).await.unwrap();
+    let variant = insert_product(&pool).await;
+    let product: Uuid = sqlx::query_scalar("SELECT product_id FROM product_variants WHERE id=$1")
+        .bind(variant)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    insert_owner(&pool).await;
+    let router = app(AppState {
+        database: Some(pool.clone()),
+        ..AppState::default()
+    });
+    let owner = login(&router).await;
+    for currency in ["USD", "GBP"] {
+        let variant_body = json!({"title":"Currency test","sku":"CURRENCY-TEST","price_minor":1200,"currency":currency,"available_quantity":1});
+        for (method, path, body) in [
+            (
+                "POST",
+                "/api/admin/settings".to_owned(),
+                json!({"store_name":"Currency test","support_email":"support@example.com","currency":currency,"tax_enabled":false,"tax_rules":[],"reason":"Test currency enforcement"}),
+            ),
+            (
+                "POST",
+                "/api/admin/products".to_owned(),
+                json!({"title":"Currency test","slug":"currency-test","variants":[variant_body.clone()]}),
+            ),
+            (
+                "POST",
+                format!("/api/admin/products/{product}/variants"),
+                variant_body,
+            ),
+            (
+                "PUT",
+                format!("/api/admin/products/{product}"),
+                json!({"title":"Order Loom","slug":"order-loom","sku":"ORDER-MAUVE","price_minor":3200,"currency":currency,"available_quantity":5}),
+            ),
+            (
+                "POST",
+                "/api/admin/discounts".to_owned(),
+                json!({"code":"CURRENCYTEST","kind":"fixed","value":100,"currency":currency,"reason":"Test currency enforcement"}),
+            ),
+        ] {
+            let response = request(&router, method, &path, Some(&owner), Some(body), None).await;
+            assert_eq!(
+                response.status(),
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "{method} {path} {currency}"
+            );
+        }
+        let rejected = sqlx::query("UPDATE store_settings SET currency=$1")
+            .bind(currency)
+            .execute(&pool)
+            .await
+            .unwrap_err();
+        assert_eq!(
+            rejected.as_database_error().unwrap().code().as_deref(),
+            Some("23514")
+        );
+    }
+    assert_eq!(
+        sqlx::query_scalar::<_, String>("SELECT currency::text FROM store_settings")
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        "EUR"
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, String>("SELECT currency::text FROM delivery_pricing_config")
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        "EUR"
+    );
+    cleanup_regression_database(admin, pool, schema).await;
+}
+
+#[tokio::test]
+async fn checkout_requires_review_of_changed_address_and_total() {
+    let Some((admin, pool, schema)) = regression_database().await else {
+        return;
+    };
+    sqlx::migrate!("../migrations").run(&pool).await.unwrap();
+    let variant = insert_product(&pool).await;
+    create_verified_customer(&pool).await;
+    sqlx::query("UPDATE delivery_pricing_config SET enabled=true,revision=1")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE delivery_rates SET active=true,amount_minor=CASE WHEN region_name='Mainland Portugal' THEN 450 ELSE 800 END").execute(&pool).await.unwrap();
+    let router = app(AppState {
+        database: Some(pool.clone()),
+        manual_payments_enabled: true,
+        ..AppState::default()
+    });
+    let cookie = response_cookie(&request(&router, "GET", "/api/cart", None, None, None).await);
+    assert_eq!(
+        request(
+            &router,
+            "POST",
+            "/api/cart/items",
+            Some(&cookie),
+            Some(json!({"variant_id":variant,"quantity":1})),
+            Some("quote-cart-add-0001")
+        )
+        .await
+        .status(),
+        StatusCode::CREATED
+    );
+    let mut delivery = delivery_fixture();
+    let mut reviewed = response_json(
+        request(
+            &router,
+            "POST",
+            "/api/cart/delivery",
+            Some(&cookie),
+            Some(delivery.clone()),
+            Some("quote-initial-address-0001"),
+        )
+        .await,
+    )
+    .await;
+    assert_eq!(reviewed["total_minor"], 3650);
+    // The same rate-table revision covers more expensive, cheaper, and same-price
+    // address changes. Each must be reviewed before it becomes an order.
+    for (index, postal, street, total) in [
+        (0, "9000-001", "9 Thread Street", 4000),
+        (1, "1000-009", "9 Thread Street", 3650),
+        (2, "1000-009", "10 Thread Street", 3650),
+    ] {
+        delivery["address"]["postal_code"] = json!(postal);
+        delivery["address"]["line1"] = json!(street);
+        let changed = response_json(
+            request(
+                &router,
+                "POST",
+                "/api/cart/delivery",
+                Some(&cookie),
+                Some(delivery.clone()),
+                Some(&format!("quote-address-change-{index}-0001")),
+            )
+            .await,
+        )
+        .await;
+        assert_eq!(changed["total_minor"], total);
+        assert_eq!(
+            changed["shipping_quote"]["revision"],
+            reviewed["shipping_quote"]["revision"]
+        );
+        let rejected = request(&router, "POST", "/api/orders", Some(&cookie), Some(json!({"payment_method":"manual","shipping_rate_revision":1,"checkout_quote":reviewed["checkout_quote"]})), Some("quote-checkout-0001")).await;
+        assert_eq!(rejected.status(), StatusCode::CONFLICT);
+        assert_eq!(
+            response_json(rejected).await["error"]["code"],
+            "cart_changed"
+        );
+        reviewed = changed;
+    }
+    // Tax changes also require review even though shipping and address match.
+    sqlx::query("UPDATE store_settings SET tax_enabled=true")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO tax_rules (id,name,country_codes,rate_basis_points,priority) VALUES ($1,'Test tax',ARRAY['PT'],1000,0)").bind(Uuid::now_v7()).execute(&pool).await.unwrap();
+    let rejected = request(&router, "POST", "/api/orders", Some(&cookie), Some(json!({"payment_method":"manual","shipping_rate_revision":1,"checkout_quote":reviewed["checkout_quote"]})), Some("quote-checkout-0001")).await;
+    assert_eq!(rejected.status(), StatusCode::CONFLICT);
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM orders")
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT reserved_quantity FROM inventory_items WHERE variant_id=$1"
+        )
+        .bind(variant)
+        .fetch_one(&pool)
+        .await
+        .unwrap(),
+        0
+    );
+    let missing = request(
+        &router,
+        "POST",
+        "/api/orders",
+        Some(&cookie),
+        Some(json!({"payment_method":"manual","shipping_rate_revision":1})),
+        Some("quote-checkout-0001"),
+    )
+    .await;
+    assert_eq!(missing.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let current =
+        response_json(request(&router, "GET", "/api/cart", Some(&cookie), None, None).await).await;
+    assert_eq!(current["total_minor"], 4015);
+    let body = json!({"payment_method":"manual","shipping_rate_revision":1,"checkout_quote":current["checkout_quote"]});
+    let created = request(
+        &router,
+        "POST",
+        "/api/orders",
+        Some(&cookie),
+        Some(body.clone()),
+        Some("quote-checkout-0001"),
+    )
+    .await;
+    assert_eq!(created.status(), StatusCode::CREATED);
+    let order = response_json(created).await;
+    assert_eq!(order["total_minor"], 4015);
+    assert_eq!(order["shipping_address"]["line1"], "10 Thread Street");
+    sqlx::query("UPDATE delivery_rates SET amount_minor=999")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let replay = request(
+        &router,
+        "POST",
+        "/api/orders",
+        Some(&cookie),
+        Some(body),
+        Some("quote-checkout-0001"),
+    )
+    .await;
+    assert_eq!(replay.status(), StatusCode::OK);
+    assert_eq!(response_json(replay).await["id"], order["id"]);
+    cleanup_regression_database(admin, pool, schema).await;
 }

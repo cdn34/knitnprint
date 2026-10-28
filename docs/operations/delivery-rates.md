@@ -47,16 +47,27 @@ specific prefix rules if islands or other territories need separate charges.
   postcodes and currency mismatches block checkout. They never become free.
 - Cart totals include shipping and any configured exclusive tax, including tax
   on shipping. Checkout re-evaluates everything in its database transaction.
-  Clients send the cart quote's `shipping_rate_revision`; changed prices require
-  another review before ordering rather than silently charging a new total.
-- Rule currency is captured when the table is created. Changing store currency
-  does not reinterpret existing shipping amounts: mismatched currencies block
-  checkout until pricing is deliberately reconfigured.
+  Clients send the cart's `checkout_quote` and the shipping quote's
+  `shipping_rate_revision`. The checkout quote identifies the saved address and
+  calculated prices. A change in another tab, delivery rates or totals returns
+  `cart_changed`; the storefront reloads the address and total for review before
+  another attempt. Successful order retries remain idempotent.
+- EUR is the only supported currency. Store settings, product variants, discounts
+  and delivery rates cannot be configured in another currency. Existing records
+  are not converted or relabelled; non-EUR products cannot enter checkout.
 - Order shipping snapshots keep the chosen destination, rule ID, currency and
   amount. Editing or deleting a rule cannot change an earlier order or email.
 
 The destination tester uses saved rules even while the table is off, clearly
 labelled as a simulation. It cannot activate pricing or create orders.
+
+## Deployment compatibility
+
+Migration 0053 retains the retired shipping tables and product/cart columns so
+the previous API can continue serving traffic during a migration-first rollout.
+The new API no longer uses them. Their removal requires a later release after
+all previous API tasks have been replaced. Migration 0055 enforces EUR on new
+configuration and catalog writes without changing existing stored amounts.
 
 ## Postal references
 

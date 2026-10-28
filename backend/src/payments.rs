@@ -514,6 +514,7 @@ async fn prepare_checkout(
     .map_err(|_| StartError::Database)?
     .ok_or(StartError::NotFound)?;
     if record.provider != "stripe"
+        || record.currency != crate::CURRENCY
         || record.order_status != "pending"
         || record.payment_status != "pending"
     {

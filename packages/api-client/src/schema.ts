@@ -71,6 +71,7 @@ export interface CancelOrderRequest {
 }
 
 export interface Cart {
+  "checkout_quote"?: string | null
   "checkout_ready": boolean
   "currency"?: string | null
   "delivery"?: null | CartDelivery
@@ -214,6 +215,7 @@ export interface CreateFulfillmentRequest {
 }
 
 export interface CreateOrderRequest {
+  "checkout_quote": string
   "locale"?: string
   "payment_method": string
   "shipping_rate_revision"?: number | null

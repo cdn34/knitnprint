@@ -74,6 +74,7 @@ pub struct Cart {
     pub shipping_quote: Option<crate::delivery_rates::DeliveryQuote>,
     pub total_minor: i64,
     pub checkout_ready: bool,
+    pub checkout_quote: Option<String>,
     pub issues: Vec<CartIssue>,
     pub delivery: Option<CartDelivery>,
     pub expires_at: String,
@@ -1071,6 +1072,22 @@ async fn load_cart(pool: &PgPool, cart_id: Uuid) -> Result<Cart, sqlx::Error> {
         .checked_add(tax_minor)
         .ok_or_else(|| sqlx::Error::Protocol("cart total overflow".into()))?;
     let checkout_ready = !items.is_empty() && delivery.is_some() && issues.is_empty();
+    let checkout_quote = if checkout_ready {
+        delivery
+            .as_ref()
+            .zip(shipping_quote.as_ref())
+            .map(|(delivery, shipping)| {
+                crate::checkout::quote_fingerprint(
+                    cart_id,
+                    cart.currency.as_deref().unwrap_or(crate::CURRENCY),
+                    &delivery.address,
+                    shipping,
+                    [subtotal_minor, discount_minor, tax_minor, total_minor],
+                )
+            })
+    } else {
+        None
+    };
     Ok(Cart {
         id: cart_id,
         currency: cart.currency,
@@ -1085,6 +1102,7 @@ async fn load_cart(pool: &PgPool, cart_id: Uuid) -> Result<Cart, sqlx::Error> {
         shipping_quote,
         total_minor,
         checkout_ready,
+        checkout_quote,
         issues,
         delivery,
         expires_at: cart.expires_at,
@@ -1656,6 +1674,9 @@ async fn ensure_currency(
     cart_id: Uuid,
     currency: &str,
 ) -> Result<(), EnsureCurrencyError> {
+    if currency != crate::CURRENCY {
+        return Err(EnsureCurrencyError::Mismatch);
+    }
     let current: Option<String> =
         sqlx::query_scalar("SELECT currency::text FROM carts WHERE id = $1 FOR UPDATE")
             .bind(cart_id)

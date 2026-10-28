@@ -31,6 +31,8 @@ pub mod security;
 pub mod settings;
 pub mod staff;
 
+pub const CURRENCY: &str = "EUR";
+
 use axum::{
     Json, Router,
     extract::DefaultBodyLimit,

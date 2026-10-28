@@ -1052,7 +1052,7 @@ function DiscountManagement() {
       code: String(form.get('discount-code') ?? ''),
       kind,
       value: Math.round(enteredValue * 100),
-      currency: String(form.get('discount-currency') ?? 'EUR'),
+      currency: 'EUR',
       minimum_order_minor: Math.round(Number(form.get('discount-minimum') ?? 0) * 100),
       starts_at: optionalDate(form.get('discount-starts')),
       ends_at: optionalDate(form.get('discount-ends')),
@@ -1106,7 +1106,7 @@ function DiscountManagement() {
           <label>Code<input name="discount-code" minLength={3} maxLength={32} required placeholder="WELCOME10" defaultValue={editing?.code ?? ''} /></label>
           <label>Type<select name="discount-kind" value={kind} onChange={(event) => setKind(event.target.value as 'percentage' | 'fixed')}><option value="percentage">Percentage</option><option value="fixed">Fixed amount</option></select></label>
           <label>{kind === 'percentage' ? 'Percentage' : 'Amount'}<input name="discount-value" type="number" min="0.01" max={kind === 'percentage' ? '100' : undefined} step="0.01" required defaultValue={editing ? editing.value / 100 : undefined} /></label>
-          <label>Currency<input name="discount-currency" pattern="[A-Za-z]{3}" defaultValue={editing?.currency ?? 'EUR'} required /></label>
+          <label>Currency<input name="discount-currency" value="EUR" readOnly /></label>
           <label>Minimum order amount<input name="discount-minimum" type="number" min="0" step="0.01" defaultValue={editing ? editing.minimum_order_minor / 100 : 0} /></label>
           <div className="discount-field-row">
             <label>Starts<input name="discount-starts" type="datetime-local" defaultValue={dateTimeLocalValue(editing?.starts_at)} /></label>
@@ -1165,7 +1165,7 @@ function settingsInput(settings: CommercialSettings) {
   return {
     store_name: settings.store_name,
     support_email: settings.support_email,
-    currency: settings.currency,
+    currency: 'EUR',
     tax_enabled: settings.tax_enabled,
     tax_rules: settings.tax_rules.map((rule) => ({
       name: rule.name,
@@ -1210,7 +1210,7 @@ function SettingsManagement() {
       {
         store_name: String(form.get('store-name') ?? ''),
         support_email: String(form.get('support-email') ?? ''),
-        currency: String(form.get('store-currency') ?? ''),
+        currency: 'EUR',
         tax_enabled: form.get('tax-enabled') === 'on',
       },
       String(form.get('settings-reason') ?? ''),
@@ -1264,7 +1264,7 @@ function SettingsManagement() {
               {settings.data.checkout_suspended && <p className="settings-note" role="status">Checkout is temporarily suspended while delivery pricing is updated.</p>}
               <label>Store name<input name="store-name" defaultValue={settings.data.store_name} minLength={2} maxLength={100} required /></label>
               <label>Support email<input name="support-email" type="email" defaultValue={settings.data.support_email} required /></label>
-              <label>Store currency<input name="store-currency" defaultValue={settings.data.currency} pattern="[A-Za-z]{3}" required /></label>
+              <label>Store currency<input name="store-currency" value="EUR" readOnly /></label>
               <label className="check-row"><input name="tax-enabled" type="checkbox" defaultChecked={settings.data.tax_enabled} /> Enable destination tax calculation</label>
               <label>Audit reason<textarea name="settings-reason" minLength={3} maxLength={500} defaultValue="Update store identity and pricing behavior" required /></label>
               <button className="primary-button" disabled={updateSettings.isPending}>Save store settings</button>
@@ -3024,7 +3024,7 @@ function CatalogManagement({
         title: String(form.get('new-variant-title') ?? ''),
         sku: String(form.get('new-variant-sku') ?? ''),
         price: Number(form.get('new-variant-price')),
-        currency: String(form.get('new-variant-currency') ?? ''),
+        currency: 'EUR',
       },
       { onSuccess: () => formElement.reset() },
     )
@@ -3615,9 +3615,7 @@ function CatalogManagement({
                 </div>
                 <div>
                   <label htmlFor="new-variant-currency">Currency</label>
-                  <select id="new-variant-currency" name="new-variant-currency" defaultValue="EUR">
-                    <option value="EUR">EUR</option><option value="GBP">GBP</option><option value="USD">USD</option>
-                  </select>
+                  <input id="new-variant-currency" name="new-variant-currency" value="EUR" readOnly />
                 </div>
               </div>
               {addVariant.isError && <p className="panel-error" role="alert">{addVariant.error.message}</p>}

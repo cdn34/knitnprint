@@ -1887,12 +1887,7 @@ fn valid_variant_details(variant: &CreateVariantRequest) -> bool {
         && !variant.sku.trim().is_empty()
         && variant.sku.trim().len() <= 120
         && variant.price_minor >= 0
-        && variant.currency.trim().len() == 3
-        && variant
-            .currency
-            .trim()
-            .chars()
-            .all(|character| character.is_ascii_uppercase())
+        && variant.currency.trim() == crate::CURRENCY
         && variant.option_values.is_object()
 }
 

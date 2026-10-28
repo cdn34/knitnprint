@@ -181,11 +181,12 @@ and inspect codes in the admin Discounts workspace; every change requires an
 audit reason. Usage is counted when an order is created and is not restored by
 later cancellation or refund.
 
-Staff with `settings.manage` can maintain store identity, currency and destination
+Staff with `settings.manage` can maintain store identity and destination
 tax rules. The Settings page reports configuration health for database, media,
 email and payments without exposing credentials. Configured destination tax rules
 are evaluated server-side, including applicable shipping charges. Historical
-commercial snapshots remain immutable.
+commercial snapshots remain immutable. EUR is the only supported currency for
+store settings, products, discounts and checkout.
 
 Tax calculation is disabled by default and no production rate is seeded. When
 enabled, checkout requires a matching active destination rule; use an explicit

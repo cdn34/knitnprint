@@ -6270,6 +6270,12 @@
           "expires_at"
         ],
         "properties": {
+          "checkout_quote": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "checkout_ready": {
             "type": "boolean"
           },
@@ -6834,9 +6840,13 @@
       "CreateOrderRequest": {
         "type": "object",
         "required": [
-          "payment_method"
+          "payment_method",
+          "checkout_quote"
         ],
         "properties": {
+          "checkout_quote": {
+            "type": "string"
+          },
           "locale": {
             "type": "string"
           },
