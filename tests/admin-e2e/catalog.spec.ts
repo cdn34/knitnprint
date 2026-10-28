@@ -34,6 +34,19 @@ test('lets an owner manage commercial settings and complete an order journey', a
   })
   expect(resetSettings.ok()).toBeTruthy()
 
+  const deliverySettingsResponse = await page.request.get('/api/admin/delivery-rates')
+  expect(deliverySettingsResponse.ok()).toBeTruthy()
+  const deliverySettings = await deliverySettingsResponse.json()
+  const resetDeliverySettings = await page.request.put('/api/admin/delivery-rates', {
+    data: {
+      enabled: false,
+      revision: deliverySettings.revision,
+      rates: deliverySettings.rates.map((rate: { active: boolean; amount_minor: number | null }) => ({ ...rate, active: false, amount_minor: null })),
+      reason: 'Reset browser destination pricing before each attempt',
+    },
+  })
+  expect(resetDeliverySettings.ok()).toBeTruthy()
+
   await page.getByRole('link', { name: 'Shipping rates', exact: true }).click()
   await page.getByLabel('Price for destination 1', { exact: true }).fill('12.00')
   await page.getByLabel('Activate destination 1', { exact: true }).check()

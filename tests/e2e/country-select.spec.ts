@@ -30,6 +30,7 @@ for (const [locale, spainName] of [['en', 'Spain'], ['pt', 'Espanha'], ['es', 'E
     await expect(page.locator('html')).toHaveAttribute('lang', locale)
     const country = page.locator('.delivery-form select[name="country_code"]')
     await expect(country).toHaveValue('ES')
+    await expect(country).toHaveAccessibleName(locale === 'en' ? 'Country' : 'País')
     await expect(country.locator('option:checked')).toHaveText(spainName)
     await expect(country.locator('option')).toHaveCount(249)
     await expect(country).toHaveAttribute('autocomplete', 'country')

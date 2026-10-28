@@ -1007,8 +1007,11 @@ function DiscountManagement() {
   })
   const createDiscount = useMutation({
     mutationFn: api.createDiscount,
-    onSuccess: (discount) => {
-      client.setQueryData<Discount[]>(discountsKey, (current = []) => [discount, ...current])
+    onSuccess: async (discount) => {
+      await client.cancelQueries({ queryKey: discountsKey })
+      client.setQueryData<Discount[]>(discountsKey, (current = []) =>
+        [discount, ...current.filter((item) => item.id !== discount.id)],
+      )
       formRef.current?.reset()
       setKind('percentage')
     },
