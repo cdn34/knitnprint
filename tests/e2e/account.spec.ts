@@ -82,7 +82,7 @@ test("customer account persists addresses and supports returning sign in", async
   await page.getByLabel("Address line 1").fill("12 Rua das Flores");
   await page.getByLabel("City").fill("Porto");
   await page.getByLabel("Postal code").fill("4050-265");
-  await page.getByLabel("Country code").fill("pt");
+  await page.getByRole("combobox", { name: "Country", exact: true }).selectOption("PT");
   await page.getByRole("button", { name: "Save address" }).click();
 
   await expect(page.locator(".account-message--success")).toHaveText("Address saved.");

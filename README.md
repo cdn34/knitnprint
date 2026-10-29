@@ -181,38 +181,28 @@ and inspect codes in the admin Discounts workspace; every change requires an
 audit reason. Usage is counted when an order is created and is not restored by
 later cancellation or refund.
 
-Staff with `settings.manage` can maintain the non-secret store identity,
-currency, flat-rate shipping zones and methods, and destination tax rules in
-the admin Settings workspace. Explicit country zones take precedence over the
-single worldwide fallback. The server applies discounts before shipping, then
-calculates exclusive tax on discounted merchandise plus shipping. Cart totals
-are estimates from the same server calculator used at checkout; the selected
-shipping method, destination rule, tax base, rate, and amounts are stored as
-immutable order snapshots.
+Staff with `settings.manage` can maintain store identity and destination
+tax rules. The Settings page reports configuration health for database, media,
+email and payments without exposing credentials. Configured destination tax rules
+are evaluated server-side, including applicable shipping charges. Historical
+commercial snapshots remain immutable. EUR is the only supported currency for
+store settings, products, discounts and checkout.
 
 Tax calculation is disabled by default and no production rate is seeded. When
 enabled, checkout requires a matching active destination rule; use an explicit
 zero-percent rule where that behavior is intentional. Confirm registration,
 place-of-supply, product classification, shipping-taxability, rounding,
 invoicing, and rate requirements with a qualified adviser for every served
-jurisdiction before enabling production tax collection. The Settings page also
-reports whether database, media, email, and payment integrations are configured,
-but never accepts or displays their credentials.
+jurisdiction before enabling production tax collection.
 
-Live Packlink PRO shipping prices replace the flat-rate methods when
-`PACKLINK_API_KEY` is configured on the API server. The default dispatch origin
-is `3780-294, PT` and can be overridden with the matching `PACKLINK_ORIGIN_*`
-environment variables documented in `backend/.env.example`. Parcel dimensions,
-empty-package weight, product weight, and units per package are configured in
-the admin catalog; the server composes parcels from those profiles and the cart
-quantity.
-After the customer saves the delivery address, the server requests current
-Packlink services, stores them for 15 minutes, and charges the exact returned
-price. Carrier collection in Anadia and services where the sender takes the
-parcel to a drop-off point are both offered. Delivery to a recipient parcel shop
-is excluded until the storefront provides a destination pickup-point selector.
-The API key is server-only and must be injected through the runtime secret
-manager rather than committed to the repository.
+Checkout is enabled without the retired package profiles or carrier integration.
+The admin **Shipping rates** workspace configures flat prices by country/region,
+with editable postal prefixes and a destination tester. Mainland Portugal,
+Madeira, Azores and Spain start unpriced and inactive. The global table starts
+off, preserving the explicitly displayed zero shipping charge until staff opt in.
+Once enabled, unconfigured/inactive destinations block checkout. Prices are
+calculated server-side, included in totals and emails, and saved as immutable
+order snapshots. See [destination shipping rates](docs/operations/delivery-rates.md).
 
 The admin Dashboard is a live, capability-aware operational projection. Staff
 with order access see paid orders awaiting fulfillment, recent orders, current

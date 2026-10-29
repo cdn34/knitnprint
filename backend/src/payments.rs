@@ -355,6 +355,7 @@ impl PaymentProvider for StripeProvider {
 pub struct PaymentOptions {
     pub stripe: bool,
     pub manual: bool,
+    pub checkout_suspended: bool,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -394,8 +395,9 @@ pub struct PaymentStatusEvent {
 )]
 pub async fn options(State(state): State<AppState>) -> Json<PaymentOptions> {
     Json(PaymentOptions {
-        stripe: state.payments.enabled(),
-        manual: state.manual_payments_enabled,
+        stripe: state.payments.enabled() && !crate::checkout::SUSPENDED,
+        manual: state.manual_payments_enabled && !crate::checkout::SUSPENDED,
+        checkout_suspended: crate::checkout::SUSPENDED,
     })
 }
 
@@ -416,6 +418,9 @@ pub async fn start_checkout(
     jar: CookieJar,
     Path(order_id): Path<Uuid>,
 ) -> Response {
+    if crate::checkout::SUSPENDED {
+        return crate::checkout::unavailable();
+    }
     let Some(cookie) = jar.get(CART_COOKIE) else {
         return payment_error(
             StatusCode::NOT_FOUND,
@@ -509,6 +514,7 @@ async fn prepare_checkout(
     .map_err(|_| StartError::Database)?
     .ok_or(StartError::NotFound)?;
     if record.provider != "stripe"
+        || record.currency != crate::CURRENCY
         || record.order_status != "pending"
         || record.payment_status != "pending"
     {

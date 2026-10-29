@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 use axum::{
     Json,
     extract::{Path, Query, State},
@@ -30,13 +28,8 @@ use crate::{
         NotificationStatus, deliver_order_confirmation, enqueue_order_confirmation,
         load_for_order as load_notifications,
     },
-    packlink::{PackageItem, PacklinkPackage, PacklinkService, packages_for_items},
     payments::{PaymentAttempt, PaymentStatusEvent, load_attempts, load_status_events},
-    settings::{
-        OrderShipping, OrderTax, PricingError, evaluate_in_transaction as evaluate_commercial,
-        evaluate_packlink_in_transaction, load_order_shipping, load_order_tax,
-        record_order_snapshots,
-    },
+    settings::{OrderShipping, OrderTax, load_order_shipping, load_order_tax},
 };
 
 const CART_COOKIE: &str = "knitnprint_cart";
@@ -48,6 +41,9 @@ pub struct CreateOrderRequest {
     #[serde(default = "default_email_locale")]
     pub locale: String,
     pub payment_method: String,
+    #[serde(default)]
+    pub shipping_rate_revision: Option<i64>,
+    pub checkout_quote: String,
 }
 
 fn default_email_locale() -> String {
@@ -204,8 +200,6 @@ struct CheckoutCart {
     customer_id: Option<Uuid>,
     shipping_address_id: Option<Uuid>,
     discount_id: Option<Uuid>,
-    shipping_method_id: Option<Uuid>,
-    shipping_quote_id: Option<Uuid>,
     expired: bool,
 }
 
@@ -222,13 +216,6 @@ struct CheckoutLine {
     current_price_minor: i64,
     stored_currency: String,
     current_currency: String,
-    shipping_weight_grams: i32,
-    shipping_width_cm: i32,
-    shipping_length_cm: i32,
-    shipping_height_cm: i32,
-    shipping_empty_weight_grams: i32,
-    shipping_units_per_package: i32,
-    shipping_profile_configured: bool,
     customization: Option<Value>,
     customization_media_asset_id: Option<Uuid>,
     customization_media_asset_ids: Vec<Uuid>,
@@ -346,8 +333,7 @@ pub async fn create(
         token_hash,
         idempotency_hash,
         provider,
-        &state.packlink,
-        &input.locale,
+        &input,
     )
     .await
     {
@@ -364,6 +350,11 @@ pub async fn create(
         ),
         Err(CreateError::NotReady) => cart_not_ready(),
         Err(CreateError::Changed) => cart_changed(),
+        Err(CreateError::DeliveryUnavailable) => error(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "shipping_destination_unavailable",
+            "Shipping is not available for this destination. Contact support@knitnprint.com before ordering.",
+        ),
         Err(CreateError::IdempotencyConflict) => error(
             StatusCode::CONFLICT,
             "checkout_idempotency_conflict",
@@ -638,6 +629,7 @@ enum CreateError {
     Changed,
     IdempotencyConflict,
     Database,
+    DeliveryUnavailable,
 }
 
 async fn create_order(
@@ -646,14 +638,14 @@ async fn create_order(
     token_hash: [u8; 32],
     idempotency_hash: [u8; 32],
     provider: &str,
-    packlink: &PacklinkService,
-    locale: &str,
+    input: &CreateOrderRequest,
 ) -> Result<(Order, bool), CreateError> {
+    let locale = &input.locale;
+    let shipping_rate_revision = input.shipping_rate_revision;
     let mut transaction = pool.begin().await.map_err(|_| CreateError::Database)?;
     let cart = sqlx::query_as::<_, CheckoutCart>(
         r#"
         SELECT id, status, currency::text AS currency, customer_id, shipping_address_id, discount_id,
-               shipping_method_id, shipping_quote_id,
                expires_at <= now() AS expired
         FROM carts WHERE token_hash = $1
         FOR UPDATE
@@ -713,13 +705,6 @@ async fn create_order(
                variant.price_minor AS current_price_minor,
                line.currency::text AS stored_currency,
                variant.currency::text AS current_currency,
-               product.shipping_weight_grams,
-               COALESCE(package_profile.width_cm, product.shipping_width_cm) AS shipping_width_cm,
-               COALESCE(package_profile.length_cm, product.shipping_length_cm) AS shipping_length_cm,
-               COALESCE(package_profile.height_cm, product.shipping_height_cm) AS shipping_height_cm,
-               COALESCE(package_profile.empty_weight_grams, 0) AS shipping_empty_weight_grams,
-               product.shipping_units_per_package,
-               (product.shipping_profile_configured AND COALESCE(package_profile.active, false)) AS shipping_profile_configured,
                line.customization, line.customization_media_asset_id,
                line.customization_media_asset_ids, line.personalization_previews, variant.option_values AS variant_options,
                CASE WHEN line.customization IS NULL THEN NULL ELSE
@@ -732,8 +717,6 @@ async fn create_order(
         JOIN product_variants variant ON variant.id = line.variant_id
         JOIN products product ON product.id = variant.product_id
         JOIN inventory_items inventory ON inventory.variant_id = variant.id
-        LEFT JOIN shipping_package_profiles package_profile
-          ON package_profile.id=product.shipping_package_profile_id
         LEFT JOIN product_personalization personalization ON personalization.product_id = product.id
         WHERE line.cart_id = $1
         ORDER BY variant.id
@@ -748,6 +731,9 @@ async fn create_order(
         return Err(CreateError::NotReady);
     }
     let currency = cart.currency.as_deref().ok_or(CreateError::NotReady)?;
+    if currency != crate::CURRENCY {
+        return Err(CreateError::Changed);
+    }
     let mut subtotal_minor = 0_i64;
     for line in &lines {
         if line.product_status != "active"
@@ -798,41 +784,62 @@ async fn create_order(
     let merchandise_minor = subtotal_minor
         .checked_sub(discount_minor)
         .ok_or(CreateError::Changed)?;
-    let commercial_pricing = if packlink.enabled() {
-        let packages = checkout_packages(&lines).ok_or(CreateError::Changed)?;
-        let request_hash =
-            packlink.request_hash(&delivery.country_code, &delivery.postal_code, &packages);
-        evaluate_packlink_in_transaction(
-            &mut transaction,
-            cart.id,
-            currency,
-            &delivery.country_code,
-            cart.shipping_quote_id,
-            merchandise_minor,
-            Some(request_hash.as_slice()),
-        )
-        .await
-    } else {
-        evaluate_commercial(
-            &mut transaction,
-            currency,
-            &delivery.country_code,
-            cart.shipping_method_id,
-            merchandise_minor,
-        )
-        .await
+    let shipping = crate::delivery_rates::quote_in_transaction(
+        &mut transaction,
+        currency,
+        &delivery.country_code,
+        &delivery.postal_code,
+    )
+    .await
+    .map_err(|_| CreateError::Database)?;
+    if !shipping.available {
+        return Err(CreateError::DeliveryUnavailable);
     }
-    .map_err(|error| match error {
-        PricingError::Unavailable => CreateError::Changed,
-        PricingError::Database(_) => CreateError::Database,
-    })?;
-    let shipping_minor = commercial_pricing.shipping.amount_minor;
-    let tax_minor = commercial_pricing.tax.amount_minor;
+    if (shipping.pricing_enabled && shipping_rate_revision != Some(shipping.revision))
+        || shipping_rate_revision.is_some_and(|revision| revision != shipping.revision)
+    {
+        return Err(CreateError::Changed);
+    }
+    let shipping_minor = shipping
+        .amount_minor
+        .ok_or(CreateError::DeliveryUnavailable)?;
+    let taxable_minor = merchandise_minor
+        .checked_add(shipping_minor)
+        .ok_or(CreateError::Changed)?;
+    let tax =
+        crate::settings::checkout_tax(&mut transaction, &delivery.country_code, taxable_minor)
+            .await
+            .map_err(|error| match error {
+                crate::settings::CheckoutTaxError::Unavailable => CreateError::Changed,
+                crate::settings::CheckoutTaxError::Database(_) => CreateError::Database,
+            })?;
+    let tax_minor = tax.amount_minor;
     let total_minor = subtotal_minor
         .checked_sub(discount_minor)
         .and_then(|total| total.checked_add(shipping_minor))
         .and_then(|total| total.checked_add(tax_minor))
         .ok_or(CreateError::Changed)?;
+
+    let address = crate::carts::CartAddress {
+        recipient_name: delivery.recipient_name.clone(),
+        line1: delivery.line1.clone(),
+        line2: delivery.line2.clone(),
+        city: delivery.city.clone(),
+        region: delivery.region.clone(),
+        postal_code: delivery.postal_code.clone(),
+        country_code: delivery.country_code.clone(),
+        phone: delivery.address_phone.clone(),
+    };
+    let expected_quote = crate::checkout::quote_fingerprint(
+        cart.id,
+        currency,
+        &address,
+        &shipping,
+        [subtotal_minor, discount_minor, tax_minor, total_minor],
+    );
+    if input.checkout_quote != expected_quote {
+        return Err(CreateError::Changed);
+    }
 
     let order_id = Uuid::now_v7();
     let order_number: String = sqlx::query_scalar(
@@ -886,9 +893,16 @@ async fn create_order(
         .execute(&mut *transaction)
         .await
         .map_err(|_| CreateError::Database)?;
-    record_order_snapshots(&mut transaction, order_id, &commercial_pricing)
-        .await
-        .map_err(|_| CreateError::Database)?;
+    crate::settings::record_checkout_snapshots(
+        &mut transaction,
+        order_id,
+        currency,
+        &delivery.country_code,
+        &shipping,
+        &tax,
+    )
+    .await
+    .map_err(|_| CreateError::Database)?;
 
     for (position, line) in lines.iter().enumerate() {
         let order_line_id = Uuid::now_v7();
@@ -995,26 +1009,6 @@ async fn create_order(
         .map_err(|_| CreateError::Database)?
         .ok_or(CreateError::Database)?;
     Ok((order, true))
-}
-
-fn checkout_packages(lines: &[CheckoutLine]) -> Option<Vec<PacklinkPackage>> {
-    if lines.iter().any(|line| !line.shipping_profile_configured) {
-        return None;
-    }
-    let mut items = BTreeMap::<Uuid, PackageItem>::new();
-    for line in lines {
-        let item = items.entry(line.product_id).or_insert_with(|| PackageItem {
-            quantity: 0,
-            unit_weight_grams: line.shipping_weight_grams,
-            width_cm: line.shipping_width_cm,
-            length_cm: line.shipping_length_cm,
-            height_cm: line.shipping_height_cm,
-            empty_weight_grams: line.shipping_empty_weight_grams,
-            units_per_package: line.shipping_units_per_package,
-        });
-        item.quantity = item.quantity.checked_add(i64::from(line.quantity))?;
-    }
-    packages_for_items(&items.into_values().collect::<Vec<_>>())
 }
 
 async fn delivery_snapshot(

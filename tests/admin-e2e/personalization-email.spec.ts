@@ -63,7 +63,8 @@ test('saves both personalized faces with the order for confirmation emails', asy
     address: { recipient_name: 'Preview Tester', line1: '1 Preview Lane', line2: '', city: 'Lisbon', region: '', postal_code: '1000-001', country_code: 'PT', phone: '' },
   } })
   expect(delivery.ok()).toBe(true)
-  const orderResponse = await page.request.post('http://127.0.0.1:3000/api/orders', { headers: { 'idempotency-key': `email-checkout-${unique}` }, data: { payment_method: 'manual', locale: 'pt' } })
+  const deliveryCart = await delivery.json()
+  const orderResponse = await page.request.post('http://127.0.0.1:3000/api/orders', { headers: { 'idempotency-key': `email-checkout-${unique}` }, data: { payment_method: 'manual', locale: 'pt', shipping_rate_revision: deliveryCart.shipping_quote?.revision, checkout_quote: deliveryCart.checkout_quote } })
   expect(orderResponse.status()).toBe(201)
   const order = await orderResponse.json()
   expect(order.lines[0].personalization_previews).toEqual(saved.map((view) => ({ ...view, view_label: view.view_id === 'front' ? 'Front' : 'Back' })))
