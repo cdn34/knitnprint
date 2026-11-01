@@ -20,42 +20,9 @@ pub enum AccountEmailKind {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum OrderEmailKind {
-    Confirmation,
-    Fulfillment,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum EmailDeliveryMode {
     Development,
     Ses,
-}
-
-impl OrderEmailKind {
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Confirmation => "order_confirmation",
-            Self::Fulfillment => "fulfillment_created",
-        }
-    }
-
-    const fn subject(self) -> &'static str {
-        match self {
-            Self::Confirmation => "Your KnitNPrint order is confirmed",
-            Self::Fulfillment => "Your KnitNPrint order is on its way",
-        }
-    }
-}
-
-pub struct OrderEmail<'a> {
-    pub to: &'a str,
-    pub first_name: &'a str,
-    pub kind: OrderEmailKind,
-    pub order_number: &'a str,
-    pub total: &'a str,
-    pub carrier: &'a str,
-    pub tracking_number: &'a str,
-    pub tracking_url: &'a str,
 }
 
 impl AccountEmailKind {
@@ -106,9 +73,7 @@ pub struct DevelopmentEmail {
     pub kind: String,
     pub subject: String,
     pub action_url: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub html: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
 }
 
@@ -279,36 +244,25 @@ impl EmailService {
     pub async fn send_confirmation(
         &self,
         order: &crate::orders::Order,
-        locale: crate::order_email::EmailLocale,
-        images: Vec<crate::order_email::InlineImage>,
+        locale: &str,
+        pool: &sqlx::PgPool,
+        storage: Option<&crate::object_storage::ObjectStorage>,
     ) -> Result<(), String> {
-        use aws_sdk_sesv2::{
-            primitives::Blob,
-            types::{Attachment, AttachmentContentDisposition, AttachmentContentTransferEncoding},
-        };
         self.ensure_recipient_allowed(&order.customer.email)?;
-        let content = crate::order_email::render(order, locale, &self.storefront_base_url, images)?;
+        let rendered = crate::order_email::render(order, locale, &self.storefront_base_url);
+        let images = crate::order_email::load_images(pool, storage, order).await?;
         match &self.delivery {
             Delivery::Development(mailbox) => {
-                use base64::Engine;
-                let mut html = content.html;
-                for image in &content.images {
-                    html = html.replace(
-                        &format!("cid:{}", image.cid),
-                        &format!(
-                            "data:{};base64,{}",
-                            image.content_type,
-                            base64::engine::general_purpose::STANDARD.encode(&image.bytes)
-                        ),
-                    );
-                }
                 mailbox.write().await.push(DevelopmentEmail {
                     to: order.customer.email.clone(),
                     kind: "order_confirmation".into(),
-                    subject: content.subject,
-                    action_url: content.action_url,
-                    html: Some(html),
-                    text: Some(content.text),
+                    subject: rendered.subject,
+                    action_url: format!(
+                        "{}/cart?order_id={}&source=account",
+                        self.storefront_base_url, order.id
+                    ),
+                    html: Some(rendered.html),
+                    text: Some(rendered.text),
                 });
                 Ok(())
             }
@@ -317,143 +271,31 @@ impl EmailService {
                 from,
                 configuration_set,
             } => {
-                let mut message = Message::builder()
-                    .subject(
-                        Content::builder()
-                            .data(content.subject)
-                            .charset("UTF-8")
-                            .build()
-                            .map_err(|e| e.to_string())?,
-                    )
-                    .body(
-                        Body::builder()
-                            .text(
-                                Content::builder()
-                                    .data(content.text)
-                                    .charset("UTF-8")
-                                    .build()
-                                    .map_err(|e| e.to_string())?,
-                            )
-                            .html(
-                                Content::builder()
-                                    .data(content.html)
-                                    .charset("UTF-8")
-                                    .build()
-                                    .map_err(|e| e.to_string())?,
-                            )
-                            .build(),
-                    );
-                for image in content.images {
-                    message = message.attachments(
-                        Attachment::builder()
+                let attachments = images
+                    .into_iter()
+                    .map(|image| {
+                        aws_sdk_sesv2::types::Attachment::builder()
+                            .raw_content(aws_sdk_sesv2::primitives::Blob::new(image.bytes))
                             .file_name(format!("{}.png", image.cid))
                             .content_id(image.cid)
-                            .content_type(image.content_type)
-                            .content_disposition(AttachmentContentDisposition::Inline)
-                            .content_transfer_encoding(AttachmentContentTransferEncoding::Base64)
-                            .raw_content(Blob::new(image.bytes))
+                            .content_type("image/png")
+                            .content_disposition(
+                                aws_sdk_sesv2::types::AttachmentContentDisposition::Inline,
+                            )
+                            .content_transfer_encoding(
+                                aws_sdk_sesv2::types::AttachmentContentTransferEncoding::Base64,
+                            )
                             .build()
-                            .map_err(|e| e.to_string())?,
-                    );
-                }
-                let mut request = client
-                    .send_email()
-                    .from_email_address(from)
-                    .destination(
-                        Destination::builder()
-                            .to_addresses(&order.customer.email)
-                            .build(),
-                    )
-                    .content(EmailContent::builder().simple(message.build()).build());
-                if let Some(set) = configuration_set {
-                    request = request.configuration_set_name(set);
-                }
-                request
-                    .send()
-                    .await
-                    .map_err(|error| format!("SES send failed: {error:?}"))?;
-                Ok(())
-            }
-            Delivery::Disabled => Err("email delivery is not configured".into()),
-        }
-    }
-
-    pub async fn send_order_notification(&self, email: OrderEmail<'_>) -> Result<(), String> {
-        self.ensure_recipient_allowed(email.to)?;
-        let order_url = format!("{}/cart", self.storefront_base_url);
-        let action_url = if email.tracking_url.is_empty() {
-            order_url
-        } else {
-            email.tracking_url.to_owned()
-        };
-        match &self.delivery {
-            Delivery::Development(mailbox) => {
-                mailbox.write().await.push(DevelopmentEmail {
-                    to: email.to.into(),
-                    kind: email.kind.as_str().into(),
-                    subject: email.kind.subject().into(),
-                    action_url,
-                    html: None,
-                    text: None,
-                });
-                Ok(())
-            }
-            Delivery::Ses {
-                client,
-                from,
-                configuration_set,
-            } => {
-                let safe_name = escape_html(email.first_name);
-                let safe_order = escape_html(email.order_number);
-                let safe_total = escape_html(email.total);
-                let (text, html) = match email.kind {
-                    OrderEmailKind::Confirmation => (
-                        format!(
-                            "Hello {},\n\nYour KnitNPrint order {} is confirmed. Total: {}.\n\nWe will email you again when it ships.\n",
-                            email.first_name, email.order_number, email.total
-                        ),
-                        format!(
-                            "<p>Hello {safe_name},</p><p>Your KnitNPrint order <strong>{safe_order}</strong> is confirmed.</p><p>Total: {safe_total}</p><p>We will email you again when it ships.</p>"
-                        ),
-                    ),
-                    OrderEmailKind::Fulfillment => {
-                        let tracking_text = if email.tracking_number.is_empty() {
-                            String::new()
-                        } else {
-                            format!(
-                                " Carrier: {}. Tracking: {}.",
-                                email.carrier, email.tracking_number
-                            )
-                        };
-                        let tracking_html = if email.tracking_number.is_empty() {
-                            String::new()
-                        } else {
-                            format!(
-                                "<p>{}: <a href=\"{}\">{}</a></p>",
-                                escape_html(email.carrier),
-                                escape_html(&action_url),
-                                escape_html(email.tracking_number)
-                            )
-                        };
-                        (
-                            format!(
-                                "Hello {},\n\nYour KnitNPrint order {} has shipped.{}\n",
-                                email.first_name, email.order_number, tracking_text
-                            ),
-                            format!(
-                                "<p>Hello {safe_name},</p><p>Your KnitNPrint order <strong>{safe_order}</strong> has shipped.</p>{tracking_html}"
-                            ),
-                        )
-                    }
-                };
+                            .map_err(|error| format!("inline image is invalid: {error}"))
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
                 send_ses(
                     client,
                     from,
                     configuration_set.as_deref(),
-                    email.to,
-                    email.kind.subject(),
-                    text,
-                    html,
+                    &order.customer.email,
+                    &rendered,
+                    attachments,
                 )
                 .await
             }
@@ -509,9 +351,12 @@ impl EmailService {
                     from,
                     configuration_set.as_deref(),
                     to,
-                    &subject,
-                    text,
-                    html,
+                    &crate::order_email::RenderedConfirmation {
+                        subject,
+                        text,
+                        html,
+                    },
+                    Vec::new(),
                 )
                 .await
             }
@@ -550,22 +395,21 @@ async fn send_ses(
     from: &str,
     configuration_set: Option<&str>,
     to: &str,
-    subject_value: &str,
-    text_value: String,
-    html_value: String,
+    rendered: &crate::order_email::RenderedConfirmation,
+    attachments: Vec<aws_sdk_sesv2::types::Attachment>,
 ) -> Result<(), String> {
     let subject = Content::builder()
-        .data(subject_value)
+        .data(&rendered.subject)
         .charset("UTF-8")
         .build()
         .map_err(|error| format!("email subject is invalid: {error}"))?;
     let text = Content::builder()
-        .data(text_value)
+        .data(&rendered.text)
         .charset("UTF-8")
         .build()
         .map_err(|error| format!("email text is invalid: {error}"))?;
     let html = Content::builder()
-        .data(html_value)
+        .data(&rendered.html)
         .charset("UTF-8")
         .build()
         .map_err(|error| format!("email HTML is invalid: {error}"))?;
@@ -574,6 +418,7 @@ async fn send_ses(
             Message::builder()
                 .subject(subject)
                 .body(Body::builder().text(text).html(html).build())
+                .set_attachments(Some(attachments))
                 .build(),
         )
         .build();
@@ -695,8 +540,8 @@ pub(crate) fn escape_html(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        AccountEmailKind, EmailDeliveryMode, EmailService, OrderEmail, OrderEmailKind,
-        delivery_mode, parse_recipient_allowlist, validate_base_url,
+        AccountEmailKind, EmailDeliveryMode, EmailService, delivery_mode,
+        parse_recipient_allowlist, validate_base_url,
     };
     use crate::config::Environment;
 
@@ -783,23 +628,6 @@ mod tests {
             "email recipient is not allowed in this environment"
         );
 
-        let order_error = service
-            .send_order_notification(OrderEmail {
-                to: "blocked@example.com",
-                first_name: "Blocked",
-                kind: OrderEmailKind::Confirmation,
-                order_number: "KNP-TEST",
-                total: "EUR 10.00",
-                carrier: "",
-                tracking_number: "",
-                tracking_url: "",
-            })
-            .await
-            .unwrap_err();
-        assert_eq!(
-            order_error,
-            "email recipient is not allowed in this environment"
-        );
         assert!(
             service
                 .latest_development_email("blocked@example.com", "password_reset")

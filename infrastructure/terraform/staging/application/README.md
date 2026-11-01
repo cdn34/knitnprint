@@ -75,7 +75,9 @@ state, shell history, command arguments, or files.
 
 The notification-worker slice adds a small one-shot Fargate task using the same
 reviewed API image and runtime database secret. EventBridge Scheduler launches
-it every five minutes to drain queued order-confirmation and fulfillment emails.
+it hourly to recover pending order-confirmation emails and interrupted delivery
+attempts. The API attempts purchase confirmation emails immediately after payment
+commits; failed deliveries wait for an eligible hourly worker run.
 The task reuses the API workload role for SES access and the application
 security group for private RDS connectivity; it does not run continuously.
 

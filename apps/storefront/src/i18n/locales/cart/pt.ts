@@ -1,5 +1,5 @@
 export const cartPt = {
-  'cart.pricingChanged': 'Os preços foram atualizados. Revê o novo total antes de concluíres a encomenda.',
+  'cart.pricingChanged': 'Os dados de entrega ou os preços foram atualizados. Revê a morada e o novo total antes de concluíres a encomenda.',
   'cart.shippingInvalidPostal': 'Verifica o código postal da morada de entrega antes de continuares.',
   'cart.shippingUnavailable': 'Não há portes disponíveis para esta morada. Contacta support@knitnprint.com para obter ajuda.',
   'cart.shippingNoRate': 'Indisponível',

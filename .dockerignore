@@ -1,6 +1,7 @@
 .git
 .agents
 .codex
+.local
 node_modules
 target
 test-results

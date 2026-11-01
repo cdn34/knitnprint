@@ -1,3 +1,4 @@
+pub mod admin_notifications;
 pub mod auth;
 pub mod b2b;
 pub mod cancellations;
@@ -30,6 +31,8 @@ pub mod payments;
 pub mod security;
 pub mod settings;
 pub mod staff;
+
+pub const CURRENCY: &str = "EUR";
 
 use axum::{
     Json, Router,
@@ -205,6 +208,11 @@ pub fn app(state: AppState) -> Router {
         .route(
             "/api/admin/customers/{customer_id}/orders",
             get(customers::order_history),
+        )
+        .route("/api/admin/notifications", get(admin_notifications::list))
+        .route(
+            "/api/admin/notifications/{notification_id}/send",
+            axum::routing::post(admin_notifications::send),
         )
         .route("/api/admin/orders", get(orders::admin_list))
         .route("/api/admin/dashboard", get(dashboard::get))

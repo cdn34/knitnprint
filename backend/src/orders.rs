@@ -25,7 +25,8 @@ use crate::{
     fulfillment::{Fulfillment, load_for_order as load_fulfillments},
     inventory::{InventoryOperationError, commit_in_transaction, reserve_in_transaction},
     notifications::{
-        NotificationStatus, enqueue_order_confirmation, load_for_order as load_notifications,
+        NotificationStatus, deliver_order_confirmation, enqueue_order_confirmation,
+        load_for_order as load_notifications,
     },
     payments::{PaymentAttempt, PaymentStatusEvent, load_attempts, load_status_events},
     settings::{OrderShipping, OrderTax, load_order_shipping, load_order_tax},
@@ -38,11 +39,16 @@ const ORDERS_FULFILL: &str = "orders.fulfill";
 
 #[derive(Deserialize, ToSchema)]
 pub struct CreateOrderRequest {
+    #[serde(default = "default_email_locale")]
+    pub locale: String,
     pub payment_method: String,
     #[serde(default)]
-    pub locale: Option<String>,
-    #[serde(default)]
     pub shipping_rate_revision: Option<i64>,
+    pub checkout_quote: String,
+}
+
+fn default_email_locale() -> String {
+    "en".into()
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -113,6 +119,8 @@ pub struct OrderLine {
     pub customization_media_asset_id: Option<Uuid>,
     pub customization_media_asset_ids: Vec<Uuid>,
     pub personalization_context: Option<Value>,
+    pub personalization_previews: Value,
+    pub variant_options: Value,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -212,8 +220,9 @@ struct CheckoutLine {
     customization: Option<Value>,
     customization_media_asset_id: Option<Uuid>,
     customization_media_asset_ids: Vec<Uuid>,
-    confirmation_preview_media_asset_ids: Vec<Uuid>,
     personalization_context: Option<Value>,
+    personalization_previews: Value,
+    variant_options: Value,
 }
 
 #[derive(FromRow)]
@@ -298,7 +307,6 @@ pub async fn create(
             "Verify your email before placing an order.",
         );
     }
-    let locale = crate::order_email::EmailLocale::from_code(input.locale.as_deref());
     let provider = match input.payment_method.as_str() {
         "manual" if state.manual_payments_enabled => "manual",
         "stripe" if state.payments.enabled() => "stripe",
@@ -320,14 +328,20 @@ pub async fn create(
     let Some(pool) = state.database.as_ref() else {
         return unavailable();
     };
+    if !matches!(input.locale.as_str(), "en" | "pt" | "es") {
+        return error(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "invalid_locale",
+            "Choose en, pt, or es.",
+        );
+    }
     match create_order(
         pool,
         customer.id,
         token_hash,
         idempotency_hash,
         provider,
-        locale.as_str(),
-        input.shipping_rate_revision,
+        &input,
     )
     .await
     {
@@ -600,10 +614,14 @@ pub async fn record_manual_payment(
         return unavailable();
     };
     match pay_order(&pool, order_id, actor.id, reason).await {
-        Ok(()) => match load_order(&pool, order_id).await {
-            Ok(Some(order)) => no_store(Json(order).into_response()),
-            _ => unavailable(),
-        },
+        Ok(()) => {
+            deliver_order_confirmation(&pool, &state.email, order_id, state.media_storage.as_ref())
+                .await;
+            match load_order(&pool, order_id).await {
+                Ok(Some(order)) => no_store(Json(order).into_response()),
+                _ => unavailable(),
+            }
+        }
         Err(PaymentError::NotFound) => not_found(),
         Err(PaymentError::Conflict) => error(
             StatusCode::CONFLICT,
@@ -628,9 +646,10 @@ async fn create_order(
     token_hash: [u8; 32],
     idempotency_hash: [u8; 32],
     provider: &str,
-    locale: &str,
-    shipping_rate_revision: Option<i64>,
+    input: &CreateOrderRequest,
 ) -> Result<(Order, bool), CreateError> {
+    let locale = &input.locale;
+    let shipping_rate_revision = input.shipping_rate_revision;
     let mut transaction = pool.begin().await.map_err(|_| CreateError::Database)?;
     let cart = sqlx::query_as::<_, CheckoutCart>(
         r#"
@@ -695,7 +714,7 @@ async fn create_order(
                line.currency::text AS stored_currency,
                variant.currency::text AS current_currency,
                line.customization, line.customization_media_asset_id,
-               line.customization_media_asset_ids, line.confirmation_preview_media_asset_ids,
+               line.customization_media_asset_ids, line.personalization_previews, variant.option_values AS variant_options,
                CASE WHEN line.customization IS NULL THEN
                  jsonb_build_object('version', 1, 'views', COALESCE((
                    SELECT jsonb_agg(jsonb_build_object('media_id', chosen.media_asset_id))
@@ -727,6 +746,9 @@ async fn create_order(
         return Err(CreateError::NotReady);
     }
     let currency = cart.currency.as_deref().ok_or(CreateError::NotReady)?;
+    if currency != crate::CURRENCY {
+        return Err(CreateError::Changed);
+    }
     let mut subtotal_minor = 0_i64;
     for line in &lines {
         if line.product_status != "active"
@@ -802,13 +824,37 @@ async fn create_order(
     let tax =
         crate::settings::checkout_tax(&mut transaction, &delivery.country_code, taxable_minor)
             .await
-            .map_err(|_| CreateError::Database)?;
+            .map_err(|error| match error {
+                crate::settings::CheckoutTaxError::Unavailable => CreateError::Changed,
+                crate::settings::CheckoutTaxError::Database(_) => CreateError::Database,
+            })?;
     let tax_minor = tax.amount_minor;
     let total_minor = subtotal_minor
         .checked_sub(discount_minor)
         .and_then(|total| total.checked_add(shipping_minor))
         .and_then(|total| total.checked_add(tax_minor))
         .ok_or(CreateError::Changed)?;
+
+    let address = crate::carts::CartAddress {
+        recipient_name: delivery.recipient_name.clone(),
+        line1: delivery.line1.clone(),
+        line2: delivery.line2.clone(),
+        city: delivery.city.clone(),
+        region: delivery.region.clone(),
+        postal_code: delivery.postal_code.clone(),
+        country_code: delivery.country_code.clone(),
+        phone: delivery.address_phone.clone(),
+    };
+    let expected_quote = crate::checkout::quote_fingerprint(
+        cart.id,
+        currency,
+        &address,
+        &shipping,
+        [subtotal_minor, discount_minor, tax_minor, total_minor],
+    );
+    if input.checkout_quote != expected_quote {
+        return Err(CreateError::Changed);
+    }
 
     let order_id = Uuid::now_v7();
     let order_number: String = sqlx::query_scalar(
@@ -818,7 +864,7 @@ async fn create_order(
             currency, subtotal_minor, discount_minor, shipping_minor, tax_minor, total_minor, customer_email,
             customer_first_name, customer_last_name, customer_phone,
             shipping_recipient_name, shipping_line1, shipping_line2, shipping_city,
-            shipping_region, shipping_postal_code, shipping_country_code, shipping_phone, locale
+            shipping_region, shipping_postal_code, shipping_country_code, shipping_phone, email_locale
         ) VALUES (
             $1, 'KP-' || to_char(now(), 'YYYY') || '-' || lpad(nextval('order_number_sequence')::text, 6, '0'),
             $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23
@@ -876,8 +922,8 @@ async fn create_order(
                 id, order_id, product_id, variant_id, product_title, variant_title,
                 sku, quantity, unit_price_minor, line_total_minor, currency, position,
                 customization, customization_media_asset_id, customization_media_asset_ids,
-                personalization_context, confirmation_preview_media_asset_ids
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9 * $8, $10, $11, $12, $13, $14, $15, $16)
+                personalization_context, personalization_previews, variant_options
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9 * $8, $10, $11, $12, $13, $14, $15, $16, $17)
             "#,
         )
         .bind(order_line_id)
@@ -895,14 +941,19 @@ async fn create_order(
         .bind(line.customization_media_asset_id)
         .bind(&line.customization_media_asset_ids)
         .bind(&line.personalization_context)
-        .bind(&line.confirmation_preview_media_asset_ids)
+        .bind(&line.personalization_previews)
+        .bind(&line.variant_options)
         .execute(&mut *transaction)
         .await
         .map_err(|_| CreateError::Database)?;
+        let previews: Vec<crate::carts::PersonalizationPreview> =
+            serde_json::from_value(line.personalization_previews.clone())
+                .map_err(|_| CreateError::Database)?;
         for (media_position, media_id) in line
             .customization_media_asset_ids
             .iter()
-            .chain(line.confirmation_preview_media_asset_ids.iter())
+            .copied()
+            .chain(previews.iter().map(|preview| preview.media_id))
             .enumerate()
         {
             sqlx::query(
@@ -1188,7 +1239,7 @@ pub(crate) async fn load_order(
                COALESCE((SELECT sum(fulfilled.quantity)::bigint FROM fulfillment_lines fulfilled WHERE fulfilled.order_line_id = line.id), 0) AS fulfilled_quantity,
                line.unit_price_minor, line.line_total_minor, line.currency::text AS currency,
                line.customization, line.customization_media_asset_id,
-               line.customization_media_asset_ids, line.personalization_context
+               line.customization_media_asset_ids, line.personalization_context, line.personalization_previews, line.variant_options
         FROM order_lines line WHERE line.order_id = $1 ORDER BY line.position, line.id
         "#,
     )

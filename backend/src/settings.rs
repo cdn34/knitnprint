@@ -296,11 +296,7 @@ impl ValidatedSettings {
         }
         if !(2..=100).contains(&input.store_name.len())
             || !valid_email(&input.support_email)
-            || input.currency.len() != 3
-            || !input
-                .currency
-                .bytes()
-                .all(|value| value.is_ascii_uppercase())
+            || input.currency != crate::CURRENCY
             || !(3..=500).contains(&input.reason.len())
             || input.tax_rules.len() > 100
             || input.tax_rules.iter().any(|rule| {
@@ -369,11 +365,22 @@ pub async fn load_order_shipping(
         .bind(order_id).fetch_one(pool).await
 }
 
+pub(crate) enum CheckoutTaxError {
+    Unavailable,
+    Database(sqlx::Error),
+}
+
+impl From<sqlx::Error> for CheckoutTaxError {
+    fn from(error: sqlx::Error) -> Self {
+        Self::Database(error)
+    }
+}
+
 pub(crate) async fn checkout_tax(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     country: &str,
     merchandise_minor: i64,
-) -> Result<OrderTax, sqlx::Error> {
+) -> Result<OrderTax, CheckoutTaxError> {
     let enabled: bool =
         sqlx::query_scalar("SELECT tax_enabled FROM store_settings WHERE singleton FOR SHARE")
             .fetch_one(&mut **tx)
@@ -385,8 +392,11 @@ pub(crate) async fn checkout_tax(
         None
     };
     let matched = rule.is_some();
+    if enabled && !matched {
+        return Err(CheckoutTaxError::Unavailable);
+    }
     let (rule_name, rate) = rule.unwrap_or_else(|| ("No additional tax".into(), 0));
-    let amount = i64::try_from((i128::from(merchandise_minor) * i128::from(rate) + 5000) / 10000)
+    let amount = i64::try_from(i128::from(merchandise_minor) * i128::from(rate) / 10000)
         .map_err(|_| sqlx::Error::Protocol("tax total overflow".into()))?;
     Ok(OrderTax {
         rule_name,
@@ -439,7 +449,7 @@ fn invalid() -> Response {
     error(
         StatusCode::UNPROCESSABLE_ENTITY,
         "invalid_settings",
-        "Provide valid store identity, non-overlapping zones, methods, tax rules, and an audit reason.",
+        "Provide valid store identity, EUR currency, non-overlapping tax rules, and an audit reason.",
     )
 }
 

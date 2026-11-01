@@ -18,14 +18,14 @@ test("customer account persists addresses and supports returning sign in", async
   await page.getByLabel("Last name").fill("Silva");
   await page.getByLabel("Email address").fill(email);
   await page.getByLabel("Password", { exact: true }).fill(password);
-  await page.getByLabel("Confirm password").fill("not-the-same-password");
+  await page.getByLabel("Confirm password", { exact: true }).fill("not-the-same-password");
   await page.getByRole("button", { name: "Show Confirm password" }).click();
-  await expect(page.getByLabel("Confirm password")).toHaveAttribute("type", "text");
+  await expect(page.getByLabel("Confirm password", { exact: true })).toHaveAttribute("type", "text");
   await page.getByRole("button", { name: "Hide Confirm password" }).click();
-  await expect(page.getByLabel("Confirm password")).toHaveAttribute("type", "password");
+  await expect(page.getByLabel("Confirm password", { exact: true })).toHaveAttribute("type", "password");
   await page.getByRole("button", { name: "Create account" }).last().click();
   await expect(page.getByRole("alert")).toHaveText("The passwords do not match. Please try again.");
-  await page.getByLabel("Confirm password").fill(password);
+  await page.getByLabel("Confirm password", { exact: true }).fill(password);
   await page.getByRole("button", { name: "Create account" }).last().click();
 
   await expect(
@@ -35,16 +35,18 @@ test("customer account persists addresses and supports returning sign in", async
 
   await page.getByRole("button", { name: "Back to sign in" }).click();
   await page.getByLabel("Email address").fill(email);
-  await page.getByLabel("Password").fill(password);
+  await page.getByLabel("Password", { exact: true }).fill(password);
   await page.getByRole("button", { name: "Sign in" }).last().click();
   await expect(page.getByRole("heading", { name: "Verify your email to continue" })).toBeVisible();
 
   const verification = await latestDevelopmentEmail(page, email, "email_verification");
   await page.goto(verification.action_url);
+  await expect(page.getByRole("status")).toHaveText("Your email address is verified.");
   await page.getByLabel("Email address").fill(email);
-  await page.getByLabel("Password").fill(password);
+  await page.getByLabel("Password", { exact: true }).fill(password);
   await page.getByRole("button", { name: "Sign in" }).last().click();
 
+  await expect(page.getByRole("heading", { name: "Welcome, Marta." })).toBeVisible();
   await page.reload();
   await expect(
     page.getByRole("heading", { name: "Welcome, Marta." }),
@@ -57,17 +59,20 @@ test("customer account persists addresses and supports returning sign in", async
 
   await page.getByLabel("First name").fill("Maria");
   await page.getByLabel("Last name").fill("Lopes");
-  await page.getByLabel("Phone (optional)").fill("+351 210 123 456");
+  await page.getByLabel("Phone (optional)", { exact: true }).fill("+351 210 123 456");
   await page.getByRole("button", { name: "Save details" }).click();
   await expect(page.locator(".account-profile-form").getByRole("status")).toHaveText("Your details have been updated.");
   await page.reload();
   await expect(page.getByRole("heading", { name: "Welcome, Maria." })).toBeVisible();
   await expect(page.getByLabel("Last name")).toHaveValue("Lopes");
-  await expect(page.getByLabel("Phone (optional)")).toHaveValue("+351 210 123 456");
+  await expect(page.getByLabel("Phone (optional)", { exact: true })).toHaveValue("+351 210 123 456");
 
   const updatedEmail = `updated-${email}`;
   await page.getByLabel("New email address").fill(updatedEmail);
   await page.getByRole("button", { name: "Send confirmation link" }).click();
+  await expect(page.getByRole("status")).toHaveText(
+    `Check ${updatedEmail} for a confirmation link. Your current email remains active until you use it.`,
+  );
   await expect(page.getByText(`Current email: ${email}`)).toBeVisible();
   const emailChange = await latestDevelopmentEmail(page, updatedEmail, "email_change");
   await page.goto(emailChange.action_url);
@@ -87,8 +92,9 @@ test("customer account persists addresses and supports returning sign in", async
   await expect(address).toContainText("4050-265 Porto");
   await expect(address).toContainText("PT");
   await address.getByRole("button", { name: "Edit address" }).click();
-  await address.getByLabel("City").fill("Coimbra");
-  await address.getByRole("button", { name: "Save changes" }).click();
+  const addressForm = page.locator(".address-edit-form");
+  await addressForm.getByLabel("City").fill("Coimbra");
+  await addressForm.getByRole("button", { name: "Save changes" }).click();
   await expect(address).toContainText("4050-265 Coimbra");
 
   const results = await new AxeBuilder({ page })
@@ -108,7 +114,7 @@ test("customer account persists addresses and supports returning sign in", async
     page.getByRole("heading", { name: "A home for your details." }),
   ).toBeVisible();
   await page.getByLabel("Email address").fill(updatedEmail);
-  await page.getByLabel("Password").fill(password);
+  await page.getByLabel("Password", { exact: true }).fill(password);
   await page.getByRole("button", { name: "Sign in" }).last().click();
 
   await expect(
@@ -131,7 +137,7 @@ test("customer verifies email and recovers a forgotten password", async ({
   await page.getByLabel("Last name").fill("Silva");
   await page.getByLabel("Email address").fill(email);
   await page.getByLabel("Password", { exact: true }).fill(oldPassword);
-  await page.getByLabel("Confirm password").fill(oldPassword);
+  await page.getByLabel("Confirm password", { exact: true }).fill(oldPassword);
   await page.getByRole("button", { name: "Create account" }).last().click();
 
   await expect(page.getByRole("heading", { name: "Verify your email to continue" })).toBeVisible();
@@ -146,7 +152,7 @@ test("customer verifies email and recovers a forgotten password", async ({
     "Your email address is verified.",
   );
   await page.getByLabel("Email address").fill(email);
-  await page.getByLabel("Password").fill(oldPassword);
+  await page.getByLabel("Password", { exact: true }).fill(oldPassword);
   await page.getByRole("button", { name: "Sign in" }).last().click();
   await expect(page.getByText("Email address verified")).toBeVisible();
 
@@ -173,7 +179,7 @@ test("customer verifies email and recovers a forgotten password", async ({
     "Your password has been changed. Sign in with the new password.",
   );
   await page.getByLabel("Email address").fill(email);
-  await page.getByLabel("Password").fill(newPassword);
+  await page.getByLabel("Password", { exact: true }).fill(newPassword);
   await page.getByRole("button", { name: "Sign in" }).last().click();
   await expect(
     page.getByRole("heading", { name: "Welcome, Marta." }),

@@ -1,5 +1,5 @@
 export const cartEn = {
-  'cart.pricingChanged': 'Prices changed while you were checking out. Review the updated total and try again.',
+  'cart.pricingChanged': 'Delivery details or prices changed while you were checking out. Review the updated address and total before trying again.',
   'cart.shippingInvalidPostal': 'Check the postal code in your delivery address before continuing.',
   'cart.shippingUnavailable': 'Shipping is not available for this address. Contact support@knitnprint.com for help.',
   'cart.shippingNoRate': 'Unavailable',

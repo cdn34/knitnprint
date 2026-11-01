@@ -387,7 +387,10 @@ pub async fn quote_in_transaction(
         country,
         postal,
     );
-    if config.enabled && (currency != store_currency || currency != config.currency) {
+    if currency != crate::CURRENCY
+        || store_currency != crate::CURRENCY
+        || config.currency != crate::CURRENCY
+    {
         quote.available = false;
         quote.amount_minor = None;
         quote.issue_code = Some("shipping_currency_unavailable".into());
@@ -423,6 +426,14 @@ pub async fn test_destination(
         Ok(settings) => settings,
         Err(_) => return unavailable(),
     };
+    let store_currency: String =
+        match sqlx::query_scalar("SELECT currency::text FROM store_settings WHERE singleton")
+            .fetch_one(&pool)
+            .await
+        {
+            Ok(currency) => currency,
+            Err(_) => return unavailable(),
+        };
     let mut quote = evaluate(
         true,
         settings.revision,
@@ -432,6 +443,11 @@ pub async fn test_destination(
         &input.postal_code,
     );
     quote.pricing_enabled = settings.enabled;
+    if settings.currency != crate::CURRENCY || store_currency != crate::CURRENCY {
+        quote.available = false;
+        quote.amount_minor = None;
+        quote.issue_code = Some("shipping_currency_unavailable".into());
+    }
     no_store(Json(quote).into_response())
 }
 

@@ -1,9 +1,9 @@
 use utoipa::{OpenApi, openapi::OpenApi as OpenApiDocument};
 
 use crate::{
-    auth, b2b, cancellations, carts, catalog, customer_auth, customers, dashboard, delivery_rates,
-    discounts, error, feedback, fulfillment, health, inventory, media, notifications, orders,
-    payments, settings, staff,
+    admin_notifications, auth, b2b, cancellations, carts, catalog, customer_auth, customers,
+    dashboard, delivery_rates, discounts, error, feedback, fulfillment, health, inventory, media,
+    notifications, orders, payments, settings, staff,
 };
 
 #[derive(OpenApi)]
@@ -48,6 +48,8 @@ use crate::{
         orders::create,
         orders::customer_detail,
         orders::customer_list,
+        admin_notifications::list,
+        admin_notifications::send,
         orders::admin_list,
         orders::admin_detail,
         orders::record_manual_payment,
@@ -190,6 +192,9 @@ use crate::{
         delivery_rates::TestDeliveryRateRequest,
         delivery_rates::DeliveryQuote,
         notifications::NotificationStatus,
+        admin_notifications::AdminNotification,
+        admin_notifications::NotificationPage,
+        admin_notifications::SendNotificationRequest,
         payments::PaymentOptions,
         payments::PaymentCheckout,
         payments::PaymentAttempt,

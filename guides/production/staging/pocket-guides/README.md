@@ -9,6 +9,13 @@ unusual changes.
 - `storefront.md` — server-rendered storefront container
 - `admin.md` — static S3 and CloudFront release
 
+Detailed database guides:
+
+- [Database changes and queries](../database-changes-and-queries.md) — explanation,
+  migration authoring, complete release commands, and one-off Fargate queries
+- [Read-only database tunnel](../database-read-only-tunnel.md) — personal SQL login,
+  Systems Manager host, verified TLS, desktop clients, and access cleanup
+
 Print each guide separately using A4 or Letter portrait, 90–100% scale. Keep
 code blocks unwrapped when the print dialog allows it.
 

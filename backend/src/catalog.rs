@@ -1871,10 +1871,10 @@ fn combined_personalization_mode(views: &Value) -> &'static str {
     let mut photo = false;
     let mut text = false;
     for view in views.as_array().into_iter().flatten() {
-        if !view
+        if view
             .get("print_areas")
             .and_then(Value::as_array)
-            .is_some_and(|areas| !areas.is_empty())
+            .is_none_or(|areas| areas.is_empty())
         {
             continue;
         }
@@ -2028,12 +2028,7 @@ fn valid_variant_details(variant: &CreateVariantRequest) -> bool {
         && !variant.sku.trim().is_empty()
         && variant.sku.trim().len() <= 120
         && variant.price_minor >= 0
-        && variant.currency.trim().len() == 3
-        && variant
-            .currency
-            .trim()
-            .chars()
-            .all(|character| character.is_ascii_uppercase())
+        && variant.currency.trim() == crate::CURRENCY
         && variant.option_values.is_object()
 }
 

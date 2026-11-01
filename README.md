@@ -91,7 +91,7 @@ There are two separate object-storage concerns:
 `docker compose up -d` starts SeaweedFS 4.48 in single-node `mini` mode and
 creates the private local media bucket automatically. Its S3 endpoint remains
 `http://127.0.0.1:9100`; the admin UI at port 9101 uses
-`knitnprint` / `knitnprint-local`. Browser CORS allows the local admin origins.
+`knitnprint` / `knitnprint-local`. Browser CORS allows the local storefront and admin origins.
 SeaweedFS stores data in a new `seaweedfs_data` volume. Existing MinIO volumes
 are not reused or deleted; old objects must be copied through the S3 API from
 a working MinIO instance if they need to be retained.
@@ -181,11 +181,19 @@ and inspect codes in the admin Discounts workspace; every change requires an
 audit reason. Usage is counted when an order is created and is not restored by
 later cancellation or refund.
 
-Staff with `settings.manage` can maintain store identity, currency and destination
+Staff with `settings.manage` can maintain store identity and destination
 tax rules. The Settings page reports configuration health for database, media,
 email and payments without exposing credentials. Configured destination tax rules
 are evaluated server-side, including applicable shipping charges. Historical
-commercial snapshots remain immutable.
+commercial snapshots remain immutable. EUR is the only supported currency for
+store settings, products, discounts and checkout.
+
+Tax calculation is disabled by default and no production rate is seeded. When
+enabled, checkout requires a matching active destination rule; use an explicit
+zero-percent rule where that behavior is intentional. Confirm registration,
+place-of-supply, product classification, shipping-taxability, rounding,
+invoicing, and rate requirements with a qualified adviser for every served
+jurisdiction before enabling production tax collection.
 
 Checkout is enabled without the retired package profiles or carrier integration.
 The admin **Shipping rates** workspace configures flat prices by country/region,
@@ -195,15 +203,6 @@ off, preserving the explicitly displayed zero shipping charge until staff opt in
 Once enabled, unconfigured/inactive destinations block checkout. Prices are
 calculated server-side, included in totals and emails, and saved as immutable
 order snapshots. See [destination shipping rates](docs/operations/delivery-rates.md).
-
-The storefront sends `locale` (`pt`, `en` or `es`) with order creation. It is
-normalized and saved on the order; absent/unsupported languages fall back to
-English. The notification worker renders the approved beige/plum confirmation
-with real order data, a PNG logo and private personalized previews as inline CID
-attachments. Both HTML and plain-text bodies are translated. Product names and
-customer-provided text are preserved. The worker needs the same S3 configuration
-and read permissions as the API. Local development delivery exposes rendered
-HTML/text through the development mailbox without contacting SES.
 
 The admin Dashboard is a live, capability-aware operational projection. Staff
 with order access see paid orders awaiting fulfillment, recent orders, current
@@ -416,7 +415,7 @@ cancels the unpaid order, releases reserved inventory, and appends payment,
 order-timeline, and audit history. Set `PAYMENT_CLEANUP_BATCH` from 1 to 1000 to
 change the bound; repeated and concurrent runs are safe.
 
-Fulfillment and order emails use a durable PostgreSQL outbox. Run its delivery
+Paid-order confirmation emails use a durable PostgreSQL outbox. Run its delivery
 worker continuously or once per minute:
 
 ```bash
@@ -428,10 +427,24 @@ The worker claims at most 25 due jobs with `FOR UPDATE SKIP LOCKED`, records
 every delivery attempt, and retries failures with bounded exponential backoff
 for up to eight attempts. Set `NOTIFICATION_BATCH_SIZE` from 1 to 100 to change
 the batch. A stale processing claim becomes eligible again after 15 minutes.
-Order payment and fulfillment transactions only enqueue work; SES failure never
+Order payment transactions only enqueue work; SES failure never
 rolls back or duplicates the commercial operation. Development delivery uses
 the in-memory mailbox unless `EMAIL_DELIVERY=ses` is selected, while production
 always uses the configured SES sender.
+
+Confirmations use the approved branded design with English, Portuguese, or Spanish
+copy selected at checkout. They include saved order details, variant options,
+personalization descriptions, delivery, payment confirmation, and totals. The logo
+and each captured personalized face are embedded as inline PNGs; the worker needs
+S3 read access to saved previews. Earlier orders without flattened previews show
+an explicit note, not a generic product image. Development mailbox entries include
+rendered `html` and `text` for inspection. Apply `npm run db:migrate` before using
+the updated worker. Previously sent jobs are not resent automatically.
+
+Shipping updates come from the carrier. Store fulfillment emails are no longer
+enqueued; outstanding legacy fulfillment jobs are marked `suppressed` by the
+migration. The [approved design notes](guides/design/order-confirmation-email.md)
+describe the rendering and snapshot behavior.
 
 Run the operational backlog check from monitoring at least every five minutes:
 
@@ -462,17 +475,40 @@ API also serves the contract from `/api/openapi.json`.
 
 ## Checks
 
+With Node 24, Rust (rustfmt and Clippy), the PostgreSQL client (`psql`), and a
+disposable PostgreSQL 17 database available, run the main CI checks locally:
+
 ```bash
-npm run typecheck
-npm run build
-npm run api:check
-npm run test:e2e
-DATABASE_URL=postgres://knitnprint:knitnprint@localhost:5432/knitnprint \
-npm run test:e2e:admin
-cargo fmt --check
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
+npm ci
+DATABASE_URL=postgres://knitnprint:knitnprint@localhost:5432/knitnprint_test \
+npm run check:local
 ```
+
+This runs formatting, Clippy, the database-backed Rust suite, TypeScript checks,
+production frontend builds, frontend unit tests, and the generated API contract
+check. It requires `DATABASE_URL` so database tests cannot silently be skipped.
+Use a disposable database: integration tests create schemas and fixture data.
+
+Browser, security, and operational checks run separately. Follow the local setup
+instructions to migrate the browser-test database, start object storage, and
+create the owner account. Then run:
+
+```bash
+export DATABASE_URL=postgres://knitnprint:knitnprint@localhost:5432/knitnprint
+npm run test:e2e
+npm run test:e2e:admin
+npm audit --omit=dev
+cargo audit --ignore RUSTSEC-2023-0071
+trivy fs --scanners vuln,secret --severity CRITICAL,HIGH --exit-code 1 --ignore-unfixed .
+docker build --tag knitnprint-api:ci --file backend/Dockerfile .
+trivy image --severity CRITICAL,HIGH --exit-code 1 --ignore-unfixed knitnprint-api:ci
+```
+
+Install `cargo-audit` and Trivy before running the security commands. The RSA
+exception matches CI because SQLx's optional MySQL dependency is disabled.
+Keep scanner databases current; local success does not prevent newly published
+advisories from failing a later CI run. The `hardening` job's backup restore,
+operations, and k6 commands are listed in `.github/workflows/ci.yml`.
 
 Install the local Chromium runtime once before running browser tests:
 

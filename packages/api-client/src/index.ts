@@ -64,6 +64,9 @@ export type {
   LoginRequest,
   MediaRecord,
   NotificationStatus,
+  AdminNotification,
+  NotificationPage,
+  SendNotificationRequest,
   OperationalDashboard,
   ManualPaymentRequest,
   Order,
@@ -111,6 +114,9 @@ import type {
   B2bReceipt,
   CreateB2bRequest,
   UpdateB2bStatus,
+  AdminNotification,
+  NotificationPage,
+  SendNotificationRequest,
   AddCartItemRequest,
   AdminProductFeedback,
   FeedbackSettings,
@@ -421,6 +427,17 @@ export function createApiClient(options: ApiClientOptions = {}) {
     startOrderPayment: (orderId: string) =>
       send<PaymentCheckout>(`/api/orders/${orderId}/payment`, {
         method: 'POST',
+      }),
+    listNotifications: (query: { q?: string; status?: string; kind?: string; page?: number; page_size?: number } = {}) =>
+      send<NotificationPage>(withQuery('/api/admin/notifications', {
+        q: query.q, status: query.status, kind: query.kind,
+        page: query.page?.toString(), page_size: query.page_size?.toString(),
+      })),
+    sendNotification: (id: string, input: SendNotificationRequest) =>
+      send<AdminNotification>(`/api/admin/notifications/${id}/send`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(input),
       }),
     listOrders: () => send<Array<OrderSummary>>('/api/admin/orders'),
     listDiscounts: () => send<Array<Discount>>('/api/admin/discounts'),

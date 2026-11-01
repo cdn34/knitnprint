@@ -8,6 +8,7 @@ export interface AddCartItemRequest {
   "customization"?: unknown
   "customization_media_asset_id"?: string | null
   "customization_media_asset_ids"?: Array<string>
+  "personalization_previews"?: Array<PersonalizationPreview>
   "quantity": number
   "variant_id": string
 }
@@ -16,6 +17,21 @@ export interface AdjustInventoryRequest {
   "low_stock_threshold"?: number | null
   "quantity_delta": number
   "reason": string
+}
+
+export interface AdminNotification {
+  "attempt_count": number
+  "can_send": boolean
+  "created_at": string
+  "id": string
+  "kind": string
+  "last_error"?: string | null
+  "next_attempt_at": string
+  "order_id"?: string | null
+  "order_number"?: string | null
+  "recipient_email": string
+  "sent_at"?: string | null
+  "status": string
 }
 
 export interface AdminProductFeedback {
@@ -81,6 +97,7 @@ export interface CancelOrderRequest {
 }
 
 export interface Cart {
+  "checkout_quote"?: string | null
   "checkout_ready": boolean
   "currency"?: string | null
   "delivery"?: null | CartDelivery
@@ -237,7 +254,8 @@ export interface CreateFulfillmentRequest {
 }
 
 export interface CreateOrderRequest {
-  "locale"?: string | null
+  "checkout_quote": string
+  "locale"?: string
   "payment_method": string
   "shipping_rate_revision"?: number | null
 }
@@ -610,6 +628,13 @@ export interface ModerateProductFeedbackRequest {
   "status": string
 }
 
+export interface NotificationPage {
+  "items": Array<AdminNotification>
+  "page": number
+  "page_size": number
+  "total": number
+}
+
 export interface NotificationStatus {
   "attempt_count": number
   "created_at": string
@@ -706,10 +731,12 @@ export interface OrderLine {
   "id": string
   "line_total_minor": number
   "personalization_context"?: unknown
+  "personalization_previews": unknown
   "product_title": string
   "quantity": number
   "sku": string
   "unit_price_minor": number
+  "variant_options": unknown
   "variant_title": string
 }
 
@@ -827,6 +854,12 @@ export interface PersonalizationMediaRecord {
   "preview_url": string
 }
 
+export interface PersonalizationPreview {
+  "media_id": string
+  "view_id": string
+  "view_label": string
+}
+
 export interface Product {
   "categories": Array<Category>
   "description": string
@@ -921,6 +954,10 @@ export interface RequestEmailChangeRequest {
 export interface ResetPasswordRequest {
   "password": string
   "token": string
+}
+
+export interface SendNotificationRequest {
+  "reason": string
 }
 
 export interface SettingsHistoryRecord {

@@ -466,8 +466,7 @@ impl ValidatedDiscount {
         if !matches!(kind.as_str(), "fixed" | "percentage")
             || fixed_amount_minor.is_some_and(|value| value <= 0)
             || percentage_basis_points.is_some_and(|value| !(1..=10_000).contains(&value))
-            || currency.len() != 3
-            || !currency.bytes().all(|byte| byte.is_ascii_uppercase())
+            || currency != crate::CURRENCY
             || input.minimum_order_minor < 0
             || input.usage_limit.is_some_and(|value| value <= 0)
             || input.per_customer_limit.is_some_and(|value| value <= 0)
@@ -749,7 +748,7 @@ fn invalid() -> Response {
     error(
         StatusCode::UNPROCESSABLE_ENTITY,
         "invalid_discount",
-        "Provide a valid code, value, currency, dates, limits, and audit reason.",
+        "Provide a valid code, value, EUR currency, dates, limits, and audit reason.",
     )
 }
 

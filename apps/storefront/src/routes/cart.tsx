@@ -75,6 +75,7 @@ function CartContent() {
   const [paymentOptions, setPaymentOptions] = useState<PaymentOptions | null>(null)
   const [discountBusy, setDiscountBusy] = useState(false)
   const [checkoutKey, setCheckoutKey] = useState<string | null>(null)
+  const [deliveryFormVersion, setDeliveryFormVersion] = useState(0)
   useEffect(() => {
     let active = true
     const orderId = new URLSearchParams(window.location.search).get('order_id')
@@ -226,7 +227,7 @@ function CartContent() {
   }
 
   async function createOrder() {
-    if (!cart?.checkout_ready || !paymentOptions || submittingOrder) return
+    if (!cart?.checkout_ready || !cart.checkout_quote || !paymentOptions || submittingOrder) return
     const method = paymentOptions.stripe ? 'stripe' : paymentOptions.manual ? 'manual' : null
     if (!method) return
     const key = checkoutKey ?? cartMutationKey()
@@ -234,7 +235,7 @@ function CartContent() {
     setSubmittingOrder(true)
     setMessage('')
     try {
-      const nextOrder = await cartApi.createOrder({ payment_method: method, locale, shipping_rate_revision: cart.shipping_quote?.revision }, key)
+      const nextOrder = await cartApi.createOrder({ payment_method: method, locale, shipping_rate_revision: cart.shipping_quote?.revision, checkout_quote: cart.checkout_quote }, key)
       setOrder(nextOrder)
       announceCartUpdate({ item_count: 0 })
       window.history.replaceState(null, '', `/cart?order_id=${nextOrder.id}`)
@@ -243,7 +244,12 @@ function CartContent() {
       setMessage(t(error instanceof ApiError && error.body.error.code === 'cart_changed' ? 'cart.pricingChanged' : 'cart.orderError'))
       if (error instanceof ApiError && ['cart_changed', 'cart_not_ready', 'shipping_destination_unavailable'].includes(error.body.error.code)) {
         setCheckoutKey(null)
-        try { setCart(await cartApi.cart()) } catch { /* Keep the checkout error visible. */ }
+        try {
+          const nextCart = await cartApi.cart()
+          setCart(nextCart)
+          announceCartUpdate(nextCart)
+          setDeliveryFormVersion(version => version + 1)
+        } catch { /* Keep the checkout error visible. */ }
       }
     } finally { setSubmittingOrder(false) }
   }
@@ -360,7 +366,7 @@ function CartContent() {
                 ))}
               </section>
 
-              <DeliveryForm cart={cart} onSubmit={saveDelivery} />
+              <DeliveryForm key={deliveryFormVersion} cart={cart} onSubmit={saveDelivery} />
             </div>
 
             <aside className="cart-summary" aria-labelledby="cart-summary-title">
@@ -389,7 +395,7 @@ function CartContent() {
               <button
                 className="button button--primary"
                 type="button"
-                disabled={checkoutSuspended || !cart.checkout_ready || submittingOrder || (!paymentOptions?.stripe && !paymentOptions?.manual)}
+                disabled={checkoutSuspended || !cart.checkout_ready || !cart.checkout_quote || submittingOrder || (!paymentOptions?.stripe && !paymentOptions?.manual)}
                 onClick={() => void createOrder()}
               >
                 {t(submittingOrder ? 'cart.openingCheckout' : 'cart.placeOrder')}

@@ -72,6 +72,7 @@ import { printAreaOffsets } from './personalization-measurements'
 import { uploadImagesWithProgress, productPhotosInOrder, savedProductPhotoOrder } from './product-image-uploads'
 import { B2bManagement } from './b2b'
 import { DeliveryRatesManagement } from './delivery-rates'
+import { NotificationManagement } from './notifications'
 import './styles.css'
 
 const api = createApiClient()
@@ -218,6 +219,9 @@ function LoginScreen({
 function AdminShell({ profile }: Readonly<{ profile: StaffProfile }>) {
   const availablePages = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    ...(profile.capabilities.includes('notifications.read')
+      ? [{ id: 'notifications', label: 'Email notifications', icon: Mail }]
+      : []),
     ...(profile.capabilities.includes('orders.read')
       ? [{ id: 'orders', label: 'Orders', icon: ReceiptText }, { id: 'b2b', label: 'B2B', icon: MessageSquareText }]
       : []),
@@ -328,6 +332,8 @@ function AdminShell({ profile }: Readonly<{ profile: StaffProfile }>) {
                   ? 'Product catalog.'
                   : page === 'feedback'
                     ? 'Customer feedback.'
+                  : page === 'notifications'
+                    ? 'Email notifications.'
                   : page === 'inventory'
                     ? 'Inventory control.'
                     : page === 'customers'
@@ -348,6 +354,12 @@ function AdminShell({ profile }: Readonly<{ profile: StaffProfile }>) {
         {page === 'dashboard' && <Dashboard profile={profile} />}
         {page === 'b2b' && profile.capabilities.includes('orders.read') && (
           <B2bManagement initialRequestId={target.entityId} canManage={profile.capabilities.includes('orders.fulfill')} />
+        )}
+        {page === 'notifications' && profile.capabilities.includes('notifications.read') && (
+          <NotificationManagement
+            canSend={profile.capabilities.includes('notifications.send')}
+            canReadOrders={profile.capabilities.includes('orders.read')}
+          />
         )}
         {page === 'orders' && profile.capabilities.includes('orders.read') && (
           <OrderManagement
@@ -656,6 +668,22 @@ function OrderDetail({
         <span>{order.shipping.method_name} <b>{formatMoney(order.shipping_minor, order.currency)}</b></span>
         <span>Tax ({order.tax.rate_basis_points / 100}%) <b>{formatMoney(order.tax_minor, order.currency)}</b></span>
       </div>
+      {canRecordPayment && order.payment.provider === 'manual' && order.payment_status === 'pending' && (
+        <button className="primary-button" type="button" disabled={paymentPending} onClick={() => onRecordPayment(order)}>
+          {paymentPending ? 'Recording…' : 'Record manual payment'}
+        </button>
+      )}
+      {paymentError && <p className="panel-error" role="alert">The payment could not be recorded.</p>}
+      {canRefund && order.operations.can_cancel && (
+        <section className="order-detail-section order-operation">
+          <h4>Cancel order</h4>
+          <p>This releases reserved stock. Paid or shipped orders cannot use this operation.</p>
+          <button className="danger-button" type="button" disabled={cancellationPending} onClick={() => onCancel(order)}>
+            {cancellationPending ? 'Cancelling…' : 'Cancel order'}
+          </button>
+          {cancellationError && <p className="panel-error" role="alert">The order could not be cancelled. Its state was left unchanged.</p>}
+        </section>
+      )}
       <section className="order-detail-section">
         <h4>Payment activity</h4>
         <p className="panel-message">
@@ -985,8 +1013,11 @@ function DiscountManagement() {
   })
   const createDiscount = useMutation({
     mutationFn: api.createDiscount,
-    onSuccess: (discount) => {
-      client.setQueryData<Discount[]>(discountsKey, (current = []) => [discount, ...current])
+    onSuccess: async (discount) => {
+      await client.cancelQueries({ queryKey: discountsKey })
+      client.setQueryData<Discount[]>(discountsKey, (current = []) =>
+        [discount, ...current.filter((item) => item.id !== discount.id)],
+      )
       formRef.current?.reset()
       setKind('percentage')
     },
@@ -1030,7 +1061,7 @@ function DiscountManagement() {
       code: String(form.get('discount-code') ?? ''),
       kind,
       value: Math.round(enteredValue * 100),
-      currency: String(form.get('discount-currency') ?? 'EUR'),
+      currency: 'EUR',
       minimum_order_minor: Math.round(Number(form.get('discount-minimum') ?? 0) * 100),
       starts_at: optionalDate(form.get('discount-starts')),
       ends_at: optionalDate(form.get('discount-ends')),
@@ -1084,7 +1115,7 @@ function DiscountManagement() {
           <label>Code<input name="discount-code" minLength={3} maxLength={32} required placeholder="WELCOME10" defaultValue={editing?.code ?? ''} /></label>
           <label>Type<select name="discount-kind" value={kind} onChange={(event) => setKind(event.target.value as 'percentage' | 'fixed')}><option value="percentage">Percentage</option><option value="fixed">Fixed amount</option></select></label>
           <label>{kind === 'percentage' ? 'Percentage' : 'Amount'}<input name="discount-value" type="number" min="0.01" max={kind === 'percentage' ? '100' : undefined} step="0.01" required defaultValue={editing ? editing.value / 100 : undefined} /></label>
-          <label>Currency<input name="discount-currency" pattern="[A-Za-z]{3}" defaultValue={editing?.currency ?? 'EUR'} required /></label>
+          <label>Currency<input name="discount-currency" value="EUR" readOnly /></label>
           <label>Minimum order amount<input name="discount-minimum" type="number" min="0" step="0.01" defaultValue={editing ? editing.minimum_order_minor / 100 : 0} /></label>
           <div className="discount-field-row">
             <label>Starts<input name="discount-starts" type="datetime-local" defaultValue={dateTimeLocalValue(editing?.starts_at)} /></label>
@@ -1143,7 +1174,7 @@ function settingsInput(settings: CommercialSettings) {
   return {
     store_name: settings.store_name,
     support_email: settings.support_email,
-    currency: settings.currency,
+    currency: 'EUR',
     tax_enabled: settings.tax_enabled,
     tax_rules: settings.tax_rules.map((rule) => ({
       name: rule.name,
@@ -1188,7 +1219,7 @@ function SettingsManagement() {
       {
         store_name: String(form.get('store-name') ?? ''),
         support_email: String(form.get('support-email') ?? ''),
-        currency: String(form.get('store-currency') ?? ''),
+        currency: 'EUR',
         tax_enabled: form.get('tax-enabled') === 'on',
       },
       String(form.get('settings-reason') ?? ''),
@@ -1242,7 +1273,7 @@ function SettingsManagement() {
               {settings.data.checkout_suspended && <p className="settings-note" role="status">Checkout is temporarily suspended while delivery pricing is updated.</p>}
               <label>Store name<input name="store-name" defaultValue={settings.data.store_name} minLength={2} maxLength={100} required /></label>
               <label>Support email<input name="support-email" type="email" defaultValue={settings.data.support_email} required /></label>
-              <label>Store currency<input name="store-currency" defaultValue={settings.data.currency} pattern="[A-Za-z]{3}" required /></label>
+              <label>Store currency<input name="store-currency" value="EUR" readOnly /></label>
               <label className="check-row"><input name="tax-enabled" type="checkbox" defaultChecked={settings.data.tax_enabled} /> Enable destination tax calculation</label>
               <label>Audit reason<textarea name="settings-reason" minLength={3} maxLength={500} defaultValue="Update store identity and pricing behavior" required /></label>
               <button className="primary-button" disabled={updateSettings.isPending}>Save store settings</button>
@@ -2474,7 +2505,6 @@ function CatalogManagement({
     queryKey: categoriesKey,
     queryFn: api.listCategories,
   })
-
   async function uploadProductImages(product: Product, images: ProductImageUpload[]): Promise<ProductSaveResult> {
     const uploadedMediaIds = completedProductImages.current
     const photosUploaded = await uploadImagesWithProgress(images, uploadedMediaIds, async ({ altText, file }) => {
@@ -3025,7 +3055,7 @@ function CatalogManagement({
         title: String(form.get('new-variant-title') ?? ''),
         sku: String(form.get('new-variant-sku') ?? ''),
         price: Number(form.get('new-variant-price')),
-        currency: String(form.get('new-variant-currency') ?? ''),
+        currency: 'EUR',
       },
       { onSuccess: () => formElement.reset() },
     )
@@ -3579,9 +3609,7 @@ function CatalogManagement({
                 </div>
                 <div>
                   <label htmlFor="new-variant-currency">Currency</label>
-                  <select id="new-variant-currency" name="new-variant-currency" defaultValue="EUR">
-                    <option value="EUR">EUR</option><option value="GBP">GBP</option><option value="USD">USD</option>
-                  </select>
+                  <input id="new-variant-currency" name="new-variant-currency" value="EUR" readOnly />
                 </div>
               </div>
               {addVariant.isError && <p className="panel-error" role="alert">{addVariant.error.message}</p>}
@@ -3642,6 +3670,8 @@ const staffKey = ['staff'] as const
 const assignableCapabilities = [
   ['catalog.read', 'View catalog'],
   ['catalog.write', 'Manage catalog'],
+  ['notifications.read', 'View email notifications'],
+  ['notifications.send', 'Send pending email notifications'],
   ['orders.read', 'View orders'],
   ['orders.fulfill', 'Fulfill orders'],
   ['orders.refund', 'Refund orders'],

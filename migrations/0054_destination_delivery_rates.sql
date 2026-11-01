@@ -1,12 +1,12 @@
 CREATE TABLE delivery_pricing_config (
     singleton boolean PRIMARY KEY DEFAULT true CHECK (singleton),
     enabled boolean NOT NULL DEFAULT false,
-    currency char(3) NOT NULL CHECK (currency ~ '^[A-Z]{3}$'),
+    currency char(3) NOT NULL CHECK (currency = 'EUR'),
     revision bigint NOT NULL DEFAULT 0 CHECK (revision >= 0),
     updated_at timestamptz NOT NULL DEFAULT now(),
     updated_by_staff_user_id uuid REFERENCES staff_users(id) ON DELETE SET NULL
 );
-INSERT INTO delivery_pricing_config (singleton,currency) SELECT true,currency FROM store_settings WHERE singleton;
+INSERT INTO delivery_pricing_config (singleton,currency) VALUES (true,'EUR');
 
 CREATE TABLE delivery_rates (
     id uuid PRIMARY KEY,

@@ -119,7 +119,7 @@ pub async fn create(
     match existing(&pool, input.request_key, &hash).await {
         Ok(Some(receipt)) => return Json(receipt).into_response(),
         Ok(None) => {}
-        Err(response) => return response,
+        Err(error) => return error.into_response(),
     }
     match consume_account_action(&pool, "b2b", &input.email, ip).await {
         Ok(()) => {}
@@ -206,7 +206,7 @@ pub async fn create(
         let _ = tx.rollback().await;
         return match existing(&pool, input.request_key, &hash).await {
             Ok(Some(receipt)) => Json(receipt).into_response(),
-            Err(response) => response,
+            Err(error) => error.into_response(),
             _ => unavailable(),
         };
     };
@@ -222,17 +222,35 @@ pub async fn create(
     (StatusCode::CREATED, Json(receipt)).into_response()
 }
 
-async fn existing(pool: &PgPool, key: Uuid, hash: &[u8]) -> Result<Option<B2bReceipt>, Response> {
+enum ExistingError {
+    Database,
+    Conflict,
+}
+
+impl IntoResponse for ExistingError {
+    fn into_response(self) -> Response {
+        match self {
+            Self::Database => unavailable(),
+            Self::Conflict => error(
+                StatusCode::CONFLICT,
+                "b2b_request_conflict",
+                "This request has already been submitted with different details.",
+            ),
+        }
+    }
+}
+
+async fn existing(
+    pool: &PgPool,
+    key: Uuid,
+    hash: &[u8],
+) -> Result<Option<B2bReceipt>, ExistingError> {
     let row: Option<(Uuid, String, Vec<u8>)> = sqlx::query_as(
         "SELECT id, 'B2B-' || reference_number, request_hash FROM b2b_requests WHERE request_key=$1",
-    ).bind(key).fetch_optional(pool).await.map_err(|_| unavailable())?;
+    ).bind(key).fetch_optional(pool).await.map_err(|_| ExistingError::Database)?;
     match row {
         Some((id, reference, stored)) if stored == hash => Ok(Some(B2bReceipt { id, reference })),
-        Some(_) => Err(error(
-            StatusCode::CONFLICT,
-            "b2b_request_conflict",
-            "This request has already been submitted with different details.",
-        )),
+        Some(_) => Err(ExistingError::Conflict),
         None => Ok(None),
     }
 }

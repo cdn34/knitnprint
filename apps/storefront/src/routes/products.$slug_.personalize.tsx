@@ -57,8 +57,8 @@ function PersonalizeProductContent() {
     try {
       const previews = design.customization ? await design.savePreviews?.() : undefined
       if (design.customization && !previews?.length) throw new Error('Personalized preview could not be saved')
-      const customization = design.customization ? { ...design.customization, previews } : null
-      const cart = await cartApi.addCartItem({ variant_id: variant.id, quantity: 1, ...(customization ? { customization } : {}), ...(design.mediaIds.length ? { customization_media_asset_ids: design.mediaIds } : {}) }, cartMutationKey())
+      const customization = design.customization
+      const cart = await cartApi.addCartItem({ variant_id: variant.id, quantity: 1, personalization_previews: previews ?? [], ...(customization ? { customization } : {}), ...(design.mediaIds.length ? { customization_media_asset_ids: design.mediaIds } : {}) }, cartMutationKey())
       announceCartUpdate(cart)
       setStatus('added')
     } catch (error) {

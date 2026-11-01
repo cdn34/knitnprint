@@ -42,10 +42,10 @@ async fn main() {
     let storage = ObjectStorage::from_env(environment)
         .await
         .unwrap_or_else(|error| {
-            eprintln!("invalid storage configuration: {error}");
+            eprintln!("invalid media storage configuration: {error}");
             std::process::exit(2);
         });
-    let summary = deliver_due_with_storage(&pool, &email, Some(&storage), batch_size)
+    let summary = deliver_due_with_storage(&pool, &email, batch_size, Some(&storage))
         .await
         .unwrap_or_else(|error| {
             eprintln!("notification delivery failed: {error}");
