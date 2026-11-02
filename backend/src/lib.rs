@@ -1,5 +1,6 @@
 pub mod admin_notifications;
 pub mod auth;
+pub mod b2b;
 pub mod cancellations;
 pub mod carts;
 pub mod catalog;
@@ -74,6 +75,23 @@ pub fn app(state: AppState) -> Router {
     Router::new()
         .route("/api/health", get(health::health))
         .route("/api/ready", get(health::ready))
+        .route(
+            "/api/b2b/requests",
+            axum::routing::post(b2b::create).layer(DefaultBodyLimit::max(b2b::MAX_REQUEST_BYTES)),
+        )
+        .route("/api/admin/b2b/requests", get(b2b::list))
+        .route(
+            "/api/admin/b2b/requests/{id}",
+            get(b2b::detail).delete(b2b::delete),
+        )
+        .route(
+            "/api/admin/b2b/requests/{id}/status",
+            axum::routing::put(b2b::update_status),
+        )
+        .route(
+            "/api/admin/b2b/requests/{id}/attachment",
+            get(b2b::attachment),
+        )
         .route("/api/admin/auth/login", axum::routing::post(auth::login))
         .route("/api/admin/auth/logout", axum::routing::post(auth::logout))
         .route("/api/admin/auth/me", get(auth::me))
@@ -143,6 +161,10 @@ pub fn app(state: AppState) -> Router {
         .route(
             "/api/admin/products/{product_id}/status",
             axum::routing::post(catalog::change_status),
+        )
+        .route(
+            "/api/admin/products/{product_id}/media/order",
+            axum::routing::put(catalog::reorder_media),
         )
         .route(
             "/api/admin/products/{product_id}/media/{media_id}",

@@ -234,6 +234,7 @@ async fn cart_prices_stock_delivery_and_retries_are_server_controlled() {
     assert_eq!(delivery_body["delivery"]["email"], "ada@example.com");
     assert_eq!(delivery_body["delivery"]["address"]["country_code"], "PT");
     assert_eq!(delivery_body["checkout_ready"], true);
+    assert_eq!(delivery_body["issues"], json!([]));
     let delivery_replay = request(
         &router,
         "POST",

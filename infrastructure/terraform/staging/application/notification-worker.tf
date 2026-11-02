@@ -25,6 +25,8 @@ resource "aws_ecs_task_definition" "notification_worker" {
         { name = "SES_CONFIGURATION_SET", value = local.staging_ses_configuration_set },
         { name = "STOREFRONT_BASE_URL", value = local.staging_storefront_base_url },
         { name = "NOTIFICATION_BATCH_SIZE", value = "25" },
+        { name = "S3_REGION", value = var.aws_region },
+        { name = "S3_BUCKET", value = aws_s3_bucket.private["media"].id },
         { name = "RUST_LOG", value = "knitnprint_api=info" },
       ]
       secrets = [

@@ -913,6 +913,300 @@
         }
       }
     },
+    "/api/admin/b2b/requests": {
+      "get": {
+        "tags": [
+          "admin B2B"
+        ],
+        "operationId": "list",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/B2bRequest"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/b2b/requests/{id}": {
+      "get": {
+        "tags": [
+          "admin B2B"
+        ],
+        "operationId": "detail",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/B2bRequest"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "admin B2B"
+        ],
+        "operationId": "delete",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/b2b/requests/{id}/attachment": {
+      "get": {
+        "tags": [
+          "admin B2B"
+        ],
+        "operationId": "attachment",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Private original attachment or image preview"
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/b2b/requests/{id}/status": {
+      "put": {
+        "tags": [
+          "admin B2B"
+        ],
+        "operationId": "update_status",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateB2bStatus"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/admin/categories": {
       "get": {
         "tags": [
@@ -4036,6 +4330,107 @@
         }
       }
     },
+    "/api/admin/products/{product_id}/media/order": {
+      "put": {
+        "tags": [
+          "admin catalog"
+        ],
+        "operationId": "reorder_media",
+        "parameters": [
+          {
+            "name": "product_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReorderProductMediaRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Product"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/admin/products/{product_id}/media/{media_id}": {
       "delete": {
         "tags": [
@@ -4601,6 +4996,86 @@
           },
           "422": {
             "description": "A reason is required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/b2b/requests": {
+      "post": {
+        "tags": [
+          "B2B"
+        ],
+        "operationId": "create",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateB2bRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/B2bReceipt"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/B2bReceipt"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
             "content": {
               "application/json": {
                 "schema": {
@@ -6241,6 +6716,107 @@
           }
         }
       },
+      "B2bReceipt": {
+        "type": "object",
+        "required": [
+          "id",
+          "reference"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "reference": {
+            "type": "string"
+          }
+        }
+      },
+      "B2bRequest": {
+        "type": "object",
+        "required": [
+          "id",
+          "reference",
+          "company",
+          "contact_name",
+          "email",
+          "phone",
+          "product_type",
+          "quantity",
+          "notes",
+          "status",
+          "attachment_name",
+          "attachment_type",
+          "attachment_size",
+          "has_preview",
+          "notification_status",
+          "notification_attempts",
+          "created_at"
+        ],
+        "properties": {
+          "attachment_name": {
+            "type": "string"
+          },
+          "attachment_size": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "attachment_type": {
+            "type": "string"
+          },
+          "company": {
+            "type": "string"
+          },
+          "contact_name": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "has_preview": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "notification_attempts": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "notification_sent_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "notification_status": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string"
+          },
+          "product_type": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "reference": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        }
+      },
       "CancelOrderRequest": {
         "type": "object",
         "required": [
@@ -6711,6 +7287,56 @@
           },
           "region": {
             "type": "string"
+          }
+        }
+      },
+      "CreateB2bRequest": {
+        "type": "object",
+        "required": [
+          "request_key",
+          "company",
+          "contact_name",
+          "email",
+          "phone",
+          "product_type",
+          "quantity",
+          "notes",
+          "attachment_name",
+          "attachment_base64"
+        ],
+        "properties": {
+          "attachment_base64": {
+            "type": "string",
+            "description": "Original file encoded as base64, at most 10 MiB decoded."
+          },
+          "attachment_name": {
+            "type": "string"
+          },
+          "company": {
+            "type": "string"
+          },
+          "contact_name": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string"
+          },
+          "product_type": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "request_key": {
+            "type": "string",
+            "format": "uuid"
           }
         }
       },
@@ -9118,7 +9744,9 @@
             "type": "integer",
             "format": "int32"
           },
-          "views": {}
+          "views": {
+            "description": "Product photographs with independent mode and print areas; an empty area list disables printing on that photograph."
+          }
         }
       },
       "PersonalizationMediaRecord": {
@@ -9491,6 +10119,22 @@
           }
         }
       },
+      "ReorderProductMediaRequest": {
+        "type": "object",
+        "required": [
+          "media_ids"
+        ],
+        "properties": {
+          "media_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Every currently displayed product photo, in the desired order. The first becomes the main photo."
+          }
+        }
+      },
       "ReplyToProductFeedbackRequest": {
         "type": "object",
         "properties": {
@@ -9765,6 +10409,17 @@
             "type": "string"
           },
           "phone": {
+            "type": "string"
+          }
+        }
+      },
+      "UpdateB2bStatus": {
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
             "type": "string"
           }
         }

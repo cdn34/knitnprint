@@ -5,7 +5,7 @@ const ownerEmail = process.env.E2E_OWNER_EMAIL ?? 'owner@knitnprint.local'
 const ownerPassword =
   process.env.E2E_OWNER_PASSWORD ?? 'local-development-passphrase'
 
-test('lets an owner manage commercial settings and complete an order journey', async ({
+test('lets an owner manage the catalog and complete an order with configured delivery pricing', async ({
   page,
 }) => {
   const unique = `${Date.now()}-${test.info().retry}`
@@ -235,6 +235,8 @@ test('lets an owner manage commercial settings and complete an order journey', a
   await inventory.getByLabel('Low-stock threshold').fill('3')
   await inventory.getByRole('button', { name: 'Apply adjustment' }).click()
   await expect(plumInventoryRow).toContainText('2')
+  await expect(inventory.getByLabel('Quantity change')).toHaveValue('')
+  await expect(inventory).toContainText('Small plum batch')
 
   const defaultInventoryRow = inventory
     .getByRole('button')

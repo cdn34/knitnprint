@@ -69,9 +69,10 @@ import {
   type StaffRecord,
 } from '@knitnprint/api-client'
 import { printAreaOffsets } from './personalization-measurements'
-import { uploadImagesWithProgress } from './product-image-uploads'
-import { NotificationManagement } from './notifications'
+import { uploadImagesWithProgress, productPhotosInOrder, savedProductPhotoOrder } from './product-image-uploads'
+import { B2bManagement } from './b2b'
 import { DeliveryRatesManagement } from './delivery-rates'
+import { NotificationManagement } from './notifications'
 import './styles.css'
 
 const api = createApiClient()
@@ -222,7 +223,7 @@ function AdminShell({ profile }: Readonly<{ profile: StaffProfile }>) {
       ? [{ id: 'notifications', label: 'Email notifications', icon: Mail }]
       : []),
     ...(profile.capabilities.includes('orders.read')
-      ? [{ id: 'orders', label: 'Orders', icon: ReceiptText }]
+      ? [{ id: 'orders', label: 'Orders', icon: ReceiptText }, { id: 'b2b', label: 'B2B', icon: MessageSquareText }]
       : []),
     ...(profile.capabilities.includes('catalog.read')
       ? [
@@ -325,6 +326,8 @@ function AdminShell({ profile }: Readonly<{ profile: StaffProfile }>) {
                 ? `Good to see you, ${profile.display_name.split(' ')[0]}.`
                 : page === 'orders'
                   ? 'Order operations.'
+                : page === 'b2b'
+                  ? 'Business enquiries.'
                 : page === 'products'
                   ? 'Product catalog.'
                   : page === 'feedback'
@@ -349,6 +352,9 @@ function AdminShell({ profile }: Readonly<{ profile: StaffProfile }>) {
           </a>
         </header>
         {page === 'dashboard' && <Dashboard profile={profile} />}
+        {page === 'b2b' && profile.capabilities.includes('orders.read') && (
+          <B2bManagement initialRequestId={target.entityId} canManage={profile.capabilities.includes('orders.fulfill')} />
+        )}
         {page === 'notifications' && profile.capabilities.includes('notifications.read') && (
           <NotificationManagement
             canSend={profile.capabilities.includes('notifications.send')}
@@ -1985,9 +1991,10 @@ type PrintArea = { x: number; y: number; width: number; height: number }
 type NamedPrintArea = PrintArea & { id: string; label: string; physicalWidthCm: number; physicalHeightCm: number }
 type ArticleReference = PrintArea & { physicalWidthCm: number; physicalHeightCm: number; configured: boolean }
 type VariantReference = { physicalWidthCm: number; physicalHeightCm: number; configured: boolean }
-type PersonalizationView = { id: string; label: string; mediaId?: string; articleReference?: ArticleReference; variantReferences?: Record<string, VariantReference>; printAreas: NamedPrintArea[] }
+type PersonalizationMode = 'none' | 'photo' | 'text' | 'photo_text'
+type PersonalizationView = { id: string; label: string; mode: PersonalizationMode; mediaId?: string; articleReference?: ArticleReference; variantReferences?: Record<string, VariantReference>; printAreas: NamedPrintArea[] }
 const DEFAULT_PRINT_AREA: NamedPrintArea = { id: 'area-1', label: 'Área 1', x: 25, y: 25, width: 50, height: 50, physicalWidthCm: 20, physicalHeightCm: 20 }
-const DEFAULT_PERSONALIZATION_VIEW: PersonalizationView = { id: 'view-front', label: 'Frente', printAreas: [{ ...DEFAULT_PRINT_AREA }] }
+const DEFAULT_PERSONALIZATION_VIEW: PersonalizationView = { id: 'view-front', label: 'Frente', mode: 'none', printAreas: [{ ...DEFAULT_PRINT_AREA }] }
 
 function printAreaFromBasisPoints(values: unknown[], fallback: PrintArea): PrintArea {
   if (values.length !== 4 || values.some((value) => typeof value !== 'number' || !Number.isFinite(value))) return { ...fallback }
@@ -2008,7 +2015,7 @@ function namedPrintAreas(value: unknown, fallback: NamedPrintArea): NamedPrintAr
     const physicalHeightCm = typeof candidate.physical_height_cm === 'number' && Number.isFinite(candidate.physical_height_cm) ? candidate.physical_height_cm : fallback.physicalHeightCm
     return [{ id, label, physicalWidthCm, physicalHeightCm, ...area }]
   })
-  return areas.length ? areas.slice(0, 8) : [{ ...fallback }]
+  return areas.slice(0, 8)
 }
 
 function namedArticleReference(value: unknown): ArticleReference | undefined {
@@ -2094,17 +2101,18 @@ function areaInsideReference(area: NamedPrintArea, reference?: ArticleReference)
   }
 }
 
-function namedPersonalizationViews(value: unknown, fallbackArea: NamedPrintArea, fallbackMediaId?: string): PersonalizationView[] {
-  if (!Array.isArray(value)) return [{ ...DEFAULT_PERSONALIZATION_VIEW, mediaId: fallbackMediaId, printAreas: namedPrintAreas(undefined, fallbackArea) }]
+function namedPersonalizationViews(value: unknown, fallbackArea: NamedPrintArea, fallbackMediaId?: string, fallbackMode: PersonalizationMode = 'none'): PersonalizationView[] {
+  if (!Array.isArray(value)) return [{ ...DEFAULT_PERSONALIZATION_VIEW, mode: fallbackMode, mediaId: fallbackMediaId, printAreas: namedPrintAreas(undefined, fallbackArea) }]
   const views = value.flatMap((item, index) => {
     if (!item || typeof item !== 'object') return []
     const candidate = item as Record<string, unknown>
     const id = typeof candidate.id === 'string' && candidate.id.trim() ? candidate.id.trim() : `view-${index + 1}`
     const label = typeof candidate.label === 'string' && candidate.label.trim() ? candidate.label.trim() : index === 0 ? 'Frente' : `Vista ${index + 1}`
     const mediaId = typeof candidate.media_id === 'string' && candidate.media_id ? candidate.media_id : undefined
-    return [{ id, label, mediaId, articleReference: namedArticleReference(candidate.article_reference), variantReferences: namedVariantReferences(candidate.variant_references), printAreas: namedPrintAreas(candidate.print_areas, fallbackArea) }]
+    const mode = ['none', 'photo', 'text', 'photo_text'].includes(String(candidate.mode)) ? candidate.mode as PersonalizationMode : fallbackMode
+    return [{ id, label, mode, mediaId, articleReference: namedArticleReference(candidate.article_reference), variantReferences: namedVariantReferences(candidate.variant_references), printAreas: namedPrintAreas(candidate.print_areas, fallbackArea) }]
   })
-  return views.length ? views.slice(0, 6) : [{ ...DEFAULT_PERSONALIZATION_VIEW, mediaId: fallbackMediaId, printAreas: namedPrintAreas(undefined, fallbackArea) }]
+  return views.length ? views.slice(0, 100) : [{ ...DEFAULT_PERSONALIZATION_VIEW, mode: fallbackMode, mediaId: fallbackMediaId, printAreas: namedPrintAreas(undefined, fallbackArea) }]
 }
 
 function EditablePrintArea({ area, label, kind = 'print', active, onActivate, onChange }: Readonly<{
@@ -2403,11 +2411,12 @@ function CatalogManagement({
   const [productQuantity, setProductQuantity] = useState('0')
   const [pendingProductImages, setPendingProductImages] = useState<PendingProductImage[]>([])
   const [photoUploadMessage, setPhotoUploadMessage] = useState('')
+  const [productPhotoOrder, setProductPhotoOrder] = useState<string[]>([])
+  const [draggedPhotoId, setDraggedPhotoId] = useState<string | null>(null)
   const pendingProductImagesRef = useRef<PendingProductImage[]>([])
   const [productCategoryIds, setProductCategoryIds] = useState<string[]>([])
   const [draggedCategoryId, setDraggedCategoryId] = useState<string | null>(null)
   const [categoryOrderMessage, setCategoryOrderMessage] = useState('')
-  const [personalizationMode, setPersonalizationMode] = useState<'none' | 'photo' | 'text' | 'photo_text'>('none')
   const [personalizationViews, setPersonalizationViews] = useState<PersonalizationView[]>([{ ...DEFAULT_PERSONALIZATION_VIEW, printAreas: [{ ...DEFAULT_PRINT_AREA }] }])
   const [activePersonalizationViewId, setActivePersonalizationViewId] = useState(DEFAULT_PERSONALIZATION_VIEW.id)
   const [activePrintAreaId, setActivePrintAreaId] = useState(DEFAULT_PRINT_AREA.id)
@@ -2418,8 +2427,12 @@ function CatalogManagement({
   const [textMaxSize, setTextMaxSize] = useState(72)
   const [allowedFonts, setAllowedFonts] = useState('Roboto, Montserrat, Playfair Display, Dancing Script, Pacifico')
   const [allowedColors, setAllowedColors] = useState('#111111, #ffffff, #9c5263, #1f4f78, #b3232f')
+  const completedProductImages = useRef(new Map<string, string>())
   const primaryPersonalizationView = personalizationViews[0] ?? DEFAULT_PERSONALIZATION_VIEW
   const primaryPrintArea = primaryPersonalizationView.printAreas[0] ?? DEFAULT_PRINT_AREA
+  const photoEnabled = personalizationViews.some((view) => view.printAreas.length > 0 && (view.mode === 'photo' || view.mode === 'photo_text'))
+  const textEnabled = personalizationViews.some((view) => view.printAreas.length > 0 && (view.mode === 'text' || view.mode === 'photo_text'))
+  const personalizationMode: PersonalizationMode = photoEnabled && textEnabled ? 'photo_text' : photoEnabled ? 'photo' : textEnabled ? 'text' : 'none'
   const personalization = {
     mode: personalizationMode,
     preview_media_id: primaryPersonalizationView.mediaId,
@@ -2429,29 +2442,28 @@ function CatalogManagement({
     text_area_x: Math.round(primaryPrintArea.x * 100), text_area_y: Math.round(primaryPrintArea.y * 100),
     text_area_width: Math.round(primaryPrintArea.width * 100), text_area_height: Math.round(primaryPrintArea.height * 100),
     print_areas: primaryPersonalizationView.printAreas.map((area) => serializedPrintArea(primaryPersonalizationView, area)),
-    views: personalizationViews.map((view) => ({ id: view.id, label: view.label.trim(), media_id: view.mediaId ?? null, article_reference: serializedArticleReference(view.articleReference), variant_references: serializedVariantReferences(view.variantReferences), print_areas: view.printAreas.map((area) => serializedPrintArea(view, area)) })),
+    views: personalizationViews.map((view) => ({ id: view.id, label: view.label.trim(), mode: view.mode, media_id: view.mediaId ?? null, article_reference: serializedArticleReference(view.articleReference), variant_references: serializedVariantReferences(view.variantReferences), print_areas: view.printAreas.map((area) => serializedPrintArea(view, area)) })),
     text_max_characters: textMaxCharacters, text_min_size: textMinSize, text_max_size: textMaxSize,
     allowed_fonts: allowedFonts.split(',').map((value) => value.trim()).filter(Boolean),
     allowed_colors: allowedColors.split(',').map((value) => value.trim()).filter(Boolean),
   }
   const activePersonalizationView = personalizationViews.find(({ id }) => id === activePersonalizationViewId) ?? personalizationViews[0] ?? DEFAULT_PERSONALIZATION_VIEW
+  const activePersonalizationMode = activePersonalizationView.mode
   const printAreas = activePersonalizationView.printAreas
-  const personalizationMediaChoices = useMemo<PersonalizationMediaChoice[]>(() => [
-    ...(preview?.media ?? []).map((media) => ({
-      id: media.id,
-      altText: media.alt_text,
-      thumbnailUrl: adminProductMediaUrl(media.id, 'thumbnail'),
-      detailUrl: adminProductMediaUrl(media.id, 'detail'),
-      queued: false,
-    })),
-    ...pendingProductImages.map((media) => ({
-      id: media.id,
-      altText: media.altText,
-      thumbnailUrl: media.previewUrl,
-      detailUrl: media.previewUrl,
-      queued: true,
-    })),
-  ], [preview?.media, pendingProductImages])
+  const personalizationMediaChoices = useMemo<PersonalizationMediaChoice[]>(() => {
+    const completedPendingIds = new Set(pendingProductImages.flatMap((image) => completedProductImages.current.get(image.id) ?? []))
+    return productPhotosInOrder([
+      ...(preview?.media ?? []).filter((media) => !completedPendingIds.has(media.id)).map((media) => ({
+        id: media.id, altText: media.alt_text,
+        thumbnailUrl: adminProductMediaUrl(media.id, 'thumbnail'),
+        detailUrl: adminProductMediaUrl(media.id, 'detail'), queued: false,
+      })),
+      ...pendingProductImages.map((media) => ({
+        id: media.id, altText: media.altText, thumbnailUrl: media.previewUrl,
+        detailUrl: media.previewUrl, queued: true,
+      })),
+    ], productPhotoOrder)
+  }, [preview?.media, pendingProductImages, productPhotoOrder])
   const personalizationPreviewMedia = personalizationMediaChoices.find(({ id }) => id === activePersonalizationView.mediaId)
   const activePrintArea = printAreas.find(({ id }) => id === activePrintAreaId) ?? printAreas[0] ?? DEFAULT_PRINT_AREA
   const activePrintAreaPhysical = effectivePrintAreaDimensions(activePersonalizationView, activePrintArea)
@@ -2469,7 +2481,8 @@ function CatalogManagement({
       || Number(productPrice) !== (base?.price_minor ?? 0) / 100
       || Number(productQuantity) !== (base?.available_quantity ?? 0)
       || pendingProductImages.length > 0
-  }, [preview, variantCalibrationDirty, productTitle, productSlug, productDescription, productKeywords, productSku, productPrice, productQuantity, pendingProductImages.length])
+      || personalizationMediaChoices.map(({ id }) => id).join(',') !== preview.media.map(({ id }) => id).join(',')
+  }, [preview, variantCalibrationDirty, productTitle, productSlug, productDescription, productKeywords, productSku, productPrice, productQuantity, pendingProductImages.length, personalizationMediaChoices])
   useEffect(() => {
     pendingProductImagesRef.current = pendingProductImages
   }, [pendingProductImages])
@@ -2492,8 +2505,6 @@ function CatalogManagement({
     queryKey: categoriesKey,
     queryFn: api.listCategories,
   })
-  const completedProductImages = useRef(new Map<string, string>())
-
   async function uploadProductImages(product: Product, images: ProductImageUpload[]): Promise<ProductSaveResult> {
     const uploadedMediaIds = completedProductImages.current
     const photosUploaded = await uploadImagesWithProgress(images, uploadedMediaIds, async ({ altText, file }) => {
@@ -2525,8 +2536,14 @@ function CatalogManagement({
     }
   }
 
+  async function saveProductPhotoOrder(saved: ProductSaveResult, order: string[]): Promise<ProductSaveResult> {
+    const mediaIds = savedProductPhotoOrder(order, saved.uploadedMediaIds)
+    if (mediaIds.length === saved.product.media.length && mediaIds.every((id, index) => saved.product.media[index].id === id)) return saved
+    return { ...saved, product: await api.reorderProductMedia(saved.product.id, mediaIds) }
+  }
+
   const createProduct = useMutation({
-    mutationFn: async ({ categoryIds, images, ...input }: Parameters<typeof api.createProduct>[0] & { categoryIds: string[]; images: ProductImageUpload[] }) => {
+    mutationFn: async ({ categoryIds, images, photoOrder, ...input }: Parameters<typeof api.createProduct>[0] & { categoryIds: string[]; images: ProductImageUpload[]; photoOrder: string[] }) => {
       const pendingIds = new Set(images.flatMap(({ id }) => id ? [id] : []))
       const initialInput = input.personalization
         ? { ...input, personalization: resolvePersonalizationMedia(input.personalization, pendingIds, new Map()) }
@@ -2536,21 +2553,19 @@ function CatalogManagement({
         ? api.assignProductCategories(createdProduct.id, { category_ids: categoryIds })
         : createdProduct
       const saved = await saveQueuedProductImages(await product, images)
-      const variant = input.variants[0]
-      if (!saved.photosUploaded || !input.personalization || !variant || saved.uploadedMediaIds.size === 0) return saved
+      if (!saved.photosUploaded) return saved
       try {
-        const resolvedProduct = await api.updateProduct(saved.product.id, {
-          title: input.title,
-          slug: input.slug,
-          description: input.description,
-          search_keywords: input.search_keywords,
-          sku: variant.sku,
-          price_minor: variant.price_minor,
-          currency: variant.currency,
-          available_quantity: variant.available_quantity ?? 0,
-          personalization: resolvePersonalizationMedia(input.personalization, pendingIds, saved.uploadedMediaIds),
-        })
-        return { ...saved, product: resolvedProduct }
+        const variant = input.variants[0]
+        if (input.personalization && variant && saved.uploadedMediaIds.size > 0) {
+          saved.product = await api.updateProduct(saved.product.id, {
+            title: input.title, slug: input.slug, description: input.description,
+            search_keywords: input.search_keywords, sku: variant.sku,
+            price_minor: variant.price_minor, currency: variant.currency,
+            available_quantity: variant.available_quantity ?? 0,
+            personalization: resolvePersonalizationMedia(input.personalization, pendingIds, saved.uploadedMediaIds),
+          })
+        }
+        return await saveProductPhotoOrder(saved, photoOrder)
       } catch {
         return { ...saved, photosUploaded: false }
       }
@@ -2572,13 +2587,13 @@ function CatalogManagement({
         discardPendingProductImages()
         setPhotoUploadMessage('')
       } else {
-        setPhotoUploadMessage('The product was created, but its photos or photo selections could not be saved. Save again to retry; completed uploads will be reused.')
+        setPhotoUploadMessage('The product was created, but its photos, photo order, or personalization could not be saved. Save again to retry; completed uploads will be reused.')
       }
       loadProduct(product, activePersonalizationViewId, activePrintAreaId, !photosUploaded)
     },
   })
   const updateProduct = useMutation({
-    mutationFn: async ({ id, categoryIds, images, ...input }: Parameters<typeof api.updateProduct>[1] & { id: string; categoryIds: string[]; images: ProductImageUpload[] }) => {
+    mutationFn: async ({ id, categoryIds, images, photoOrder, ...input }: Parameters<typeof api.updateProduct>[1] & { id: string; categoryIds: string[]; images: ProductImageUpload[]; photoOrder: string[] }) => {
       const pendingIds = new Set(images.flatMap(({ id }) => id ? [id] : []))
       const initialInput = input.personalization
         ? { ...input, personalization: resolvePersonalizationMedia(input.personalization, pendingIds, new Map()) }
@@ -2586,15 +2601,15 @@ function CatalogManagement({
       const updatedProduct = await api.updateProduct(id, initialInput)
       const product = await api.assignProductCategories(updatedProduct.id, { category_ids: categoryIds })
       const saved = await saveQueuedProductImages(product, images)
-      if (!saved.photosUploaded || !input.personalization || saved.uploadedMediaIds.size === 0) return saved
+      if (!saved.photosUploaded) return saved
       try {
-        return {
-          ...saved,
-          product: await api.updateProduct(id, {
+        if (input.personalization && saved.uploadedMediaIds.size > 0) {
+          saved.product = await api.updateProduct(id, {
             ...input,
             personalization: resolvePersonalizationMedia(input.personalization, pendingIds, saved.uploadedMediaIds),
-          }),
+          })
         }
+        return await saveProductPhotoOrder(saved, photoOrder)
       } catch {
         return { ...saved, photosUploaded: false }
       }
@@ -2607,7 +2622,7 @@ function CatalogManagement({
         discardPendingProductImages()
         setPhotoUploadMessage('')
       } else {
-        setPhotoUploadMessage('The product was saved, but its photos or photo selections could not be saved. Save again to retry; completed uploads will be reused.')
+        setPhotoUploadMessage('The product was saved, but its photos, photo order, or personalization could not be saved. Save again to retry; completed uploads will be reused.')
       }
       loadProduct(product, activePersonalizationViewId, activePrintAreaId, !photosUploaded)
     },
@@ -2629,7 +2644,7 @@ function CatalogManagement({
       setPhotoUploadMessage('Photo removed.')
       setPreview(product)
       setPersonalizationViews((current) => current.map((view) =>
-        view.mediaId === mediaId ? { ...view, mediaId: undefined } : view,
+        view.mediaId === mediaId ? { ...view, mediaId: undefined, mode: 'none', printAreas: [] } : view,
       ))
     },
     onError: (error) => {
@@ -2776,7 +2791,7 @@ function CatalogManagement({
       return current.filter((image) => image.id !== id)
     })
     setPersonalizationViews((current) => current.map((view) =>
-      view.mediaId === id ? { ...view, mediaId: undefined } : view,
+      view.mediaId === id ? { ...view, mediaId: undefined, mode: 'none', printAreas: [] } : view,
     ))
   }
 
@@ -2807,39 +2822,31 @@ function CatalogManagement({
   }
 
   function updatePersonalizationView(id: string, change: Partial<Omit<PersonalizationView, 'id' | 'printAreas'>>) {
+    setVariantCalibrationDirty(true)
     setPersonalizationViews((current) => current.map((view) => view.id === id ? { ...view, ...change } : view))
   }
 
-  function selectPersonalizationView(id: string) {
-    const view = personalizationViews.find((candidate) => candidate.id === id)
-    if (!view) return
-    setActivePersonalizationViewId(id)
-    setActivePrintAreaId(view.printAreas[0]?.id ?? DEFAULT_PRINT_AREA.id)
+  function selectPersonalizationPhoto(media: PersonalizationMediaChoice, index: number) {
+    const existing = personalizationViews.find((view) => view.mediaId === media.id)
+    const view: PersonalizationView = existing ?? { id: `view-${media.id}`, label: `Fotografia ${index + 1}`, mediaId: media.id, mode: 'none', printAreas: [] }
+    if (!existing) setPersonalizationViews((current) => [...current, view])
+    setActivePersonalizationViewId(view.id)
+    setActivePrintAreaId(view.printAreas[0]?.id ?? '')
     setEditingArticleReference(false)
   }
 
-  function addPersonalizationView() {
-    if (personalizationViews.length >= 6) return
-    const nextNumber = personalizationViews.length + 1
-    const id = `view-${Date.now()}-${nextNumber}`
-    const areaId = `area-${Date.now()}-${nextNumber}-1`
-    const view: PersonalizationView = { id, label: nextNumber === 2 ? 'Costas' : `Vista ${nextNumber}`, printAreas: [{ ...DEFAULT_PRINT_AREA, id: areaId }] }
-    setPersonalizationViews((current) => [...current, view])
-    setActivePersonalizationViewId(id)
-    setActivePrintAreaId(areaId)
-    setEditingArticleReference(false)
-  }
-
-  function removeActivePersonalizationView() {
-    if (personalizationViews.length <= 1) return
-    const remaining = personalizationViews.filter(({ id }) => id !== activePersonalizationView.id)
-    setPersonalizationViews(remaining)
-    setActivePersonalizationViewId(remaining[0].id)
-    setActivePrintAreaId(remaining[0].printAreas[0]?.id ?? DEFAULT_PRINT_AREA.id)
+  function changePhotoPersonalization(mode: PersonalizationMode) {
+    setVariantCalibrationDirty(true)
+    const areaId = `area-${crypto.randomUUID()}`
+    setPersonalizationViews((current) => current.map((view) => view.id === activePersonalizationView.id
+      ? { ...view, mode, printAreas: mode !== 'none' && !view.printAreas.length ? [areaInsideReference({ ...DEFAULT_PRINT_AREA, id: areaId }, view.articleReference)] : view.printAreas }
+      : view))
+    if (mode !== 'none' && !printAreas.length) setActivePrintAreaId(areaId)
     setEditingArticleReference(false)
   }
 
   function updatePrintArea(id: string, change: Partial<NamedPrintArea>) {
+    setVariantCalibrationDirty(true)
     setPersonalizationViews((current) => current.map((view) => view.id === activePersonalizationView.id
       ? { ...view, printAreas: view.printAreas.map((area) => area.id === id ? areaInsideReference({ ...area, ...change }, view.articleReference) : area) }
       : view))
@@ -2877,6 +2884,7 @@ function CatalogManagement({
   }
 
   function addPrintArea() {
+    setVariantCalibrationDirty(true)
     if (printAreas.length >= 8) return
     const nextNumber = printAreas.length + 1
     const id = `area-${Date.now()}-${nextNumber}`
@@ -2893,10 +2901,11 @@ function CatalogManagement({
   }
 
   function removeActivePrintArea() {
-    if (printAreas.length <= 1) return
+    if (!printAreas.length) return
+    setVariantCalibrationDirty(true)
     const remaining = printAreas.filter(({ id }) => id !== activePrintArea.id)
     setPersonalizationViews((current) => current.map((view) => view.id === activePersonalizationView.id ? { ...view, printAreas: remaining } : view))
-    setActivePrintAreaId(remaining[0].id)
+    setActivePrintAreaId(remaining[0]?.id ?? '')
   }
 
   function moveCategory(categoryId: string, targetIndex: number) {
@@ -2909,6 +2918,16 @@ function CatalogManagement({
     next.splice(boundedTarget, 0, moved)
     if (next.every((category, index) => category.id === current[index]?.id)) return
     reorderCategories.mutate(next.map(({ id }) => id))
+  }
+
+  function moveProductPhoto(id: string, targetIndex: number) {
+    const current = personalizationMediaChoices.map((photo) => photo.id)
+    const sourceIndex = current.indexOf(id)
+    if (sourceIndex < 0) return
+    current.splice(sourceIndex, 1)
+    current.splice(Math.max(0, Math.min(targetIndex, current.length)), 0, id)
+    setProductPhotoOrder(current)
+    setPhotoUploadMessage('Ordem alterada. Guarda o produto para aplicar.')
   }
 
   function submit(event: FormEvent<HTMLFormElement>) {
@@ -2924,6 +2943,7 @@ function CatalogManagement({
         id: preview.id,
         categoryIds: productCategoryIds,
         images,
+        photoOrder: personalizationMediaChoices.map(({ id }) => id),
         title: productTitle,
         slug: productSlug,
         description: productDescription,
@@ -2955,6 +2975,7 @@ function CatalogManagement({
         personalization,
         categoryIds: productCategoryIds,
         images,
+        photoOrder: personalizationMediaChoices.map(({ id }) => id),
       },
     )
   }
@@ -2963,6 +2984,7 @@ function CatalogManagement({
     setVariantCalibrationDirty(false)
     const base = product.variants[0]
     setPreview(product)
+    if (!preserveViews) setProductPhotoOrder(product.media.map(({ id }) => id))
     setProductTitle(product.title)
     setProductSlug(product.slug)
     setProductSlugEdited(true)
@@ -2973,13 +2995,18 @@ function CatalogManagement({
     setProductQuantity(String(base?.available_quantity ?? 0))
     setProductCategoryIds(product.categories.map(({ id }) => id))
     const config = product.personalization
-    setPersonalizationMode(config.mode as typeof personalizationMode)
     const fallbackArea = { ...DEFAULT_PRINT_AREA, ...printAreaFromBasisPoints([config.area_x, config.area_y, config.area_width, config.area_height], DEFAULT_PRINT_AREA) }
-    const configuredViews = namedPersonalizationViews(config.views, fallbackArea, config.preview_media_id ?? product.media[0]?.id)
+    const storedViews = namedPersonalizationViews(config.views, fallbackArea, config.preview_media_id ?? product.media[0]?.id, config.mode as PersonalizationMode)
+    // Existing unnamed sides are assigned to unused photos once, retaining their measurements.
+    const unassigned = storedViews.filter((view) => !view.mediaId)
+    const configuredViews: PersonalizationView[] = product.media.length ? product.media.map((media, index) => {
+      const stored = storedViews.find((view) => view.mediaId === media.id) ?? unassigned.shift()
+      return stored ? { ...stored, mediaId: media.id } : { id: `view-${media.id}`, label: `Fotografia ${index + 1}`, mediaId: media.id, mode: 'none', printAreas: [] }
+    }) : storedViews
     const selectedView = configuredViews.find(({ id }) => id === preferredViewId) ?? configuredViews[0]
     if (!preserveViews) setPersonalizationViews(configuredViews)
     setActivePersonalizationViewId(selectedView.id)
-    setActivePrintAreaId(selectedView.printAreas.find(({ id }) => id === preferredPrintAreaId)?.id ?? selectedView.printAreas[0].id)
+    setActivePrintAreaId(selectedView.printAreas.find(({ id }) => id === preferredPrintAreaId)?.id ?? selectedView.printAreas[0]?.id ?? '')
     setEditingArticleReference(false)
     setTextMaxCharacters(config.text_max_characters)
     setTextMinSize(config.text_min_size)
@@ -2995,6 +3022,8 @@ function CatalogManagement({
     discardPendingProductImages()
     setPhotoUploadMessage('')
     setPreview(null)
+    setProductPhotoOrder([])
+    setDraggedPhotoId(null)
     setProductTitle('')
     setProductSlug('')
     setProductSlugEdited(false)
@@ -3004,7 +3033,6 @@ function CatalogManagement({
     setProductPrice('')
     setProductQuantity('0')
     setProductCategoryIds([])
-    setPersonalizationMode('none')
     setPersonalizationViews([{ ...DEFAULT_PERSONALIZATION_VIEW, printAreas: [{ ...DEFAULT_PRINT_AREA }] }])
     setActivePersonalizationViewId(DEFAULT_PERSONALIZATION_VIEW.id)
     setActivePrintAreaId(DEFAULT_PRINT_AREA.id)
@@ -3200,7 +3228,7 @@ function CatalogManagement({
               <Plus size={17} />
               <div>
                 <strong>{preview ? 'Edit product' : 'New product draft'}</strong>
-                <span>Details, photos, stock, shipping package, and personalization.</span>
+                <span>Details, photos, stock, and personalization.</span>
               </div>
             </div>
             <label htmlFor="product-title">Product title</label>
@@ -3249,60 +3277,36 @@ function CatalogManagement({
                   <strong id="product-photos-heading">Product photos</strong>
                   <span>Add all product views now. They will upload when you save the product.</span>
                 </div>
-                <span>{(preview?.media.length ?? 0) + pendingProductImages.length} total</span>
+                <span>{personalizationMediaChoices.length} total</span>
               </header>
-              {(preview?.media.length ?? 0) > 0 && (
-                <div className="admin-product-photo-grid" aria-label="Uploaded product photos">
-                  {preview?.media.map((media, index) => (
-                    <figure key={media.id}>
-                      <img src={adminProductMediaUrl(media.id, 'thumbnail')} alt={media.alt_text} />
-                      <figcaption>{index === 0 ? 'Main photo · uploaded' : `Photo ${index + 1} · uploaded`}</figcaption>
-                      <button
-                        className="saved-product-photo-remove"
-                        type="button"
-                        aria-label={`Remove ${index === 0 ? 'main photo' : `photo ${index + 1}`}`}
-                        disabled={deleteProductImage.isPending}
-                        onClick={() => {
-                          if (window.confirm(`Remove ${index === 0 ? 'the main photo' : `photo ${index + 1}`} from this product?`)) {
-                            deleteProductImage.mutate({ productId: preview.id, mediaId: media.id })
-                          }
-                        }}
-                      >
-                        <Trash2 size={14} /> Remove
-                      </button>
+              {personalizationMediaChoices.length > 0 && <>
+                <p className="photo-order-help"><GripVertical aria-hidden="true" />Arrasta as fotografias ou usa as setas para escolher a ordem. A primeira é a fotografia principal.</p>
+                <div className="admin-product-photo-grid" aria-label="Ordem das fotografias do produto">
+                  {personalizationMediaChoices.map((media, index) => {
+                    const pending = pendingProductImages.find((image) => image.id === media.id)
+                    const busy = createProduct.isPending || updateProduct.isPending || deleteProductImage.isPending
+                    return <figure key={media.id} className={draggedPhotoId === media.id ? 'dragging' : ''}
+                      onDragOver={(event) => { if (draggedPhotoId && !busy) { event.preventDefault(); event.dataTransfer.dropEffect = 'move' } }}
+                      onDrop={(event) => { event.preventDefault(); if (draggedPhotoId && !busy) moveProductPhoto(draggedPhotoId, index); setDraggedPhotoId(null) }}>
+                      <div className="photo-order-header"><strong>{index === 0 ? 'Principal' : `Fotografia ${index + 1}`}</strong><span className="photo-drag-handle" draggable={!busy}
+                        onDragStart={(event) => { event.dataTransfer.setData('text/plain', media.id); event.dataTransfer.effectAllowed = 'move'; setDraggedPhotoId(media.id) }}
+                        onDragEnd={() => setDraggedPhotoId(null)} title="Arrastar fotografia"><GripVertical size={16} aria-hidden="true" /></span></div>
+                      <img src={media.thumbnailUrl} alt={media.altText} draggable={false} />
+                      <figcaption>{media.queued ? 'Nova · por guardar' : 'Guardada'}</figcaption>
+                      {pending && <label className="photo-alt-label" htmlFor={`product-photo-alt-${pending.id}`}>Texto alternativo<input id={`product-photo-alt-${pending.id}`} value={pending.altText} maxLength={300} required onChange={(event) => updatePendingProductImage(pending.id, event.target.value)} placeholder="Descreve a fotografia" /></label>}
+                      <div className="photo-order-buttons">
+                        <button type="button" aria-label={`Mover fotografia ${index + 1} para antes`} disabled={index === 0 || busy} onClick={() => moveProductPhoto(media.id, index - 1)}><ChevronUp size={15} aria-hidden="true" /></button>
+                        <button type="button" aria-label={`Mover fotografia ${index + 1} para depois`} disabled={index === personalizationMediaChoices.length - 1 || busy} onClick={() => moveProductPhoto(media.id, index + 1)}><ChevronDown size={15} aria-hidden="true" /></button>
+                        <button className="saved-product-photo-remove" type="button" aria-label={`Remove ${index === 0 ? 'main photo' : `photo ${index + 1}`}`} disabled={busy}
+                          onClick={() => {
+                            if (pending) removePendingProductImage(pending.id)
+                            else if (preview && window.confirm(`Remove ${index === 0 ? 'the main photo' : `photo ${index + 1}`} from this product?`)) deleteProductImage.mutate({ productId: preview.id, mediaId: media.id })
+                          }}><Trash2 size={14} aria-hidden="true" /></button>
+                      </div>
                     </figure>
-                  ))}
-                </div>
-              )}
-              {pendingProductImages.length > 0 && (
-                <div className="pending-product-photo-list" aria-label="Photos ready to upload">
-                  {pendingProductImages.map((image, index) => {
-                    const photoNumber = (preview?.media.length ?? 0) + index + 1
-                    return (
-                      <article className="pending-product-photo" key={image.id}>
-                        <img src={image.previewUrl} alt="" />
-                        <div>
-                          <span className="pending-photo-status">
-                            {photoNumber === 1 ? 'Main photo' : `Photo ${photoNumber}`} · ready to upload
-                          </span>
-                          <label htmlFor={`product-photo-alt-${image.id}`}>Alternative text</label>
-                          <input
-                            id={`product-photo-alt-${image.id}`}
-                            value={image.altText}
-                            maxLength={300}
-                            onChange={(event) => updatePendingProductImage(image.id, event.target.value)}
-                            placeholder="Describe the photo for accessibility"
-                            required
-                          />
-                          <button type="button" onClick={() => removePendingProductImage(image.id)}>
-                            <Trash2 size={14} /> Remove
-                          </button>
-                        </div>
-                      </article>
-                    )
                   })}
                 </div>
-              )}
+              </>}
               {canUpload ? (
                 <label className="admin-photo-dropzone" aria-label="Choose product photos">
                   <ImageUp size={20} />
@@ -3321,7 +3325,7 @@ function CatalogManagement({
               ) : (
                 <small className="field-help">Your account does not have permission to upload product photos.</small>
               )}
-              <small className="field-help">The first photo is used as the main product photo. You can add more photos before the first save.</small>
+              <small className="field-help">A ordem de apresentação é guardada ao guardar o produto, independentemente da ordem de upload.</small>
               {photoUploadMessage && <p className={`photo-upload-message${deleteProductImage.isError ? ' error' : ''}`} role={deleteProductImage.isError ? 'alert' : 'status'}>{photoUploadMessage}</p>}
             </section>
             <label htmlFor="product-keywords">Search keywords</label>
@@ -3411,48 +3415,32 @@ function CatalogManagement({
             </fieldset>
             <fieldset className="personalization-settings">
               <legend>Personalização</legend>
-              <label htmlFor="personalization-mode">O cliente pode adicionar</label>
-              <select id="personalization-mode" value={personalizationMode} onChange={(event) => setPersonalizationMode(event.target.value as typeof personalizationMode)}>
-                <option value="none">Sem personalização</option>
-                <option value="photo">Só fotografia</option>
-                <option value="text">Só texto</option>
-                <option value="photo_text">Fotografia e texto</option>
-              </select>
-              {personalizationMode !== 'none' && (
-                <>
-                  <p className="field-help">Cria uma vista para cada lado personalizável do produto. Cada vista escolhe a sua fotografia e pode ter até oito áreas de impressão.</p>
-                  <div className="personalization-view-manager">
-                    <div className="personalization-view-tabs" role="tablist" aria-label="Lados do produto">
-                      {personalizationViews.map((view, index) => {
-                        const calibratedSizes = preview?.variants.filter((variant) => view.variantReferences?.[variant.id]?.configured).length ?? 0
-                        const usesBaseMeasurement = preview?.variants.length === 1 && !Object.keys(view.variantReferences ?? {}).length
-                        const status = !view.articleReference?.configured ? 'Referência por definir' : usesBaseMeasurement ? 'Medida base confirmada' : preview?.variants.length ? `${calibratedSizes}/${preview.variants.length} tamanhos confirmados` : 'Referência confirmada'
-                        return <button key={view.id} type="button" role="tab" aria-selected={view.id === activePersonalizationView.id} className={view.id === activePersonalizationView.id ? 'active' : ''} onClick={() => selectPersonalizationView(view.id)}><span>{index + 1}</span><span className="personalization-view-tab-label">{view.label || `Vista ${index + 1}`}<small>{status}</small></span></button>
-                      })}
-                      <button type="button" className="personalization-view-add" disabled={personalizationViews.length >= 6} onClick={addPersonalizationView}>＋ Adicionar lado</button>
-                    </div>
-                    <div className="personalization-view-name-row">
-                      <label htmlFor="personalization-view-name">Nome do lado<input id="personalization-view-name" required maxLength={80} value={activePersonalizationView.label} onChange={(event) => updatePersonalizationView(activePersonalizationView.id, { label: event.target.value })} placeholder="Ex.: Frente, Costas ou Manga" /></label>
-                      <button type="button" disabled={personalizationViews.length <= 1} onClick={removeActivePersonalizationView}>Remover lado</button>
-                    </div>
-                    <p className="personalization-view-guidance">Cada lado tem fotografia, limites da peça, área de impressão e medidas por tamanho independentes. Numa camisola, usa a gola frontal na frente e a gola traseira nas costas como referência superior.</p>
+              <p className="field-help">Escolhe uma fotografia e define o que o cliente pode acrescentar. As áreas e as opções são guardadas apenas nessa fotografia.</p>
+              {personalizationMediaChoices.length ? <>
+                <div className="personalization-photo-tabs" role="tablist" aria-label="Fotografias do produto">
+                  {personalizationMediaChoices.map((media, index) => {
+                    const view = personalizationViews.find((candidate) => candidate.mediaId === media.id)
+                    const mode = view?.mode ?? 'none'
+                    const modeLabel = { none: 'Sem personalização', photo: 'Só fotografia', text: 'Só texto', photo_text: 'Fotografia e texto' }[mode]
+                    return <button key={media.id} type="button" role="tab" aria-selected={media.id === personalizationPreviewMedia?.id} className={media.id === personalizationPreviewMedia?.id ? 'active' : ''} onClick={() => selectPersonalizationPhoto(media, index)}>
+                      <img src={media.thumbnailUrl} alt={media.altText} />
+                      <span><strong>Fotografia {index + 1}{media.queued ? ' · Nova' : ''}</strong><small>{modeLabel}</small><small>{view?.printAreas.length ?? 0} {(view?.printAreas.length ?? 0) === 1 ? 'área de impressão' : 'áreas de impressão'}</small></span>
+                    </button>
+                  })}
+                </div>
+                {personalizationPreviewMedia && <>
+                  <div className="personalization-photo-options">
+                    <label htmlFor="personalization-view-name">Nome da fotografia<input id="personalization-view-name" required maxLength={80} value={activePersonalizationView.label} onChange={(event) => updatePersonalizationView(activePersonalizationView.id, { label: event.target.value })} placeholder="Ex.: Frente, Costas ou Manga" /></label>
+                    <div><label htmlFor="personalization-mode">Personalização desta fotografia</label><select id="personalization-mode" value={activePersonalizationMode} onChange={(event) => changePhotoPersonalization(event.target.value as PersonalizationMode)}>
+                      <option value="none">Sem personalização</option><option value="photo">Só fotografia</option><option value="text">Só texto</option><option value="photo_text">Fotografia e texto</option>
+                    </select></div>
                   </div>
-                  {personalizationMediaChoices.length ? <fieldset className="personalization-media-picker">
-                    <legend>Fotografia de {activePersonalizationView.label || 'esta vista'}</legend>
-                    <p>Escolhe a fotografia que representa este lado do produto. Não precisa de ser a fotografia principal.</p>
-                    <div>
-                      {personalizationMediaChoices.map((media, index) => {
-                        const selected = media.id === personalizationPreviewMedia?.id
-                        return <label key={media.id} className={selected ? 'selected' : ''}>
-                          <input type="radio" name={`personalization-preview-media-${activePersonalizationView.id}`} value={media.id} checked={selected} onChange={() => updatePersonalizationView(activePersonalizationView.id, { mediaId: media.id })} />
-                          <span className="personalization-media-thumbnail"><img src={media.thumbnailUrl} alt={media.altText} /><i>{media.queued ? 'Nova' : index === 0 ? 'Principal' : index + 1}</i></span>
-                          <span><strong>{media.queued ? 'Nova fotografia' : index === 0 ? 'Fotografia principal' : `Fotografia ${index + 1}`}</strong><small>{media.altText}</small></span>
-                          <CircleCheck aria-hidden="true" />
-                        </label>
-                      })}
-                    </div>
-                    <small>Podes usar uma fotografia nova antes de guardares. A selecionada aparece abaixo apenas com as áreas deste lado.</small>
-                  </fieldset> : <p className="field-help">Adiciona fotografias para poderes escolher a vista do editor.</p>}
+                  {activePersonalizationMode === 'none' && <p className="personalization-photo-note">Esta fotografia é apresentada na loja sem opções de personalização.</p>}
+                </>}
+              </> : <p className="field-help">Adiciona fotografias ao produto para configurares a personalização de cada uma.</p>}
+              {personalizationPreviewMedia && activePersonalizationMode !== 'none' && (
+                <>
+                  {printAreas.length > 0 && <>
                   <section className={`article-reference-settings${activePersonalizationView.articleReference?.configured ? ' confirmed' : ''}`} aria-labelledby="article-reference-title">
                     <header>
                       <span className="article-reference-icon"><Ruler aria-hidden="true" /></span>
@@ -3494,14 +3482,16 @@ function CatalogManagement({
                       </div>}
                     </>}
                   </section>
+                  </>}
                   <div className="print-area-manager">
                     <div className="print-area-tabs" role="tablist" aria-label={`Áreas de impressão de ${activePersonalizationView.label}`}>
                       {printAreas.map((area, index) => <button key={area.id} type="button" role="tab" aria-selected={area.id === activePrintArea.id} className={area.id === activePrintArea.id ? 'active' : ''} onClick={() => setActivePrintAreaId(area.id)}><span>{index + 1}</span>{area.label || `Área ${index + 1}`}</button>)}
                       <button type="button" className="print-area-add" disabled={printAreas.length >= 8} onClick={addPrintArea}>＋ Adicionar área</button>
                     </div>
+                    {printAreas.length > 0 ? <>
                     <div className="print-area-name-row">
                       <label htmlFor="print-area-name">Nome da área<input id="print-area-name" required maxLength={80} value={activePrintArea.label} onChange={(event) => updatePrintArea(activePrintArea.id, { label: event.target.value })} placeholder="Ex.: Bolso frontal" /></label>
-                      <button type="button" className="print-area-remove" disabled={printAreas.length <= 1} onClick={removeActivePrintArea}>Remover área</button>
+                      <button type="button" className="print-area-remove" onClick={removeActivePrintArea}>Remover área</button>
                     </div>
                     <div className="print-area-coordinate-grid" aria-label="Ajuste fino da área selecionada">
                       <label>Horizontal (%)<input type="number" min="0" max={100 - activePrintArea.width} step="1" value={Math.round(activePrintArea.x)} onChange={(event) => updatePrintArea(activePrintArea.id, { x: Math.max(0, Math.min(100 - activePrintArea.width, Number(event.target.value))) })} /></label>
@@ -3517,6 +3507,7 @@ function CatalogManagement({
                       </div>
                     </div>
                     {activePersonalizationView.articleReference?.configured && <small className="field-help">Estas medidas são calculadas automaticamente a partir da referência física do artigo.</small>}
+                    </> : <p className="personalization-photo-note">Esta fotografia não tem áreas de impressão. Adiciona uma área para permitir a personalização.</p>}
                   </div>
                   <div className="print-area-preview">
                     {personalizationPreviewMedia ? <div className="print-area-canvas"><img src={personalizationPreviewMedia.detailUrl} alt={`Pré-visualização das áreas sobre ${personalizationPreviewMedia.altText}`} />
@@ -3526,7 +3517,7 @@ function CatalogManagement({
                   </div>
                 </>
               )}
-              {(personalizationMode === 'text' || personalizationMode === 'photo_text') && (
+              {personalizationPreviewMedia && (activePersonalizationMode === 'text' || activePersonalizationMode === 'photo_text') && (
                 <div className="text-personalization-settings">
                   <label>Limite de caracteres<input type="number" min="1" max="500" value={textMaxCharacters} onChange={(event) => setTextMaxCharacters(Number(event.target.value))} /></label>
                   <div className="print-area-fields">
@@ -3564,11 +3555,11 @@ function CatalogManagement({
           >
             ×
           </button>
-          {preview.media[0]?.detail_url ? (
+          {personalizationMediaChoices[0] ? (
             <img
               className="preview-art preview-image"
-              src={adminProductMediaUrl(preview.media[0].id, 'detail')}
-              alt={preview.media[0]?.alt_text ?? ''}
+              src={personalizationMediaChoices[0].detailUrl}
+              alt={personalizationMediaChoices[0].altText}
             />
           ) : (
             <div className="preview-art" aria-hidden="true">

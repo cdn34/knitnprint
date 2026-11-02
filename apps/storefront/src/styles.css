@@ -3042,6 +3042,19 @@ html[lang='pt'] .home-section-title--categories h2 {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1rem;
 }
+.b2b-form-fields {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 1.2rem;
+  border: 0;
+}
+.b2b-form-error { margin: 0; color: #9c3044; font-size: .8rem; line-height: 1.6; }
+.b2b-success { align-content: start; }
+.b2b-success > svg { color: var(--knit-dark); }
+.b2b-success h3 { margin: 0; font: 500 2rem/1.1 var(--display); }
+.b2b-success p { margin: 0; color: var(--ink-muted); font-size: .86rem; line-height: 1.8; }
 .b2b-form label {
   display: grid;
   gap: 0.55rem;
@@ -3181,7 +3194,7 @@ html[lang='pt'] .home-section-title--categories h2 {
   margin-bottom: 0;
 }
 .contextual-faqs--b2b {
-  margin-top: 0;
+  margin-bottom: 0;
 }
 .product-page .contextual-faqs--product {
   grid-column: 1 / -1;

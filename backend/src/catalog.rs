@@ -70,6 +70,7 @@ pub struct PersonalizationConfig {
     #[serde(default = "default_print_areas")]
     pub print_areas: Value,
     #[serde(default)]
+    /// Product photographs with independent mode and print areas; an empty area list disables printing on that photograph.
     pub views: Option<Value>,
     pub text_max_characters: i32,
     pub text_min_size: i32,
@@ -150,6 +151,12 @@ pub struct ProductMedia {
     pub thumbnail_url: String,
     pub card_url: String,
     pub detail_url: String,
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct ReorderProductMediaRequest {
+    /// Every currently displayed product photo, in the desired order. The first becomes the main photo.
+    pub media_ids: Vec<Uuid>,
 }
 
 #[derive(FromRow)]
@@ -570,6 +577,87 @@ pub async fn delete(
 }
 
 #[utoipa::path(
+    put,
+    path = "/api/admin/products/{product_id}/media/order",
+    params(("product_id" = Uuid, Path)),
+    tag = "admin catalog",
+    request_body = ReorderProductMediaRequest,
+    responses((status = 200, body = Product), (status = 401, body = ErrorBody),
+        (status = 403, body = ErrorBody), (status = 404, body = ErrorBody),
+        (status = 409, body = ErrorBody), (status = 422, body = ErrorBody), (status = 503, body = ErrorBody))
+)]
+pub async fn reorder_media(
+    State(state): State<AppState>,
+    actor: AuthenticatedStaff,
+    Path(product_id): Path<Uuid>,
+    Json(input): Json<ReorderProductMediaRequest>,
+) -> Response {
+    if let Err(response) = require_capability(&actor, CATALOG_WRITE) {
+        return response.into_response();
+    }
+    let requested: BTreeSet<_> = input.media_ids.iter().copied().collect();
+    if requested.len() != input.media_ids.len() || input.media_ids.len() > 1000 {
+        return invalid_input();
+    }
+    let Some(pool) = state.database else {
+        return unavailable();
+    };
+    let mut tx = match pool.begin().await {
+        Ok(tx) => tx,
+        Err(_) => return unavailable(),
+    };
+    match sqlx::query_scalar::<_, Uuid>("SELECT id FROM products WHERE id = $1 FOR UPDATE")
+        .bind(product_id)
+        .fetch_optional(&mut *tx)
+        .await
+    {
+        Ok(Some(_)) => {}
+        Ok(None) => return not_found(),
+        Err(_) => return unavailable(),
+    }
+    let current = match sqlx::query_scalar::<_, Uuid>(r#"
+        SELECT pm.media_asset_id FROM product_media pm
+        JOIN media_assets asset ON asset.id = pm.media_asset_id
+        WHERE pm.product_id = $1 AND asset.status = 'ready'
+          AND (SELECT count(*) FROM media_variants variant WHERE variant.media_asset_id = asset.id) = 3
+        FOR UPDATE OF pm
+    "#).bind(product_id).fetch_all(&mut *tx).await {
+        Ok(current) => current.into_iter().collect::<BTreeSet<_>>(),
+        Err(_) => return unavailable(),
+    };
+    if current != requested {
+        return (
+            StatusCode::CONFLICT,
+            Json(ErrorBody::new(
+                "product_media_order_changed",
+                "The product photos have changed. Reload them before saving their order.",
+            )),
+        )
+            .into_response();
+    }
+    if sqlx::query(
+        r#"
+        UPDATE product_media pm SET position = requested.position - 1
+        FROM unnest($2::uuid[]) WITH ORDINALITY AS requested(media_id, position)
+        WHERE pm.product_id = $1 AND pm.media_asset_id = requested.media_id
+    "#,
+    )
+    .bind(product_id)
+    .bind(&input.media_ids)
+    .execute(&mut *tx)
+    .await
+    .is_err()
+        || audit(&mut tx, actor.id, "product.media.reorder", product_id, None)
+            .await
+            .is_err()
+        || tx.commit().await.is_err()
+    {
+        return unavailable();
+    }
+    product_by_id(&pool, product_id).await
+}
+
+#[utoipa::path(
     delete,
     path = "/api/admin/products/{product_id}/media/{media_id}",
     params(("product_id" = Uuid, Path), ("media_id" = Uuid, Path)),
@@ -598,6 +686,15 @@ pub async fn delete_media(
         Ok(tx) => tx,
         Err(_) => return unavailable(),
     };
+    match sqlx::query_scalar::<_, Uuid>("SELECT id FROM products WHERE id = $1 FOR UPDATE")
+        .bind(product_id)
+        .fetch_optional(&mut *tx)
+        .await
+    {
+        Ok(Some(_)) => {}
+        Ok(None) => return not_found(),
+        Err(_) => return unavailable(),
+    }
     match sqlx::query_scalar::<_, Uuid>(
         r#"
         SELECT asset.id
@@ -1585,7 +1682,7 @@ fn valid_personalization_views(value: &Value) -> bool {
     let Some(views) = value.as_array() else {
         return false;
     };
-    if views.is_empty() || views.len() > 6 {
+    if views.is_empty() || views.len() > 100 {
         return false;
     }
     let mut view_ids = BTreeSet::new();
@@ -1619,6 +1716,9 @@ fn valid_personalization_views(value: &Value) -> bool {
             && !label.is_empty()
             && label.len() <= 80
             && media_valid
+            && view
+                .get("mode")
+                .is_none_or(|mode| mode.as_str().is_some_and(valid_personalization_mode))
             && valid_print_areas(print_areas)
             && valid_article_reference(view.get("article_reference"), print_areas)
             && valid_variant_references(
@@ -1744,22 +1844,63 @@ fn valid_article_reference(reference: Option<&Value>, print_areas: &Value) -> bo
     })
 }
 
+fn valid_personalization_mode(mode: &str) -> bool {
+    matches!(mode, "none" | "photo" | "text" | "photo_text")
+}
+
 fn normalized_personalization_views(config: &PersonalizationConfig) -> Value {
-    config.views.clone().unwrap_or_else(|| {
+    let mut views = config.views.clone().unwrap_or_else(|| {
         serde_json::json!([{
             "id": "view-front",
             "label": "Frente",
             "media_id": config.preview_media_id,
             "print_areas": config.print_areas
         }])
-    })
+    });
+    if let Some(views) = views.as_array_mut() {
+        for view in views {
+            if view.get("mode").is_none() {
+                view["mode"] = Value::String(config.mode.clone());
+            }
+        }
+    }
+    views
+}
+
+fn combined_personalization_mode(views: &Value) -> &'static str {
+    let mut photo = false;
+    let mut text = false;
+    for view in views.as_array().into_iter().flatten() {
+        if view
+            .get("print_areas")
+            .and_then(Value::as_array)
+            .is_none_or(|areas| areas.is_empty())
+        {
+            continue;
+        }
+        match view.get("mode").and_then(Value::as_str) {
+            Some("photo") => photo = true,
+            Some("text") => text = true,
+            Some("photo_text") => {
+                photo = true;
+                text = true;
+            }
+            _ => {}
+        }
+    }
+    match (photo, text) {
+        (true, true) => "photo_text",
+        (true, false) => "photo",
+        (false, true) => "text",
+        _ => "none",
+    }
 }
 
 fn valid_print_areas(value: &Value) -> bool {
     let Some(areas) = value.as_array() else {
         return false;
     };
-    if areas.is_empty() || areas.len() > 8 {
+    if areas.len() > 8 {
         return false;
     }
     let mut ids = BTreeSet::new();
@@ -1855,7 +1996,7 @@ async fn upsert_personalization(
         "#,
     )
     .bind(product_id)
-    .bind(&config.mode)
+    .bind(combined_personalization_mode(&views))
     .bind(config.preview_media_id)
     .bind(config.area_x)
     .bind(config.area_y)
@@ -1996,6 +2137,26 @@ fn unavailable() -> Response {
 #[cfg(test)]
 mod personalization_calibration_tests {
     use super::valid_personalization_views;
+
+    #[test]
+    fn photographs_keep_independent_modes_and_can_have_no_print_areas() {
+        let area = super::default_print_areas();
+        let views = serde_json::json!([
+            {"id":"front", "label":"Frente", "mode":"text", "print_areas":area},
+            {"id":"back", "label":"Costas", "mode":"photo", "print_areas":[{"id":"back-area", "label":"Costas", "x":1000, "y":1000, "width":5000, "height":5000}]},
+            {"id":"detail", "label":"Detalhe", "mode":"none", "print_areas":[]}
+        ]);
+        assert!(valid_personalization_views(&views));
+        assert_eq!(super::combined_personalization_mode(&views), "photo_text");
+        let mut removed = views.clone();
+        removed[0]["print_areas"] = serde_json::json!([]);
+        assert_eq!(super::combined_personalization_mode(&removed), "photo");
+        removed[1]["mode"] = serde_json::json!("none");
+        assert!(valid_personalization_views(&removed));
+        assert_eq!(super::combined_personalization_mode(&removed), "none");
+        removed[0]["mode"] = serde_json::json!("unsupported");
+        assert!(!valid_personalization_views(&removed));
+    }
 
     #[test]
     fn calibrated_article_reference_must_contain_areas_and_share_the_same_scale() {

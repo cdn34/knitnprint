@@ -1,8 +1,8 @@
 use utoipa::{OpenApi, openapi::OpenApi as OpenApiDocument};
 
 use crate::{
-    admin_notifications, auth, cancellations, carts, catalog, customer_auth, customers, dashboard,
-    delivery_rates, discounts, error, feedback, fulfillment, health, inventory, media,
+    admin_notifications, auth, b2b, cancellations, carts, catalog, customer_auth, customers,
+    dashboard, delivery_rates, discounts, error, feedback, fulfillment, health, inventory, media,
     notifications, orders, payments, settings, staff,
 };
 
@@ -14,6 +14,12 @@ use crate::{
         description = "Authoritative API for the KnitNPrint storefront and admin."
     ),
     paths(
+        b2b::create,
+        b2b::list,
+        b2b::detail,
+        b2b::delete,
+        b2b::update_status,
+        b2b::attachment,
         health::health,
         health::ready,
         auth::login,
@@ -69,6 +75,7 @@ use crate::{
         catalog::update,
         catalog::delete,
         catalog::delete_media,
+        catalog::reorder_media,
         catalog::change_status,
         catalog::category_list,
         catalog::category_create,
@@ -108,6 +115,10 @@ use crate::{
         staff::disable
     ),
     components(schemas(
+        b2b::CreateB2bRequest,
+        b2b::B2bReceipt,
+        b2b::B2bRequest,
+        b2b::UpdateB2bStatus,
         feedback::FeedbackSettings,
         health::Health,
         error::ErrorBody,
@@ -192,6 +203,7 @@ use crate::{
         catalog::Category,
         catalog::Product,
         catalog::ProductMedia,
+        catalog::ReorderProductMediaRequest,
         catalog::PersonalizationConfig,
         catalog::CreateProductRequest,
         catalog::CreateVariantRequest,

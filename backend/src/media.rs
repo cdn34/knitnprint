@@ -344,6 +344,14 @@ async fn complete_upload(
         Err(_) => return unavailable(),
     };
     let position: i32 = if let Some((product_id, _)) = &attachment {
+        match sqlx::query_scalar::<_, Uuid>("SELECT id FROM products WHERE id = $1 FOR UPDATE")
+            .bind(product_id)
+            .fetch_optional(&mut *transaction)
+            .await
+        {
+            Ok(Some(_)) => {}
+            _ => return unavailable(),
+        }
         match sqlx::query_scalar(
             "SELECT COALESCE(max(position) + 1, 0) FROM product_media WHERE product_id = $1",
         )

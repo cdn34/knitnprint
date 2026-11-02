@@ -150,7 +150,9 @@ export function StorefrontFooter() {
           <a href="mailto:support@knitnprint.com">support@knitnprint.com</a>
           <a
             className="footer-social-link"
-            href="/contact#social-media"
+            href="https://www.instagram.com/_knitnprint_/"
+            target="_blank"
+            rel="noopener noreferrer"
             aria-label="Instagram"
           >
             <svg

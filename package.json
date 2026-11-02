@@ -15,6 +15,7 @@
     "build": "npm run build --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
+    "check:local": "sh scripts/check-local.sh",
     "test:e2e": "playwright test",
     "test:e2e:admin": "playwright test --config=playwright.admin.config.ts",
     "assets:brand": "node scripts/generate-brand-assets.mjs",

@@ -9,6 +9,7 @@ use knitnprint_api::{
     AppState, app,
     auth::hash_password,
     email::EmailService,
+    notifications::deliver_due,
     notifications::deliver_due_with_storage,
     payments::{
         PaymentProvider, PaymentProviderError, PaymentService, ProviderCancelFuture,
@@ -719,13 +720,16 @@ async fn checkout_snapshots_reserves_and_manual_payment_are_idempotent() {
     )
     .await;
     assert_eq!(fulfillment_email.status(), StatusCode::NOT_FOUND);
-    for (locale, title, total) in [
-        ("en", "Your order is confirmed.", "€81.91"),
-        ("pt", "A tua encomenda está confirmada.", "81,91 €"),
-        ("es", "Tu pedido está confirmado.", "81,91 €"),
-    ] {
-        sqlx::query("UPDATE orders SET email_locale=$2, customer_first_name='<img src=x onerror=alert(1)>' WHERE id=$1")
-            .bind(Uuid::parse_str(order_id).unwrap()).bind(locale).execute(&pool).await.unwrap();
+    // Locale variants are covered by separate checkouts below: the saved
+    // language can no longer be changed on an existing order.
+    for (locale, title, total) in [("en", "Your order is confirmed.", "€81.91")] {
+        sqlx::query(
+            "UPDATE orders SET customer_first_name='<img src=x onerror=alert(1)>' WHERE id=$1",
+        )
+        .bind(Uuid::parse_str(order_id).unwrap())
+        .execute(&pool)
+        .await
+        .unwrap();
         sqlx::query("UPDATE notification_jobs SET status='pending', sent_at=NULL, next_attempt_at=now() WHERE order_id=$1")
             .bind(Uuid::parse_str(order_id).unwrap()).execute(&pool).await.unwrap();
         assert_eq!(
@@ -2241,8 +2245,9 @@ impl knitnprint_api::object_storage::StorageBackend for PreviewStorage {
         knitnprint_api::object_storage::StoredObject,
         knitnprint_api::object_storage::StorageError,
     > {
-        assert_eq!(
-            key, "tests/saved-preview.png",
+        assert!(
+            key == "tests/saved-preview.png"
+                || (key.starts_with("tests/saved-preview-") && key.ends_with(".png")),
             "worker must read the saved composite, not original customer photos"
         );
         Ok(knitnprint_api::object_storage::StoredObject {
@@ -2954,4 +2959,473 @@ async fn checkout_requires_review_of_changed_address_and_total() {
     assert_eq!(replay.status(), StatusCode::OK);
     assert_eq!(response_json(replay).await["id"], order["id"]);
     cleanup_regression_database(admin, pool, schema).await;
+}
+
+#[tokio::test]
+async fn checkout_saves_locale_and_sends_localized_branded_confirmation_once() {
+    let Ok(url) = env::var("DATABASE_URL") else {
+        eprintln!("skipping PostgreSQL integration test: DATABASE_URL not set");
+        return;
+    };
+    let schema = format!("localized_checkout_{}", Uuid::new_v4().simple());
+    let admin = PgPool::connect(&url).await.unwrap();
+    sqlx::query(&format!("CREATE SCHEMA \"{schema}\""))
+        .execute(&admin)
+        .await
+        .unwrap();
+    let pool = isolated_pool(&url, &schema).await;
+    sqlx::migrate!("../migrations").run(&pool).await.unwrap();
+    let variant = insert_product(&pool).await;
+    insert_owner(&pool).await;
+    create_verified_customer(&pool).await;
+    let email = EmailService::development("https://shop.example.test");
+    let storage =
+        knitnprint_api::object_storage::ObjectStorage::from_backend(Arc::new(PreviewStorage));
+    let router = app(AppState {
+        database: Some(pool.clone()),
+        email: email.clone(),
+        media_storage: Some(storage.clone()),
+        manual_payments_enabled: true,
+        ..AppState::default()
+    });
+    let owner = login(&router).await;
+    for (index, language, expected, heading) in [
+        (0, "pt", "pt", "A tua encomenda está confirmada."),
+        (1, "es", "es", "Tu pedido está confirmado."),
+        (2, "en", "en", "Your order is confirmed."),
+    ] {
+        let cookie = response_cookie(&request(&router, "GET", "/api/cart", None, None, None).await);
+        let added = request(
+            &router,
+            "POST",
+            "/api/cart/items",
+            Some(&cookie),
+            Some(json!({"variant_id":variant,"quantity":1})),
+            Some(&format!("localized-add-{index}-0001")),
+        )
+        .await;
+        assert_eq!(added.status(), StatusCode::CREATED);
+        let delivered = request(
+            &router,
+            "POST",
+            "/api/cart/delivery",
+            Some(&cookie),
+            Some(delivery_fixture()),
+            Some(&format!("localized-delivery-{index}-0001")),
+        )
+        .await;
+        assert_eq!(response_json(delivered).await["checkout_ready"], true);
+        let preview_ids = [Uuid::new_v4(), Uuid::new_v4()];
+        if index == 0 {
+            let cart_id: Uuid = sqlx::query_scalar("SELECT id FROM carts WHERE token_hash=$1")
+                .bind(
+                    Sha256::digest(cookie.strip_prefix("knitnprint_cart=").unwrap().as_bytes())
+                        .as_slice(),
+                )
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+            for id in preview_ids {
+                sqlx::query("INSERT INTO media_assets (id,object_key,content_type,byte_size,status,scan_status,scanned_at,personalization_cart_id) VALUES ($1,$2,'image/png',100,'ready','clean',now(),$3)")
+                    .bind(id).bind(format!("private-preview-{id}.png")).bind(cart_id).execute(&pool).await.unwrap();
+                sqlx::query("INSERT INTO media_variants (media_asset_id,kind,object_key,content_type,width,height,byte_size) VALUES ($1,'card',$2,'image/png',96,96,100)").bind(id).bind(format!("tests/saved-preview-{id}.png")).execute(&pool).await.unwrap();
+            }
+            sqlx::query("UPDATE cart_lines SET customization=$2,personalization_previews=$3 WHERE cart_id=$1")
+                .bind(cart_id).bind(json!({"version":7,"areas":[{"view_id":"front","view_label":"Front","text":{"content":"<script>Maria & João</script>"}},{"view_id":"back","view_label":"Back","text":{"content":"Made for you"}}],"previews":[{"view_id":"front","view_label":"Front","media_id":preview_ids[0]},{"view_id":"back","view_label":"Back","media_id":preview_ids[1]}]}))
+                .bind(json!([{"view_id":"front","view_label":"Front","media_id":preview_ids[0]},{"view_id":"back","view_label":"Back","media_id":preview_ids[1]}])).execute(&pool).await.unwrap();
+        }
+        let review =
+            response_json(request(&router, "GET", "/api/cart", Some(&cookie), None, None).await)
+                .await;
+        let key = format!("localized-order-{index}-0001");
+        let created = request(
+            &router,
+            "POST",
+            "/api/orders",
+            Some(&cookie),
+            Some(json!({"payment_method":"manual","locale":language,"checkout_quote":review["checkout_quote"]})),
+            Some(&key),
+        )
+        .await;
+        let status = created.status();
+        let order = response_json(created).await;
+        assert_eq!(status, StatusCode::CREATED, "{order}");
+        assert_eq!(order["shipping_minor"], 0);
+        assert_eq!(order["total_minor"], 3200);
+        let id = Uuid::parse_str(order["id"].as_str().unwrap()).unwrap();
+        let saved: String = sqlx::query_scalar("SELECT email_locale FROM orders WHERE id=$1")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(saved, expected);
+        let replay = request(
+            &router,
+            "POST",
+            "/api/orders",
+            Some(&cookie),
+            Some(json!({"payment_method":"manual","locale":"es","checkout_quote":review["checkout_quote"]})),
+            Some(&key),
+        )
+        .await;
+        assert_eq!(replay.status(), StatusCode::OK);
+        assert_eq!(response_json(replay).await["id"], order["id"]);
+        assert!(
+            sqlx::query("UPDATE orders SET email_locale=$2 WHERE id=$1")
+                .bind(id)
+                .bind(if expected == "es" { "pt" } else { "es" })
+                .execute(&pool)
+                .await
+                .is_err()
+        );
+        let pay_path = format!("/api/admin/orders/{id}/manual-payment");
+        for _ in 0..2 {
+            assert_eq!(
+                request(
+                    &router,
+                    "POST",
+                    &pay_path,
+                    Some(&owner),
+                    Some(json!({"reason":"Confirmed test payment"})),
+                    None
+                )
+                .await
+                .status(),
+                StatusCode::OK
+            );
+        }
+        // Payment sends the confirmation immediately, including saved previews.
+        // The worker must not send it a second time.
+        assert_eq!(
+            knitnprint_api::notifications::deliver_due_with_storage(
+                &pool,
+                &email,
+                25,
+                Some(&storage)
+            )
+            .await
+            .unwrap()
+            .sent,
+            0
+        );
+        assert_eq!(deliver_due(&pool, &email, 25).await.unwrap().sent, 0);
+        let mailbox = response_json(
+            request(
+                &router,
+                "GET",
+                "/api/development/emails/latest?to=order%40example.com&kind=order_confirmation",
+                None,
+                None,
+                None,
+            )
+            .await,
+        )
+        .await;
+        let html = mailbox["html"].as_str().unwrap();
+        assert!(html.contains(heading));
+        assert!(html.contains(&format!("lang=\"{expected}\"")));
+        assert!(html.contains("cid:wordmark@knitnprint"));
+        assert!(html.contains("#f7f3ef"));
+        assert!(html.contains("support@knitnprint.com"));
+        assert!(html.contains(&format!("order_id={id}")));
+        assert!(!html.contains("manual") && !html.contains("progress"));
+        assert!(!html.contains("<script>"));
+        if index == 0 {
+            assert!(html.contains("&lt;script&gt;Maria &amp; João&lt;/script&gt;"));
+            assert_eq!(
+                order["lines"][0]["customization_media_asset_ids"],
+                json!([]),
+                "email previews must not be treated as production originals"
+            );
+            assert!(html.contains("alt=\"Front\"") && html.contains("alt=\"Back\""));
+            let retained: i64 = sqlx::query_scalar("SELECT count(*) FROM order_line_personalization_media retained JOIN order_lines line ON line.id=retained.order_line_id WHERE line.order_id=$1")
+                .bind(id).fetch_one(&pool).await.unwrap();
+            assert_eq!(retained, 2);
+        }
+        if let Ok(directory) = env::var("KNITNPRINT_EMAIL_PREVIEW_DIR") {
+            std::fs::write(
+                std::path::Path::new(&directory).join(format!("confirmation-{expected}.html")),
+                html,
+            )
+            .unwrap();
+        }
+        assert!(mailbox["text"].as_str().unwrap().contains(heading));
+    }
+    pool.close().await;
+    sqlx::query(&format!("DROP SCHEMA \"{schema}\" CASCADE"))
+        .execute(&admin)
+        .await
+        .unwrap();
+    admin.close().await;
+}
+
+#[tokio::test]
+async fn checkout_requires_a_ready_cart_and_historical_manual_orders_remain_manageable() {
+    let Ok(url) = env::var("DATABASE_URL") else {
+        return;
+    };
+    let schema = format!("checkout_retirement_{}", Uuid::new_v4().simple());
+    let admin = PgPoolOptions::new()
+        .max_connections(1)
+        .connect(&url)
+        .await
+        .unwrap();
+    sqlx::query(&format!("CREATE SCHEMA \"{schema}\" "))
+        .execute(&admin)
+        .await
+        .unwrap();
+    let pool = isolated_pool(&url, &schema).await;
+    sqlx::migrate!("../migrations").run(&pool).await.unwrap();
+    let variant_id = insert_product(&pool).await;
+    insert_owner(&pool).await;
+    insert_order_reader(&pool).await;
+    let email = EmailService::development("http://127.0.0.1:3000");
+    let router = app(AppState {
+        database: Some(pool.clone()),
+        email: email.clone(),
+        manual_payments_enabled: true,
+        payments: PaymentService::with_provider(Arc::new(FakeStripe), "whsec_historical"),
+        ..AppState::default()
+    });
+    create_verified_customer(&pool).await;
+    for method in ["manual", "stripe"] {
+        let rejected = request(
+            &router,
+            "POST",
+            "/api/orders",
+            None,
+            Some(json!({"payment_method":method,"checkout_quote":"no-quote"})),
+            Some("checkout-paused-0001"),
+        )
+        .await;
+        assert_eq!(rejected.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(
+            response_json(rejected).await["error"]["code"],
+            "cart_not_ready"
+        );
+    }
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM orders")
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        0
+    );
+    let options =
+        response_json(request(&router, "GET", "/api/payments/options", None, None, None).await)
+            .await;
+    assert_eq!(
+        options,
+        json!({"stripe":true,"manual":true,"checkout_suspended":false})
+    );
+    let owner = login(&router).await;
+    for path in [
+        "/api/admin/shipping-packages",
+        "/api/cart/shipping-quotes",
+        "/api/cart/shipping-method",
+    ] {
+        assert_eq!(
+            request(&router, "POST", path, Some(&owner), Some(json!({})), None)
+                .await
+                .status(),
+            StatusCode::NOT_FOUND
+        );
+    }
+    let settings = response_json(
+        request(
+            &router,
+            "GET",
+            "/api/admin/settings",
+            Some(&owner),
+            None,
+            None,
+        )
+        .await,
+    )
+    .await;
+    assert!(settings.get("shipping_zones").is_none());
+    assert_eq!(settings["checkout_suspended"], false);
+    assert!(settings["integrations"].get("packlink").is_none());
+    let updated = request(&router,"POST","/api/admin/settings",Some(&owner),Some(json!({
+        "store_name":"KnitNPrint","support_email":"geral@knitnprint.com","currency":"EUR","tax_enabled":false,
+        "tax_rules":[],"reason":"Update identity without the retired delivery configuration"
+    })),None).await;
+    assert_eq!(updated.status(), StatusCode::OK);
+    let created = request(&router,"POST","/api/admin/products",Some(&owner),Some(json!({
+        "title":"No packaging required","slug":"no-packaging-required","description":"Product without obsolete delivery fields",
+        "variants":[{"title":"Default","sku":"NO-DELIVERY-PROFILE","price_minor":2500,"currency":"EUR","option_values":{},"available_quantity":5}]
+    })),None).await;
+    assert_eq!(created.status(), StatusCode::CREATED);
+    let product = response_json(created).await;
+    assert!(product.get("shipping").is_none());
+    let edited = request(&router,"PUT",&format!("/api/admin/products/{}",product["id"].as_str().unwrap()),Some(&owner),Some(json!({
+        "title":"Edited without packaging","slug":"no-packaging-required","description":"Updated",
+        "sku":"NO-DELIVERY-PROFILE","price_minor":2700,"currency":"EUR","available_quantity":8
+    })),None).await;
+    assert_eq!(edited.status(), StatusCode::OK);
+    assert!(response_json(edited).await.get("shipping").is_none());
+
+    let (_, id) = create_historical_order(
+        &pool,
+        &router,
+        variant_id,
+        "historical-manual",
+        None,
+        "manual",
+    )
+    .await;
+    let pay_path = format!("/api/admin/orders/{id}/manual-payment");
+    let reader = login_as(
+        &router,
+        "orders-reader@test.invalid",
+        "integration-test-passphrase",
+    )
+    .await;
+    assert_eq!(
+        request(
+            &router,
+            "POST",
+            &pay_path,
+            Some(&reader),
+            Some(json!({"reason":"Unauthorized payment"})),
+            None
+        )
+        .await
+        .status(),
+        StatusCode::FORBIDDEN
+    );
+    let paid = request(
+        &router,
+        "POST",
+        &pay_path,
+        Some(&owner),
+        Some(json!({"reason":"Historical payment received"})),
+        None,
+    )
+    .await;
+    assert_eq!(paid.status(), StatusCode::OK);
+    let paid = response_json(paid).await;
+    assert_eq!(paid["payment_status"], "paid");
+    assert_eq!(paid["total_minor"], 6400);
+    assert_eq!(
+        request(
+            &router,
+            "POST",
+            &pay_path,
+            Some(&owner),
+            Some(json!({"reason":"Historical payment received"})),
+            None
+        )
+        .await
+        .status(),
+        StatusCode::OK
+    );
+    assert_eq!(deliver_due(&pool, &email, 25).await.unwrap().sent, 0);
+    let fulfilled = request(&router,"POST",&format!("/api/admin/orders/{id}/fulfillments"),Some(&owner),Some(json!({
+        "carrier":"CTT","tracking_number":"HIST-ONE","tracking_url":"","reason":"Historical order dispatched",
+        "lines":[{"order_line_id":paid["lines"][0]["id"],"quantity":1}]
+    })),Some("historical-fulfillment-0001")).await;
+    assert_eq!(fulfilled.status(), StatusCode::CREATED);
+    assert_eq!(
+        response_json(fulfilled).await["fulfillment_status"],
+        "partially_fulfilled"
+    );
+    let refunded = request(&router,"POST",&format!("/api/admin/orders/{id}/refunds"),Some(&owner),Some(json!({
+        "mode":"full","lines":[],"restock":true,"reason":"Historical return accepted","internal_note":"Historical operations remain available"
+    })),Some("historical-refund-0001")).await;
+    assert_eq!(refunded.status(), StatusCode::OK);
+    assert_eq!(response_json(refunded).await["payment_status"], "refunded");
+    let quantities: (i64,i64,i64) = sqlx::query_as("SELECT available_quantity,reserved_quantity,committed_quantity FROM inventory_items WHERE variant_id=$1")
+        .bind(variant_id).fetch_one(&pool).await.unwrap();
+    assert_eq!(quantities, (5, 0, 0));
+    pool.close().await;
+    sqlx::query(&format!("DROP SCHEMA \"{schema}\" CASCADE"))
+        .execute(&admin)
+        .await
+        .unwrap();
+}
+
+async fn create_historical_order(
+    pool: &PgPool,
+    router: &axum::Router,
+    variant_id: Uuid,
+    suffix: &str,
+    cookie: Option<String>,
+    provider: &str,
+) -> (String, String) {
+    let cookie = match cookie {
+        Some(cookie) => cookie,
+        None => response_cookie(&request(router, "GET", "/api/cart", None, None, None).await),
+    };
+    let added = request(
+        router,
+        "POST",
+        "/api/cart/items",
+        Some(&cookie),
+        Some(json!({"variant_id":variant_id,"quantity":2})),
+        Some(&format!("fixture-add-{suffix}-0001")),
+    )
+    .await;
+    assert_eq!(added.status(), StatusCode::CREATED);
+    let cart = response_json(added).await;
+    let cart_id = Uuid::parse_str(cart["id"].as_str().unwrap()).unwrap();
+    let delivered = request(
+        router,
+        "POST",
+        "/api/cart/delivery",
+        Some(&cookie),
+        Some(delivery_fixture()),
+        Some(&format!("fixture-delivery-{suffix}-0001")),
+    )
+    .await;
+    assert_eq!(delivered.status(), StatusCode::OK);
+    let id = Uuid::now_v7();
+    let payment_id = Uuid::now_v7();
+    let mut tx = pool.begin().await.unwrap();
+    sqlx::query(r#"INSERT INTO orders (id,order_number,cart_id,customer_id,checkout_idempotency_hash,currency,
+        subtotal_minor,total_minor,customer_email,customer_first_name,customer_last_name,shipping_recipient_name,
+        shipping_line1,shipping_city,shipping_postal_code,shipping_country_code)
+        SELECT $1,'HIST-' || $1::text,cart.id,customer.id,$3,'EUR',6400,6400,customer.email,customer.first_name,
+        customer.last_name,'Ada Loom','8 Timeline Lane','Lisbon','1000-008','PT'
+        FROM carts cart JOIN customers customer ON customer.id=cart.customer_id WHERE cart.id=$2"#)
+        .bind(id).bind(cart_id).bind(Sha256::digest(suffix.as_bytes()).to_vec()).execute(&mut *tx).await.unwrap();
+    sqlx::query("INSERT INTO order_lines (id,order_id,product_id,variant_id,product_title,variant_title,sku,quantity,unit_price_minor,line_total_minor,currency,position) SELECT $1,$2,product_id,id,'Order Loom',title,sku,2,3200,6400,currency,0 FROM product_variants WHERE id=$3")
+        .bind(Uuid::now_v7()).bind(id).bind(variant_id).execute(&mut *tx).await.unwrap();
+    sqlx::query("INSERT INTO order_shipping_snapshots (order_id,zone_name,method_name,country_code,amount_minor,currency) VALUES ($1,'Historical zone','Historical delivery','PT',0,'EUR')")
+        .bind(id).execute(&mut *tx).await.unwrap();
+    sqlx::query("INSERT INTO order_tax_snapshots (order_id,rule_name,country_code,rate_basis_points,taxable_amount_minor,amount_minor,behavior) VALUES ($1,'Tax disabled','PT',0,6400,0,'disabled')")
+        .bind(id).execute(&mut *tx).await.unwrap();
+    sqlx::query("INSERT INTO order_payments (id,order_id,provider,amount_minor,currency) VALUES ($1,$2,$3,6400,'EUR')")
+        .bind(payment_id).bind(id).bind(provider).execute(&mut *tx).await.unwrap();
+    if provider == "stripe" {
+        let session = format!("cs_test_{}", id.simple());
+        let attempt_id = Uuid::now_v7();
+        sqlx::query("INSERT INTO payment_attempts (id,order_payment_id,attempt_number,provider,provider_payment_id,status,checkout_url,expires_at) VALUES ($1,$2,1,'stripe',$3,'pending',$4,now()+interval '30 minutes')")
+            .bind(attempt_id).bind(payment_id).bind(&session).bind(format!("https://checkout.stripe.test/{id}")).execute(&mut *tx).await.unwrap();
+        sqlx::query("UPDATE order_payments SET provider_payment_id=$2 WHERE id=$1")
+            .bind(payment_id)
+            .bind(&session)
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO payment_status_events (id,order_payment_id,payment_attempt_id,provider,event_type,provider_status) VALUES ($1,$2,$3,'stripe','payment.checkout_created','pending')")
+            .bind(Uuid::now_v7()).bind(payment_id).bind(attempt_id).execute(&mut *tx).await.unwrap();
+    }
+    sqlx::query("INSERT INTO order_events (id,order_id,event_type,title) VALUES ($1,$2,'order.created','Historical order created')")
+        .bind(Uuid::now_v7()).bind(id).execute(&mut *tx).await.unwrap();
+    knitnprint_api::inventory::reserve_in_transaction(
+        &mut tx,
+        variant_id,
+        2,
+        "Historical order reservation",
+    )
+    .await
+    .unwrap();
+    sqlx::query("UPDATE carts SET status='converted' WHERE id=$1")
+        .bind(cart_id)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    (cookie, id.to_string())
 }

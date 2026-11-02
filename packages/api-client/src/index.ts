@@ -2,6 +2,10 @@ export type { DeliveryRate, DeliveryRatesSettings, DeliveryQuote, UpdateDelivery
 import type { DeliveryRatesSettings, DeliveryQuote, UpdateDeliveryRatesRequest, TestDeliveryRateRequest } from './schema'
 
 export type {
+  B2bRequest,
+  B2bReceipt,
+  CreateB2bRequest,
+  UpdateB2bStatus,
   AddCartItemRequest,
   AdminProductFeedback,
   FeedbackSettings,
@@ -83,6 +87,7 @@ export type {
   ProductFeedback,
   ProductFeedbackSummary,
   ProductMedia,
+  ReorderProductMediaRequest,
   ReorderCategoriesRequest,
   ReplyToProductFeedbackRequest,
   Refund,
@@ -105,6 +110,10 @@ export type {
 } from './schema'
 
 import type {
+  B2bRequest,
+  B2bReceipt,
+  CreateB2bRequest,
+  UpdateB2bStatus,
   AdminNotification,
   NotificationPage,
   SendNotificationRequest,
@@ -239,6 +248,15 @@ export function createApiClient(options: ApiClientOptions = {}) {
         method: 'POST',
       }),
     profile: () => send<StaffProfile>('/api/admin/auth/me'),
+    submitB2bRequest: (input: CreateB2bRequest) => send<B2bReceipt>('/api/b2b/requests', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(input),
+    }),
+    listB2bRequests: (offset = 0) => send<Array<B2bRequest>>(`/api/admin/b2b/requests?offset=${offset}`),
+    b2bRequest: (id: string) => send<B2bRequest>(`/api/admin/b2b/requests/${encodeURIComponent(id)}`),
+    deleteB2bRequest: (id: string) => send<void>(`/api/admin/b2b/requests/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    updateB2bStatus: (id: string, input: UpdateB2bStatus) => send<void>(`/api/admin/b2b/requests/${encodeURIComponent(id)}/status`, {
+      method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(input),
+    }),
     dashboard: () => send<OperationalDashboard>('/api/admin/dashboard'),
     customerAccount: () =>
       send<CustomerAccountProfile>('/api/account/me'),
@@ -544,6 +562,12 @@ export function createApiClient(options: ApiClientOptions = {}) {
       }),
     deleteProduct: (productId: string) =>
       send<void>(`/api/admin/products/${productId}`, { method: 'DELETE' }),
+    reorderProductMedia: (productId: string, mediaIds: string[]) =>
+      send<Product>(`/api/admin/products/${productId}/media/order`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ media_ids: mediaIds }),
+      }),
     deleteProductMedia: (productId: string, mediaId: string) =>
       send<Product>(`/api/admin/products/${productId}/media/${mediaId}`, {
         method: 'DELETE',

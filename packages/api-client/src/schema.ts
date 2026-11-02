@@ -65,6 +65,32 @@ export interface AssignCategoriesRequest {
   "category_ids": Array<string>
 }
 
+export interface B2bReceipt {
+  "id": string
+  "reference": string
+}
+
+export interface B2bRequest {
+  "attachment_name": string
+  "attachment_size": number
+  "attachment_type": string
+  "company": string
+  "contact_name": string
+  "created_at": string
+  "email": string
+  "has_preview": boolean
+  "id": string
+  "notes": string
+  "notification_attempts": number
+  "notification_sent_at"?: string | null
+  "notification_status": string
+  "phone": string
+  "product_type": string
+  "quantity": number
+  "reference": string
+  "status": string
+}
+
 export interface CancelOrderRequest {
   "internal_note"?: string
   "reason": string
@@ -180,6 +206,19 @@ export interface CreateAccountAddressRequest {
   "postal_code": string
   "recipient_name": string
   "region"?: string
+}
+
+export interface CreateB2bRequest {
+  "attachment_base64": string
+  "attachment_name": string
+  "company": string
+  "contact_name": string
+  "email": string
+  "notes": string
+  "phone": string
+  "product_type": string
+  "quantity": number
+  "request_key": string
 }
 
 export interface CreateCategoryRequest {
@@ -900,6 +939,10 @@ export interface ReorderCategoriesRequest {
   "category_ids": Array<string>
 }
 
+export interface ReorderProductMediaRequest {
+  "media_ids": Array<string>
+}
+
 export interface ReplyToProductFeedbackRequest {
   "reply"?: string | null
 }
@@ -978,6 +1021,10 @@ export interface UpdateAccountProfileRequest {
   "first_name": string
   "last_name": string
   "phone"?: string
+}
+
+export interface UpdateB2bStatus {
+  "status": string
 }
 
 export interface UpdateCartItemRequest {

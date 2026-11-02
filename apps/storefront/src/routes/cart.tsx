@@ -39,13 +39,14 @@ function personalizationSummary(value: unknown, mediaIds: string[], t: ReturnTyp
   if (!value || typeof value !== 'object') return t('personalization.summary')
   const customization = value as { areas?: Array<{ view_id?: unknown; photo?: unknown; text?: { content?: unknown } }>; photo?: unknown; text?: { content?: unknown } }
   if (Array.isArray(customization.areas)) {
+    const photoCount = customization.areas.filter((area) => Boolean(area.photo)).length
     const textCount = customization.areas.filter((area) => typeof area.text?.content === 'string').length
     const viewCount = new Set(customization.areas.flatMap((area) => typeof area.view_id === 'string' ? [area.view_id] : [])).size
     const parts = [
       viewCount > 1 ? t('personalization.summarySides', { count: viewCount }) : '',
       t(customization.areas.length === 1 ? 'personalization.summaryArea' : 'personalization.summaryAreas', { count: customization.areas.length }),
     ].filter(Boolean)
-    if (mediaIds.length) parts.push(t(mediaIds.length === 1 ? 'personalization.summaryPhoto' : 'personalization.summaryPhotos', { count: mediaIds.length }))
+    if (photoCount) parts.push(t(photoCount === 1 ? 'personalization.summaryPhoto' : 'personalization.summaryPhotos', { count: photoCount }))
     if (textCount) parts.push(t(textCount === 1 ? 'personalization.summaryText' : 'personalization.summaryTexts', { count: textCount }))
     return `${t('personalization.summary')} · ${parts.join(' · ')}`
   }

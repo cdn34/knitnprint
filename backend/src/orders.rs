@@ -33,6 +33,7 @@ use crate::{
 };
 
 const CART_COOKIE: &str = "knitnprint_cart";
+
 const ORDERS_READ: &str = "orders.read";
 const ORDERS_FULFILL: &str = "orders.fulfill";
 
@@ -299,6 +300,13 @@ pub async fn create(
     headers: HeaderMap,
     Json(input): Json<CreateOrderRequest>,
 ) -> Response {
+    if !customer.email_verified {
+        return error(
+            StatusCode::FORBIDDEN,
+            "email_verification_required",
+            "Verify your email before placing an order.",
+        );
+    }
     let provider = match input.payment_method.as_str() {
         "manual" if state.manual_payments_enabled => "manual",
         "stripe" if state.payments.enabled() => "stripe",
@@ -707,7 +715,14 @@ async fn create_order(
                variant.currency::text AS current_currency,
                line.customization, line.customization_media_asset_id,
                line.customization_media_asset_ids, line.personalization_previews, variant.option_values AS variant_options,
-               CASE WHEN line.customization IS NULL THEN NULL ELSE
+               CASE WHEN line.customization IS NULL THEN
+                 jsonb_build_object('version', 1, 'views', COALESCE((
+                   SELECT jsonb_agg(jsonb_build_object('media_id', chosen.media_asset_id))
+                   FROM (SELECT relation.media_asset_id FROM product_media relation
+                         JOIN media_assets media ON media.id=relation.media_asset_id AND media.status='ready'
+                         WHERE relation.product_id=product.id ORDER BY relation.position,relation.media_asset_id LIMIT 1) chosen
+                 ), '[]'::jsonb))
+               ELSE
                  jsonb_build_object(
                    'version', 1,
                    'views', COALESCE(personalization.views, '[]'::jsonb)
@@ -849,10 +864,10 @@ async fn create_order(
             currency, subtotal_minor, discount_minor, shipping_minor, tax_minor, total_minor, customer_email,
             customer_first_name, customer_last_name, customer_phone,
             shipping_recipient_name, shipping_line1, shipping_line2, shipping_city,
-            shipping_region, shipping_postal_code, shipping_country_code, shipping_phone
+            shipping_region, shipping_postal_code, shipping_country_code, shipping_phone, email_locale
         ) VALUES (
             $1, 'KP-' || to_char(now(), 'YYYY') || '-' || lpad(nextval('order_number_sequence')::text, 6, '0'),
-            $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22
+            $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23
         ) RETURNING order_number
         "#,
     )
@@ -878,6 +893,7 @@ async fn create_order(
     .bind(&delivery.postal_code)
     .bind(&delivery.country_code)
     .bind(&delivery.address_phone)
+    .bind(locale)
     .fetch_one(&mut *transaction)
     .await
     .map_err(|_| CreateError::Database)?;
@@ -887,12 +903,6 @@ async fn create_order(
             .await
             .map_err(|_| CreateError::Database)?;
     }
-    sqlx::query("UPDATE orders SET email_locale = $2 WHERE id = $1")
-        .bind(order_id)
-        .bind(locale)
-        .execute(&mut *transaction)
-        .await
-        .map_err(|_| CreateError::Database)?;
     crate::settings::record_checkout_snapshots(
         &mut transaction,
         order_id,
@@ -939,13 +949,13 @@ async fn create_order(
         let previews: Vec<crate::carts::PersonalizationPreview> =
             serde_json::from_value(line.personalization_previews.clone())
                 .map_err(|_| CreateError::Database)?;
-        let retained_media: Vec<_> = line
+        for (media_position, media_id) in line
             .customization_media_asset_ids
             .iter()
             .copied()
             .chain(previews.iter().map(|preview| preview.media_id))
-            .collect();
-        for (media_position, media_id) in retained_media.iter().enumerate() {
+            .enumerate()
+        {
             sqlx::query(
                 "INSERT INTO order_line_personalization_media (order_line_id, media_asset_id, position) VALUES ($1, $2, $3)",
             )
@@ -1030,6 +1040,7 @@ async fn delivery_snapshot(
           AND address.customer_id = customer.id
         WHERE cart.id = $1 AND customer.id = $2 AND address.id = $3
           AND customer.anonymized_at IS NULL AND customer.retention_expires_at > now()
+          AND EXISTS (SELECT 1 FROM customer_accounts account WHERE account.customer_id=customer.id AND account.email_verified_at IS NOT NULL)
         "#,
     )
     .bind(cart_id)
@@ -1318,8 +1329,10 @@ pub(crate) async fn load_order(
 }
 
 fn map_inventory_create_error(error: InventoryOperationError) -> CreateError {
-    let _ = error;
-    CreateError::Database
+    match error {
+        InventoryOperationError::Database(_) => CreateError::Database,
+        _ => CreateError::Changed,
+    }
 }
 
 fn idempotency_hash(headers: &HeaderMap) -> Option<[u8; 32]> {
@@ -1332,18 +1345,6 @@ fn idempotency_hash(headers: &HeaderMap) -> Option<[u8; 32]> {
                 && value.chars().all(|character| character.is_ascii_graphic())
         })
         .map(|value| Sha256::digest(value.as_bytes()).into())
-}
-
-fn no_store(mut response: Response) -> Response {
-    response.headers_mut().insert(
-        header::CACHE_CONTROL,
-        HeaderValue::from_static("no-store, private"),
-    );
-    response
-}
-
-fn error(status: StatusCode, code: &'static str, message: &'static str) -> Response {
-    (status, Json(ErrorBody::new(code, message))).into_response()
 }
 
 fn invalid_idempotency_key() -> Response {
@@ -1368,6 +1369,18 @@ fn cart_changed() -> Response {
         "cart_changed",
         "The cart changed. Review it before creating the order.",
     )
+}
+
+fn no_store(mut response: Response) -> Response {
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("no-store, private"),
+    );
+    response
+}
+
+fn error(status: StatusCode, code: &'static str, message: &'static str) -> Response {
+    (status, Json(ErrorBody::new(code, message))).into_response()
 }
 
 fn not_found() -> Response {

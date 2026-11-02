@@ -475,17 +475,40 @@ API also serves the contract from `/api/openapi.json`.
 
 ## Checks
 
+With Node 24, Rust (rustfmt and Clippy), the PostgreSQL client (`psql`), and a
+disposable PostgreSQL 17 database available, run the main CI checks locally:
+
 ```bash
-npm run typecheck
-npm run build
-npm run api:check
-npm run test:e2e
-DATABASE_URL=postgres://knitnprint:knitnprint@localhost:5432/knitnprint \
-npm run test:e2e:admin
-cargo fmt --check
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
+npm ci
+DATABASE_URL=postgres://knitnprint:knitnprint@localhost:5432/knitnprint_test \
+npm run check:local
 ```
+
+This runs formatting, Clippy, the database-backed Rust suite, TypeScript checks,
+production frontend builds, frontend unit tests, and the generated API contract
+check. It requires `DATABASE_URL` so database tests cannot silently be skipped.
+Use a disposable database: integration tests create schemas and fixture data.
+
+Browser, security, and operational checks run separately. Follow the local setup
+instructions to migrate the browser-test database, start object storage, and
+create the owner account. Then run:
+
+```bash
+export DATABASE_URL=postgres://knitnprint:knitnprint@localhost:5432/knitnprint
+npm run test:e2e
+npm run test:e2e:admin
+npm audit --omit=dev
+cargo audit --ignore RUSTSEC-2023-0071
+trivy fs --scanners vuln,secret --severity CRITICAL,HIGH --exit-code 1 --ignore-unfixed .
+docker build --tag knitnprint-api:ci --file backend/Dockerfile .
+trivy image --severity CRITICAL,HIGH --exit-code 1 --ignore-unfixed knitnprint-api:ci
+```
+
+Install `cargo-audit` and Trivy before running the security commands. The RSA
+exception matches CI because SQLx's optional MySQL dependency is disabled.
+Keep scanner databases current; local success does not prevent newly published
+advisories from failing a later CI run. The `hardening` job's backup restore,
+operations, and k6 commands are listed in `.github/workflows/ci.yml`.
 
 Install the local Chromium runtime once before running browser tests:
 

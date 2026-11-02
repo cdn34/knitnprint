@@ -55,4 +55,14 @@ async fn main() {
         "notification delivery complete: {} sent, {} failed",
         summary.sent, summary.failed
     );
+    let b2b_summary = knitnprint_api::b2b::deliver_due(&pool, &email, batch_size)
+        .await
+        .unwrap_or_else(|error| {
+            eprintln!("B2B notification delivery failed: {error}");
+            std::process::exit(1);
+        });
+    println!(
+        "B2B notification delivery complete: {} sent, {} failed",
+        b2b_summary.sent, b2b_summary.failed
+    );
 }

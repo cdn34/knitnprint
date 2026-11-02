@@ -280,6 +280,7 @@ pub async fn add_item(
     if media_ids.len() > 48 {
         return invalid_customization();
     }
+    let photo_ids = media_ids.clone();
     let Some(idempotency_hash) = idempotency_hash(&headers) else {
         return invalid_idempotency_key();
     };
@@ -295,7 +296,7 @@ pub async fn add_item(
         input.variant_id,
         input.quantity,
         input.customization,
-        (&media_ids, &input.personalization_previews)
+        (&photo_ids, &input.personalization_previews)
     );
     let mut transaction = match pool.begin().await {
         Ok(transaction) => transaction,
@@ -317,13 +318,13 @@ pub async fn add_item(
         Ok(None) => return unavailable_item(),
         Err(_) => return unavailable(),
     };
-    if !customization_allowed(&variant, input.customization.as_ref(), &media_ids) {
+    if !customization_allowed(&variant, input.customization.as_ref(), &photo_ids) {
         return invalid_customization();
     }
     if !valid_previews(
         input.customization.as_ref(),
         &input.personalization_previews,
-        &media_ids,
+        &photo_ids,
     ) {
         return invalid_customization();
     }
@@ -391,9 +392,9 @@ pub async fn add_item(
     .bind(variant.price_minor)
     .bind(&variant.currency)
     .bind(&input.customization)
-    .bind(media_ids.first().copied())
-    .bind(&media_ids)
-    .bind(serde_json::to_value(&input.personalization_previews).unwrap_or_default())
+    .bind(photo_ids.first().copied())
+    .bind(&photo_ids)
+    .bind(serde_json::to_value(&input.personalization_previews).expect("serializable previews"))
     .execute(&mut *transaction)
     .await
     .is_err()
@@ -1206,6 +1207,16 @@ fn customization_allowed(
     if customization.is_some() && has_size_calibration && version < 7 {
         return false;
     }
+    // Older payloads do not identify the photograph and cannot enforce its permissions.
+    if customization.is_some()
+        && version < 5
+        && variant
+            .personalization_views
+            .as_array()
+            .is_some_and(|views| views.iter().any(|view| view.get("mode").is_some()))
+    {
+        return false;
+    }
     if version >= 5 {
         return view_customization_allowed(variant, customization, media_ids);
     }
@@ -1315,7 +1326,7 @@ fn view_customization_allowed(
     else {
         return customization.is_none() && media_ids.is_empty();
     };
-    if areas.is_empty() || areas.len() > 48 {
+    if areas.is_empty() || areas.len() > 800 {
         return false;
     }
     let Some(configured_views) = variant.personalization_views.as_array() else {
@@ -1375,7 +1386,11 @@ fn view_customization_allowed(
         seen_assignments.push((view_id, area_id));
         let photo = area.get("photo");
         let text = area.get("text");
-        let shape_valid = match variant.personalization_mode.as_str() {
+        let mode = configured_view
+            .get("mode")
+            .and_then(Value::as_str)
+            .unwrap_or(&variant.personalization_mode);
+        let shape_valid = match mode {
             "photo" => photo.is_some() && text.is_none(),
             "text" => text.is_some() && photo.is_none(),
             "photo_text" => photo.is_some() || text.is_some(),
@@ -2275,6 +2290,40 @@ mod personalization_tests {
             Some(&customization),
             &[first_media_id]
         ));
+    }
+
+    #[test]
+    fn photograph_permissions_reject_wrong_content_disabled_photos_and_legacy_bypasses() {
+        let mut product = variant("photo_text");
+        product.personalization_views[0]["mode"] = serde_json::json!("text");
+        product.personalization_views[1]["mode"] = serde_json::json!("photo");
+        let media_id = Uuid::new_v4();
+        let text = serde_json::json!({"content":"Frente", "font":"Roboto", "color":"#111111", "size":24, "x":10, "y":20, "width":80, "height":40});
+        let photo = serde_json::json!({"media_id":media_id, "x":5, "y":5, "width":90, "height":50, "crop_x":50, "crop_y":50, "scale":1});
+        let valid = serde_json::json!({"version":5, "areas":[
+            {"view_id":"view-front", "area_id":"area-1", "text":text},
+            {"view_id":"view-back", "area_id":"pocket-side", "photo":photo}
+        ]});
+        assert!(customization_allowed(&product, Some(&valid), &[media_id]));
+        let mut wrong_content = valid.clone();
+        wrong_content["areas"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("text");
+        wrong_content["areas"][0]["photo"] = photo;
+        assert!(!customization_allowed(
+            &product,
+            Some(&wrong_content),
+            &[media_id]
+        ));
+        product.personalization_views[1]["mode"] = serde_json::json!("none");
+        assert!(!customization_allowed(&product, Some(&valid), &[media_id]));
+        product.personalization_views[1]["mode"] = serde_json::json!("photo");
+        product.personalization_views[1]["print_areas"] = serde_json::json!([]);
+        assert!(!customization_allowed(&product, Some(&valid), &[media_id]));
+        let legacy = serde_json::json!({"version":4,"areas":[{"area_id":"area-1", "text":text}]});
+        assert!(!customization_allowed(&product, Some(&legacy), &[]));
+        assert!(customization_allowed(&product, None, &[]));
     }
 
     #[test]
