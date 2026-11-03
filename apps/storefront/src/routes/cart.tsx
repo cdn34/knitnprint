@@ -339,6 +339,7 @@ function CartContent() {
                       <h3><a href={`/products/${item.product_slug}`}>{item.product_title}</a></h3>
                       <p>{item.variant_title} · {t('cart.sku')} {item.sku}</p>
                       {Boolean(item.customization) && <p className="cart-item-personalization">{personalizationSummary(item.customization, item.customization_media_asset_ids?.length ? item.customization_media_asset_ids : item.customization_media_asset_id ? [item.customization_media_asset_id] : [], t)}</p>}
+                      {item.personalization_unit_price_minor > 0 && <p className="cart-item-price-breakdown">{t('personalization.cartPriceBreakdown', { base: formatCurrency(item.base_unit_price_minor, item.currency), personalization: formatCurrency(item.personalization_unit_price_minor, item.currency) })}</p>}
                       <label>
                         <span>{t('cart.quantity')}</span>
                         <select

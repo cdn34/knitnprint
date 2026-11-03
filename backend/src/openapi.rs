@@ -2,8 +2,8 @@ use utoipa::{OpenApi, openapi::OpenApi as OpenApiDocument};
 
 use crate::{
     admin_notifications, auth, b2b, cancellations, carts, catalog, customer_auth, customers,
-    dashboard, delivery_rates, discounts, error, feedback, fulfillment, health, inventory, media,
-    notifications, orders, payments, settings, staff,
+    dashboard, delivery_rates, discounts, error, favorites, feedback, fulfillment, health,
+    inventory, media, notifications, orders, payments, settings, staff,
 };
 
 #[derive(OpenApi)]
@@ -29,6 +29,9 @@ use crate::{
         customer_auth::login,
         customer_auth::logout,
         customer_auth::me,
+        favorites::list,
+        favorites::save,
+        favorites::remove,
         customer_auth::update_profile,
         customer_auth::request_email_change,
         customer_auth::confirm_email_change,

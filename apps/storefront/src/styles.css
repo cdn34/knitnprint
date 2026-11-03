@@ -703,8 +703,8 @@ html[lang='pt'] .home-section-title--categories h2 {
   z-index: 3;
   top: 0.7rem;
   right: 0.7rem;
-  width: 38px;
-  height: 38px;
+  width: 44px;
+  height: 44px;
   display: grid;
   place-items: center;
   border: 0;
@@ -712,6 +712,25 @@ html[lang='pt'] .home-section-title--categories h2 {
   background: rgb(255 253 252 / 70%);
   cursor: pointer;
 }
+.heart { color: var(--knit-dark); transition: background 0.2s, color 0.2s; }
+.heart:hover { background: #fffdfc; }
+.heart--saved { color: #9c5263; background: #fff3f5; }
+.heart:focus-visible { outline: 3px solid var(--knit); outline-offset: 3px; }
+.heart:disabled { cursor: wait; opacity: 0.6; }
+.favorite-error { position: absolute; z-index: 4; top: 3.8rem; right: 0.6rem; left: 0.6rem; padding: 0.65rem; border: 1px solid #dfb7be; border-radius: 0.6rem; color: #762c2c; background: #fff3f5; font-size: 0.8rem; line-height: 1.4; }
+.favorites-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.5rem; }
+.favorites-heading .account-panel-heading { margin: 0; }
+.favorites-heading h2 { display: flex; align-items: center; flex-wrap: wrap; gap: 0.65rem; }
+.favorites-heading h2 > svg { color: var(--knit); }
+.favorites-count { display: inline-grid; min-width: 1.7rem; height: 1.7rem; padding-inline: 0.35rem; place-items: center; border-radius: 50%; color: var(--knit-dark); background: #f1e5e8; font-size: 0.9rem; }
+.favorites-empty { display: grid; justify-items: center; gap: 1rem; padding: 2rem 1rem; border: 1px dashed var(--border); border-radius: 0.8rem; color: var(--ink-muted); text-align: center; }
+.favorites-empty > svg { color: var(--knit); }
+.favorites-empty h3, .favorites-empty p { margin: 0; }
+.favorites-empty p { max-width: 43ch; line-height: 1.6; }
+.account-favorites { scroll-margin-top: 9rem; }
+.account-favorites .product-grid { grid-template-columns: repeat(auto-fill, minmax(min(210px, 100%), 1fr)); }
+.account-favorites .product-image { aspect-ratio: 1; }
+.account-favorites-link { margin-top: 0.75rem; }
 .product-form {
   display: block;
   position: relative;
@@ -1565,7 +1584,7 @@ html[lang='pt'] .home-section-title--categories h2 {
   font: 500 clamp(3rem, 7vw, 5.5rem)/0.95 var(--display);
   letter-spacing: -0.045em;
 }
-.account-intro > p:last-child {
+.account-intro > p:last-of-type {
   max-width: 610px;
   margin: 1.3rem auto 0;
   color: var(--ink-muted);
@@ -4250,7 +4269,7 @@ html[lang='pt'] .home-section-title--categories h2 {
 .font-choice-grid b { font-size: 1.25rem; line-height: 1; }
 .font-choice-grid small { width: 100%; overflow: hidden; font-family: var(--body); font-size: .52rem; text-overflow: ellipsis; white-space: nowrap; }
 .personalization-start-button { text-align: center; }
-.personalization-page { width: min(1500px, calc(100% - 2rem)); margin: 0 auto; padding: 1rem 0 7rem; }
+.personalization-page { width: min(1500px, calc(100% - 2rem)); margin: 0 auto; padding: 1rem 0 11rem; }
 .personalization-page-header { display: grid; gap: 1.1rem; }
 .personalization-page-toolbar { min-height: 3.2rem; padding: .5rem .75rem; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 1rem; border: 1px solid #e4dbd5; border-radius: .9rem; background: #fff; }
 .personalization-page-toolbar > .text-link { width: max-content; }
@@ -4277,8 +4296,21 @@ html[lang='pt'] .home-section-title--categories h2 {
 .personalization-preview-button { white-space: nowrap; }
 .personalization-preview-button svg { width: 18px; height: 18px; }
 .personalization-checkout-bar strong { color: #9e344d; font-size: .72rem; }
-.personalization-final-preview-backdrop { position: fixed; inset: 0; z-index: 1200; padding: clamp(.75rem, 3vw, 2rem); display: grid; place-items: center; background: rgb(35 28 30 / 64%); backdrop-filter: blur(8px); }
-.personalization-final-preview { width: min(1180px, 100%); max-height: calc(100vh - 2rem); display: grid; grid-template-rows: auto minmax(0, 1fr) auto; overflow: hidden; border: 1px solid #e3d7d1; border-radius: 1.25rem; background: #fffaf7; box-shadow: 0 28px 90px rgb(35 28 30 / 28%); }
+.personalization-checkout-details { min-width: 0; flex: 1; margin-right: auto; }
+.personalization-checkout-details > span, .personalization-final-preview-summary > span { display: block; margin-top: .3rem; color: #625a55; font-size: .68rem; }
+.personalization-price-summary dl { margin: 0; display: flex; flex-wrap: wrap; align-items: end; gap: .4rem 1.25rem; }
+.personalization-price-summary dt { color: #6d6661; font-size: .65rem; }
+.personalization-price-summary dd { margin: .15rem 0 0; color: #5f4652; font-size: .92rem; font-variant-numeric: tabular-nums; }
+.personalization-price-summary strong { color: #5f4652; font-size: 1.2rem; }
+.personalization-price-summary p { max-width: 32rem; margin: .35rem 0 0; color: #6d6661; font-size: .65rem; line-height: 1.45; }
+.personalization-final-preview-summary { min-width: 0; }
+.cart-item-price-breakdown { color: #6d6661; font-size: .75rem; line-height: 1.5; }
+@media (max-width: 820px) {
+  .personalization-page { padding-bottom: 17rem; }
+  .personalization-checkout-details { flex-basis: 100%; }
+}
+.personalization-final-preview-backdrop { --preview-gutter: clamp(.75rem, 3vw, 2rem); position: fixed; inset: 0; z-index: 1200; padding: var(--preview-gutter); display: grid; place-items: center; background: rgb(35 28 30 / 64%); backdrop-filter: blur(8px); }
+.personalization-final-preview { width: min(1180px, 100%); max-height: calc(100dvh - var(--preview-gutter) - var(--preview-gutter)); display: grid; grid-template-rows: auto minmax(0, 1fr) auto; overflow: hidden; border: 1px solid #e3d7d1; border-radius: 1.25rem; background: #fffaf7; box-shadow: 0 28px 90px rgb(35 28 30 / 28%); }
 .personalization-final-preview > header { padding: 1rem 1.25rem; display: flex; align-items: end; justify-content: space-between; gap: 1rem; border-bottom: 1px solid #eadfda; }
 .personalization-final-preview > header span { color: #9c5263; font-size: .66rem; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
 .personalization-final-preview h2 { margin: .2rem 0; font: 500 clamp(1.45rem, 3vw, 2.15rem) Georgia, serif; }

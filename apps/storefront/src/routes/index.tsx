@@ -5,7 +5,6 @@ import {
   ArrowRight,
   ChevronRight,
   Clock3,
-  Heart,
   PackageCheck,
   Search,
   ShieldCheck,
@@ -25,6 +24,7 @@ import {
 } from '../components/storefront-shell'
 import { ContextualFaqs } from '../components/contextual-faqs'
 import { SiteFeedback } from '../components/site-feedback'
+import { FavoriteButton } from '../components/favorite-button'
 import { useI18n } from '../i18n'
 import { useLocalizedCatalog } from '../i18n/catalog'
 
@@ -71,13 +71,7 @@ function ProductCard({
             <span className={`product-form product-form--${form}`} />
           )}
         </a>
-        <button
-          className="heart"
-          aria-label={t('home.saveProduct', { name: product.title })}
-          type="button"
-        >
-          <Heart size={19} />
-        </button>
+        <FavoriteButton productId={product.id} title={product.title} />
       </div>
       <div className="product-info">
         <div>

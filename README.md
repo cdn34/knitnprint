@@ -138,6 +138,20 @@ page shows paginated in-progress orders separately from completed or cancelled
 orders. Customer order lists and details are restricted to the signed-in
 account, even if a cart cookie belongs to someone else.
 
+Customers can save products using the heart on the home page, catalog,
+collections and product details. Favorites are stored per customer account and
+listed under **My favorites** on the account page, where the same heart removes
+them. Guests are prompted to sign in and their chosen product is saved after
+login. Favorites show current public prices and hide unpublished products.
+Migration 0059 creates `customer_favorites`; removing an account or product also
+removes its favorites. Run `npm run test:e2e:favorites` for the isolated desktop
+and mobile browser checks.
+
+Personalization adds EUR 1 per filled print area, per product unit. Text and
+photo in the same area share one charge; empty areas are free. The personalizer
+previews the base price, surcharge and unit total. The API calculates that price
+again for cart changes and checkout, and orders retain the final unit price.
+
 For a production storefront build, set `API_BASE_URL` at runtime to the API's
 internal origin, including its scheme and port but no `/api` suffix. It is used
 only by server-side rendering; browser requests and media URLs remain

@@ -142,7 +142,7 @@ function DesignElement({ frame, kind, label, selected, onSelect, onChange, child
   </div>
 }
 
-export function ProductPersonalizer({ config, variantId, variantLabel, productMedia, onChange, previewOpen, onPreviewClose, onAddToCart, addToCartDisabled, addToCartLabel, saving = false }: Readonly<{
+export function ProductPersonalizer({ config, variantId, variantLabel, productMedia, onChange, previewOpen, onPreviewClose, onAddToCart, addToCartDisabled, addToCartLabel, priceSummary, saving = false }: Readonly<{
   config: PersonalizationConfig
   variantId: string
   variantLabel?: string
@@ -153,6 +153,7 @@ export function ProductPersonalizer({ config, variantId, variantLabel, productMe
   onAddToCart: () => void
   addToCartDisabled: boolean
   addToCartLabel: string
+  priceSummary?: ReactNode
   saving?: boolean
 }>) {
   const { t } = useI18n()
@@ -193,6 +194,7 @@ export function ProductPersonalizer({ config, variantId, variantLabel, productMe
   const [previewViewId, setPreviewViewId] = useState(views[0].id)
   const objectUrls = useRef(new Set<string>())
   const confirmationCanvases = useRef(new Map<string, HTMLDivElement>())
+  const previewContinueButton = useRef<HTMLButtonElement>(null)
   const activeDesignKey = designKey(activeView.id, activeAreaId)
   const activeDesign = designs[activeDesignKey] ?? newDesign()
   const activePrintArea = printAreas.find(({ id }) => id === activeAreaId) ?? printAreas[0]
@@ -275,6 +277,7 @@ export function ProductPersonalizer({ config, variantId, variantLabel, productMe
     const previousOverflow = document.body.style.overflow
     const closeOnEscape = (event: globalThis.KeyboardEvent) => { if (event.key === 'Escape') onPreviewClose() }
     document.body.style.overflow = 'hidden'
+    previewContinueButton.current?.focus({ preventScroll: true })
     window.addEventListener('keydown', closeOnEscape)
     return () => {
       document.body.style.overflow = previousOverflow
@@ -375,7 +378,7 @@ export function ProductPersonalizer({ config, variantId, variantLabel, productMe
           {previewProductImage ? renderFinalPreview(previewView, previewProductImage) : <p>{t('personalization.emptyView')}</p>}
           {previewProductImage && previewHasDesign && <p className="personalization-final-preview-note" role="status">{t(previewIsPrintCapped ? 'personalization.previewPrintCapped' : 'personalization.previewScaleNote')}</p>}
         </div>
-        <footer><span>{t('personalization.previewFooter')}</span><div className="personalization-final-preview-actions"><button className="button button--secondary" type="button" autoFocus onClick={onPreviewClose}>{t('personalization.continuePersonalizing')}</button><button className="button button--primary" type="button" disabled={addToCartDisabled} onClick={onAddToCart}><ShoppingBag />{addToCartLabel}</button></div></footer>
+        <footer><div className="personalization-final-preview-summary">{priceSummary}<span>{t('personalization.previewFooter')}</span></div><div className="personalization-final-preview-actions"><button className="button button--secondary" type="button" ref={previewContinueButton} onClick={onPreviewClose}>{t('personalization.continuePersonalizing')}</button><button className="button button--primary" type="button" disabled={addToCartDisabled} onClick={onAddToCart}><ShoppingBag />{addToCartLabel}</button></div></footer>
       </section>
     </div>}
   </section>
