@@ -11,9 +11,9 @@ test('lets an owner manage the catalog and complete an order with configured del
   const unique = `${Date.now()}-${test.info().retry}`
   const title = `Woven Planter ${unique}`
   const slug = `woven-planter-${unique}`
-  const sku = `PLANTER-${unique}`
-  const plumSku = `PLANTER-PLUM-${unique}`
-  const oatSku = `PLANTER-OAT-${unique}`
+  let sku = ''
+  let plumSku = ''
+  let oatSku = ''
   const discountCode = `BROWSER-${unique}`.toUpperCase()
   const orderEmail = `order-${unique}@example.com`
 
@@ -111,9 +111,9 @@ test('lets an owner manage the catalog and complete an order with configured del
     .getByLabel('Description')
     .fill('A tactile home for printed forms and soft stitches.')
   await catalog.getByLabel('Search keywords').fill(`browsercatalog ${unique}`)
-  await catalog.locator('#product-sku').fill(sku)
-  await catalog.getByLabel('Price').fill('42.00')
-  await catalog.getByLabel('Stock').fill('5')
+  await expect(catalog.locator('#product-sku')).toHaveAttribute('readonly', '')
+  await catalog.locator('#product-price').fill('42.00')
+  await catalog.locator('#product-quantity').fill('5')
   await catalog.getByRole('checkbox', { name: categoryName }).check()
   await Promise.all([
     page.waitForResponse((response) =>
@@ -128,11 +128,12 @@ test('lets an owner manage the catalog and complete an order with configured del
   await expect(product).toContainText(title)
   await expect(product).toContainText('draft')
   await product.getByRole('button', { name: 'Edit' }).click()
-  await expect(catalog.locator('#product-sku')).toHaveValue(sku)
-  await expect(catalog.getByLabel('Stock')).toHaveValue('5')
+  await expect(catalog.locator('#product-sku')).toHaveValue(/^KP-/)
+  await expect(catalog.locator('#product-quantity')).toHaveValue('5')
   await catalog.getByRole('button', { name: 'Save product' }).click()
   const adminProducts = await page.request.get(`/api/admin/products?q=${slug}`)
   const [createdProduct] = await adminProducts.json()
+  sku = createdProduct.variants[0].sku
   expect(createdProduct.categories).toEqual(
     expect.arrayContaining([expect.objectContaining({ slug: categorySlug })]),
   )
@@ -140,9 +141,13 @@ test('lets an owner manage the catalog and complete an order with configured del
     { title: 'Plum', sku: plumSku, price_minor: 4600 },
     { title: 'Oat', sku: oatSku, price_minor: 4800 },
   ]) {
-    await page.request.post(`/api/admin/products/${createdProduct.id}/variants`, {
+    const response = await page.request.post(`/api/admin/products/${createdProduct.id}/variants`, {
       data: { ...variant, currency: 'EUR', option_values: {} },
     })
+    expect(response.ok()).toBe(true)
+    const saved = await response.json()
+    const assigned = saved.variants.find((v: {title: string}) => v.title === variant.title).sku
+    if (variant.title === 'Plum') plumSku = assigned; else oatSku = assigned
   }
 
   let uploadedPhoto = 0
@@ -240,7 +245,7 @@ test('lets an owner manage the catalog and complete an order with configured del
 
   const defaultInventoryRow = inventory
     .getByRole('button')
-    .filter({ hasText: sku })
+    .filter({ has: page.getByText(`Default · ${sku}`, { exact: true }) })
   await defaultInventoryRow.click()
   await inventory.getByLabel('Quantity change').fill('-5')
   await inventory.getByLabel('Reason').fill('Clear default variant stock')

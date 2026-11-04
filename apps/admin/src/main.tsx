@@ -1,3 +1,4 @@
+import { VariantMatrix } from './variant-matrix'
 import {
   StrictMode,
   type FormEvent,
@@ -2471,7 +2472,7 @@ function CatalogManagement({
     if (!preview) {
       return Boolean(productTitle || productSlug || productDescription || productKeywords || productSku || productPrice || productQuantity !== '0' || pendingProductImages.length)
     }
-    const base = preview.variants[0]
+    const base = preview.variants.find(v => !v.retired) ?? preview.variants[0]
     return variantCalibrationDirty
       || productTitle !== preview.title
       || productSlug !== preview.slug
@@ -2982,7 +2983,7 @@ function CatalogManagement({
 
   function loadProduct(product: Product, preferredViewId?: string, preferredPrintAreaId?: string, preserveViews = false) {
     setVariantCalibrationDirty(false)
-    const base = product.variants[0]
+    const base = product.variants.find(v => !v.retired) ?? product.variants[0]
     setPreview(product)
     if (!preserveViews) setProductPhotoOrder(product.media.map(({ id }) => id))
     setProductTitle(product.title)
@@ -3053,7 +3054,7 @@ function CatalogManagement({
       {
         productId: preview.id,
         title: String(form.get('new-variant-title') ?? ''),
-        sku: String(form.get('new-variant-sku') ?? ''),
+        sku: '',
         price: Number(form.get('new-variant-price')),
         currency: 'EUR',
       },
@@ -3333,7 +3334,7 @@ function CatalogManagement({
             <small className="field-help">Only administrators can see these keywords. They also support storefront search.</small>
             <small className="field-count">{productKeywords.length.toLocaleString()} / 2,000</small>
             <label htmlFor="product-sku">SKU</label>
-            <input id="product-sku" name="product-sku" maxLength={120} value={productSku} onChange={(event) => setProductSku(event.target.value)} required />
+            <input id="product-sku" name="product-sku" value={preview?.sku ?? 'Generated on save'} readOnly />
             <div className="price-fields">
               <div>
                 <label htmlFor="product-price">Price</label>
@@ -3344,13 +3345,14 @@ function CatalogManagement({
                   min="0"
                   step="0.01"
                   value={productPrice}
+                  disabled={Boolean(preview && preview.variants.filter(v => !v.retired).length > 1)}
                   onChange={(event) => setProductPrice(event.target.value)}
                   required
                 />
               </div>
               <div>
                 <label htmlFor="product-quantity">Stock real</label>
-                <input id="product-quantity" name="product-quantity" type="number" step="1" value={productQuantity} onChange={(event) => setProductQuantity(event.target.value)} aria-describedby="product-quantity-help" required />
+                <input id="product-quantity" name="product-quantity" type="number" step="1" disabled={Boolean(preview && preview.variants.filter(v => !v.retired).length > 1)} value={productQuantity} onChange={(event) => setProductQuantity(event.target.value)} aria-describedby="product-quantity-help" required />
                 <small className="field-help" id="product-quantity-help">A negative value represents sold units that need to be restocked.</small>
               </div>
             </div>
@@ -3467,7 +3469,7 @@ function CatalogManagement({
                       {!activePersonalizationView.articleReference.configured && <p className="article-reference-warning"><TriangleAlert aria-hidden="true" />Confirma a referência antes de definir as medidas de cada tamanho. Estas medidas são apenas para produção.</p>}
                       {activePersonalizationView.articleReference.configured && <div className="variant-calibration" aria-label="Medidas por tamanho">
                         <div className="variant-calibration-intro"><strong>Medidas por tamanho · {activePersonalizationView.label || 'este lado'}</strong><small>Usa a mesma fotografia deste lado em todos os tamanhos. Mede a largura e a altura entre os limites marcados para cada tamanho; numa camisola, mede da gola deste lado à bainha. Os valores da frente e das costas podem ser diferentes. A impressão mantém o tamanho máximo quando couber e fica centrada; em tamanhos menores é reduzida. Confirma todas as linhas após medir.</small></div>
-                        {preview?.variants.map((variant) => {
+                        {preview?.variants.filter(v => !v.retired).map((variant) => {
                           const reference = activePersonalizationView.variantReferences?.[variant.id] ?? { physicalWidthCm: activePersonalizationView.articleReference!.physicalWidthCm, physicalHeightCm: activePersonalizationView.articleReference!.physicalHeightCm, configured: false }
                           const offsets = printAreaOffsets(activePersonalizationView.articleReference!, activePrintArea, reference)
                           return <div className="variant-calibration-row" key={variant.id}>
@@ -3579,6 +3581,7 @@ function CatalogManagement({
           </div>
         </article>
       )}
+      {preview && canWrite && <VariantMatrix key={`${preview.id}-${preview.variant_revision}`} product={preview} onSaved={() => { void api.adminProduct(preview.id).then(product => loadProduct(product)); client.invalidateQueries({ queryKey: productsKey }); client.invalidateQueries({ queryKey: inventoryKey }) }} />}
       {preview && canWrite && (
         <div className="catalog-editor" aria-label={`Edit ${preview.title}`}>
           <section>
@@ -3597,11 +3600,11 @@ function CatalogManagement({
                 </li>
               ))}
             </ul>
-            <form className="compact-form" onSubmit={submitVariant}>
+            {preview.variant_config.options.length === 0 && <form className="compact-form" onSubmit={submitVariant}>
               <label htmlFor="new-variant-title">Variant title</label>
               <input id="new-variant-title" name="new-variant-title" required />
               <label htmlFor="new-variant-sku">SKU</label>
-              <input id="new-variant-sku" name="new-variant-sku" required />
+              <input id="new-variant-sku" name="new-variant-sku" value="Generated on save" readOnly />
               <div className="price-fields">
                 <div>
                   <label htmlFor="new-variant-price">Price</label>
@@ -3614,7 +3617,7 @@ function CatalogManagement({
               </div>
               {addVariant.isError && <p className="panel-error" role="alert">{addVariant.error.message}</p>}
               <button className="primary-button" disabled={addVariant.isPending}>Add variant</button>
-            </form>
+            </form>}
           </section>
           <section>
             <div className="panel-title">

@@ -870,3 +870,4 @@ h1 { margin: .25rem 0 0; font: 500 2rem Georgia, serif; }
 .notification-table td:first-child { overflow-wrap: anywhere; }
 .notification-error { display: block; color: #9d352b; overflow-wrap: anywhere; max-width: 38rem; margin-top: .5rem; }
 .notification-pagination { display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: end; gap: 1rem; margin-top: 1.5rem; }
+.variant-matrix {display:block;margin-block:1.5rem}.variant-matrix fieldset{margin-block:1rem;padding:1rem;border:1px solid #ccc}.variant-matrix label{display:inline-flex;gap:.5rem;align-items:center;margin:.4rem}.option-value{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap}.matrix-scroll{overflow:auto}.variant-matrix table input{min-width:6rem;max-width:9rem}.variant-matrix table td,.variant-matrix table th{padding:.5rem;text-align:left}
