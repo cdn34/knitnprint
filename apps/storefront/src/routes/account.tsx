@@ -27,6 +27,7 @@ import {
   StorefrontHeader,
 } from "../components/storefront-shell";
 import { useI18n } from "../i18n";
+import { SignInMethods, GoogleAccess } from "../components/sign-in-methods";
 import { CountrySelect } from "../components/country-select";
 import { AccountFavorites } from "../components/account-favorites";
 import { pendingFavorite, useFavorites } from "../favorites";
@@ -89,6 +90,8 @@ function AccountPage() {
       const verificationToken = search.get("verify");
       const emailChangeToken = search.get("confirm_email");
       const passwordToken = search.get("reset");
+      if (search.has("google_confirm") && search.has("google_challenge")) { setCheckingSession(false); return; }
+
       if (verificationToken || emailChangeToken || passwordToken) {
         window.history.replaceState({}, "", window.location.pathname);
       }
@@ -299,7 +302,9 @@ function AccountPage() {
     setNotice("");
     setPending(true);
     const email = String(new FormData(form).get("new_email") ?? "").trim();
+    const currentPassword = String(new FormData(form).get("current_password") ?? "");
     try {
+      await api.reauthenticateCustomer(currentPassword);
       await api.requestCustomerEmailChange({ email });
       setNotice(t("account.emailChangeSent", { email }));
       form.reset();
@@ -318,6 +323,7 @@ function AccountPage() {
       await api.logoutCustomer();
       favorites.clear();
       setFavoriteLoginRequested(false);
+      window.google?.accounts.id.disableAutoSelect();
       setProfile(null);
       setMode("login");
       setNotice(t("account.signedOut"));
@@ -378,6 +384,8 @@ function AccountPage() {
               <p>{t("account.finding")}</p>
             </section>
           ) : profile ? (
+            <>
+            <SignInMethods profile={profile} onProfile={setProfile} />
             <AuthenticatedAccount
               profile={profile}
               pending={pending}
@@ -388,7 +396,10 @@ function AccountPage() {
               onLogout={logout}
               onRequestVerification={requestVerification}
             />
+            </>
           ) : (
+            <>
+            {(mode === "login" || mode === "register") && <GoogleAccess onProfile={setProfile} />}
             <GuestAccount
               mode={mode}
               pending={pending}
@@ -404,6 +415,7 @@ function AccountPage() {
               onResetPassword={resetPassword}
               onRequestVerification={requestVerification}
             />
+            </>
           )}
         </div>
       </main>
@@ -665,13 +677,14 @@ function AuthenticatedAccount({
             <button className="button button--primary account-profile-save" disabled={pending} type="submit">{t(pending ? "account.saving" : "account.saveProfile")}</button>
             {profileFeedback && <p className={`account-message account-profile-feedback account-message--${profileFeedback.kind}`} role={profileFeedback.kind === "error" ? "alert" : "status"}>{profileFeedback.message}</p>}
           </form>
-          <form className="account-form account-email-form" onSubmit={onRequestEmailChange}>
+          {!profile.auth_methods.google_email && <form className="account-form account-email-form" onSubmit={onRequestEmailChange}>
             <div><h3>{t("account.changeEmail")}</h3><p>{t("account.changeEmailHelp")}</p></div>
+            <PasswordField label={t("account.currentPassword")} name="current_password" autoComplete="current-password" minLength={12} />
             <div className="account-email-form-row">
               <label className="account-field"><span>{t("account.newEmail")}</span><input name="new_email" type="email" autoComplete="email" required /></label>
               <button className="account-email-submit" disabled={pending} type="submit">{t("account.sendConfirmation")}</button>
             </div>
-          </form>
+          </form>}
         </>}
         <div
           className={`account-verification ${profile.email_verified ? "account-verification--complete" : ""}`}
