@@ -84,7 +84,7 @@ test('opens a published product detail page when available', async ({ page }) =>
   await expect(card.locator('.product-stock')).toBeVisible()
   await card.getByRole('link', { name: `View ${title}` }).click()
   await expect(page.getByRole('heading', { level: 1 })).toHaveText(title ?? '')
-  await expect(page.getByRole('radio').first()).toBeVisible()
+  await expect(page.locator('.variant-picker, .structured-variant-picker').first()).toBeVisible()
   await expect(page.getByRole('status')).toContainText(
     /In stock|Only \d+ left|Sold out/,
   )

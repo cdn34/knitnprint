@@ -1,3 +1,4 @@
+import { VariantPicker, configuration, variantPhotos, variantPersonalization } from '../components/variant-picker'
 import { ApiError } from '@knitnprint/api-client'
 import { createFileRoute, notFound } from '@tanstack/react-router'
 import { ArrowLeft, Eye, ShoppingBag } from 'lucide-react'
@@ -28,12 +29,13 @@ function PersonalizeProductPage() {
 function PersonalizeProductContent() {
   const { t } = useI18n()
   const product = Route.useLoaderData()
-  const productMedia = useMemo(() => product.media.map((media) => ({ id: media.id, url: mediaUrl(media.detail_url) })), [product.media])
   const search = Route.useSearch()
   const defaultVariant = preferredVariant(product)
   const [variantId, setVariantId] = useState(product.variants.some(({ id }) => id === search.variant) ? search.variant! : defaultVariant?.id ?? '')
   const variant = product.variants.find(({ id }) => id === variantId) ?? defaultVariant
-  const personalizationViews = activePersonalizationViews(product.personalization)
+  const resolvedConfig = useMemo(() => variantPersonalization(product, variant), [product, variant])
+  const productMedia = useMemo(() => variantPhotos(product, variant).map(media => ({ id: media.id, url: mediaUrl(media.detail_url) })), [product, variant])
+  const personalizationViews = activePersonalizationViews(resolvedConfig)
   const hasMeasuredSide = personalizationViews.some((raw) => raw && typeof raw === 'object' && raw.article_reference && typeof raw.article_reference === 'object' && 'configured' in raw.article_reference && raw.article_reference.configured === true)
   const calibrationReady = !hasMeasuredSide || personalizationViews.every((raw) => {
     if (!raw || typeof raw !== 'object' || !raw.article_reference || typeof raw.article_reference !== 'object' || !('configured' in raw.article_reference) || raw.article_reference.configured !== true) return false
@@ -94,14 +96,14 @@ function PersonalizeProductContent() {
             <li className="current" aria-current="step"><span>2</span><b>{t('personalization.personalizeStep')}</b></li>
             <li><span>3</span><b>{t('personalization.reviewStep')}</b></li>
           </ol>
-          {product.variants.length > 1 ? <label>{t('personalization.option')}<select disabled={status === 'adding'} value={variant?.id} onChange={(event) => { setVariantId(event.target.value); setStatus('idle'); setErrorMessage('') }}>{product.variants.map((option) => <option key={option.id} value={option.id} disabled={variantStock(option).state === 'sold-out'}>{option.title}</option>)}</select></label> : <span aria-hidden="true" />}
+          {configuration(product).options.length ? <VariantPicker product={product} variant={variant} onChange={id => { if (variantPhotos(product, variant).map(m => m.id).join() !== variantPhotos(product, product.variants.find(v => v.id === id)).map(m => m.id).join() && design.customization && !window.confirm(t('product.variantArtworkChange'))) return; if (variantPhotos(product, variant).map(m => m.id).join() !== variantPhotos(product, product.variants.find(v => v.id === id)).map(m => m.id).join()) setDesign({ customization: null, mediaIds: [], ready: false, missing: [] }); setVariantId(id); setStatus('idle') }} /> : product.variants.length > 1 ? <label>{t('personalization.option')}<select disabled={status === 'adding'} value={variant?.id} onChange={(event) => { setVariantId(event.target.value); setStatus('idle'); setErrorMessage('') }}>{product.variants.map((option) => <option key={option.id} value={option.id} disabled={variantStock(option).state === 'sold-out'}>{option.title}</option>)}</select></label> : <span aria-hidden="true" />}
         </div>
         <div className="personalization-page-intro"><p>{t('personalization.studio')}</p><h1>{creationTitle}</h1><span>{t('personalization.intro')}</span></div>
       </header>
-      <ProductPersonalizer saving={status === 'adding'} config={product.personalization} variantId={variant?.id ?? ''} variantLabel={product.variants.length > 1 ? variant?.title : undefined} productMedia={productMedia} onChange={setDesign} previewOpen={previewOpen} onPreviewClose={() => setPreviewOpen(false)} onAddToCart={requestAddToCart} addToCartDisabled={!variant || soldOut || !calibrationReady || status === 'adding'} addToCartLabel={addToCartLabel} />
+      {personalizationViews.length > 0 && <ProductPersonalizer key={variantPhotos(product, variant).map(m => m.id).join(',')} saving={status === 'adding'} config={resolvedConfig} variantId={variant?.id ?? ''} variantLabel={product.variants.length > 1 ? variant?.title : undefined} productMedia={productMedia} onChange={setDesign} previewOpen={previewOpen} onPreviewClose={() => setPreviewOpen(false)} onAddToCart={requestAddToCart} addToCartDisabled={!variant || soldOut || !calibrationReady || status === 'adding'} addToCartLabel={addToCartLabel} />}
       <div className="personalization-checkout-bar">
         <span>{!calibrationReady ? t('personalization.sizeCalibrationPending') : t(soldOut ? 'personalization.soldOutDetail' : design.ready ? 'personalization.ready' : 'personalization.optionalReady')}</span>
-        <button className="button button--secondary personalization-preview-button" type="button" disabled={!calibrationReady} onClick={() => setPreviewOpen(true)}><Eye /> {t('personalization.previewResult')}</button>
+        <button className="button button--secondary personalization-preview-button" type="button" disabled={!calibrationReady || !personalizationViews.length} onClick={() => setPreviewOpen(true)}><Eye /> {t('personalization.previewResult')}</button>
         <button className="button button--primary" type="button" disabled={!variant || soldOut || !calibrationReady || status === 'adding'} onClick={requestAddToCart}><ShoppingBag />{addToCartLabel}</button>
         {status === 'added' && <a className="text-link" href="/cart">{t('personalization.viewCart')}</a>}
         {status === 'error' && <strong role="alert">{errorMessage}</strong>}

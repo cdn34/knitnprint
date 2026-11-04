@@ -4318,3 +4318,7 @@ html[lang='pt'] .home-section-title--categories h2 {
 
 .personalization-final-preview-canvas { width: 600px; container-type: inline-size; }
 .personalization-final-preview-canvas > img { width: 100%; max-height: none; }
+.color-swatch {display:inline-block;width:1.4rem;height:1.4rem;border:1px solid #777;border-radius:50%;vertical-align:middle;margin-right:.5rem}
+.structured-variant-picker fieldset {border:0;padding:.5rem 0;margin:0}
+.structured-variant-picker [aria-pressed=true] {outline:2px solid currentColor;outline-offset:2px}
+.structured-variant-picker button:disabled {opacity:.4}

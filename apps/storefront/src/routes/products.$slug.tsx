@@ -1,3 +1,5 @@
+import { activePersonalizationViews } from '../personalization-views'
+import { VariantPicker, configuration, variantPhotos, variantPersonalization } from '../components/variant-picker'
 import { createFileRoute, notFound } from '@tanstack/react-router'
 import {
   ArrowLeft,
@@ -58,18 +60,20 @@ function ProductPage() {
   >('idle')
   const [hydrated, setHydrated] = useState(false)
   const [selectedMediaIndex, setSelectedMediaIndex] = useState(0)
-  const selectedMedia = product.media[selectedMediaIndex] ?? product.media[0]
-  const personalizable = product.personalization.mode !== 'none'
+  const photos = variantPhotos(product, variant)
+  const selectedMedia = photos[selectedMediaIndex] ?? photos[0]
+  const selectedPersonalization = variantPersonalization(product, variant)
+  const personalizable = selectedPersonalization.mode !== 'none' && (!Array.isArray(selectedPersonalization.views) || activePersonalizationViews(selectedPersonalization).length > 0)
 
   function showPreviousPhoto() {
     setSelectedMediaIndex((current) =>
-      current === 0 ? product.media.length - 1 : current - 1,
+      current === 0 ? photos.length - 1 : current - 1,
     )
   }
 
   function showNextPhoto() {
     setSelectedMediaIndex((current) =>
-      current === product.media.length - 1 ? 0 : current + 1,
+      current === photos.length - 1 ? 0 : current + 1,
     )
   }
 
@@ -133,17 +137,17 @@ function ProductPage() {
                 aria-label={t('product.illustration', { name: product.title })}
               />
             )}
-            {product.media.length > 1 && (
+            {photos.length > 1 && (
               <div className="product-gallery-controls">
                 <button type="button" onClick={showPreviousPhoto} aria-label="Previous product photo"><ChevronLeft aria-hidden="true" /></button>
-                <span aria-live="polite">{selectedMediaIndex + 1} / {product.media.length}</span>
+                <span aria-live="polite">{selectedMediaIndex + 1} / {photos.length}</span>
                 <button type="button" onClick={showNextPhoto} aria-label="Next product photo"><ChevronRight aria-hidden="true" /></button>
               </div>
             )}
           </div>
-          {product.media.length > 1 && (
+          {photos.length > 1 && (
             <div className="product-gallery-thumbnails" aria-label="Product photos">
-              {product.media.map((media, index) => (
+              {photos.map((media, index) => (
                 <button
                   type="button"
                   key={media.id}
@@ -165,7 +169,9 @@ function ProductPage() {
             {priceForVariant(variant)}
           </p>
           <p className="product-detail-description">{product.description}</p>
-          {product.variants.length > 0 && (
+          <VariantPicker product={product} variant={variant} onChange={id => { setSelectedVariantId(id); setSelectedMediaIndex(0) }} />
+          {configuration(product).options.length > 0 && variant && <small>{t('product.sku')} {variant.sku}</small>}
+          {!configuration(product).options.length && product.variants.length > 0 && (
             <fieldset className="variant-picker">
               <legend>{t('product.chooseOption')}</legend>
               <div className="variant-options">

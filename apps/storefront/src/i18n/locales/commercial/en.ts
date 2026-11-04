@@ -1,4 +1,5 @@
 export const commercialEn = {
+  'product.variantArtworkChange': 'Changing color will clear artwork on different photos. Continue?',
   'b2b.title': 'Tailored solutions for your business',
   'b2b.intro': 'Turn your identity into a recognisable brand. At KnitNPrint, we personalise clothing and corporate gifts that strengthen team spirit, elevate events and make an impression on clients and partners.',
   'b2b.minimum': '*Corporate projects are subject to minimum order quantities. Contact us for more information.',
