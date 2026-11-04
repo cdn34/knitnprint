@@ -300,7 +300,7 @@ export interface CreateVariantRequest {
   "currency": string
   "option_values"?: unknown
   "price_minor": number
-  "sku": string
+  "sku"?: string
   "title": string
 }
 
@@ -612,6 +612,22 @@ export interface ManualPaymentRequest {
   "reason": string
 }
 
+export interface MatrixPreview {
+  "active_count": number
+  "combination_count": number
+}
+
+export interface MatrixVariant {
+  "available_quantity": number
+  "expected_quantity"?: number | null
+  "id"?: string | null
+  "price_minor": number
+  "retired": boolean
+  "selections": {
+
+}
+}
+
 export interface MediaRecord {
   "alt_text": string
   "id": string
@@ -658,6 +674,13 @@ export interface OperationalDashboard {
   "recent_orders": Array<DashboardOrder>
   "recent_refunds": Array<DashboardRefund>
   "timezone": string
+}
+
+export interface OptionValue {
+  "code": string
+  "color"?: string | null
+  "label": string
+  "media_ids"?: Array<string>
 }
 
 export interface Order {
@@ -867,9 +890,12 @@ export interface Product {
   "media": Array<ProductMedia>
   "personalization": PersonalizationConfig
   "search_keywords": string
+  "sku": string
   "slug": string
   "status": string
   "title": string
+  "variant_config": VariantConfig
+  "variant_revision": number
   "variants": Array<Variant>
 }
 
@@ -900,6 +926,13 @@ export interface ProductMedia {
   "position": number
   "thumbnail_url": string
   "url": string
+}
+
+export interface ProductOption {
+  "code": string
+  "control": string
+  "label": string
+  "values": Array<OptionValue>
 }
 
 export interface RatingCount {
@@ -954,6 +987,12 @@ export interface RequestEmailChangeRequest {
 export interface ResetPasswordRequest {
   "password": string
   "token": string
+}
+
+export interface SaveMatrix {
+  "config": VariantConfig
+  "revision": number
+  "variants": Array<MatrixVariant>
 }
 
 export interface SendNotificationRequest {
@@ -1067,7 +1106,7 @@ export interface UpdateProductRequest {
   "personalization"?: PersonalizationConfig
   "price_minor": number
   "search_keywords"?: string
-  "sku": string
+  "sku"?: string
   "slug": string
   "title": string
 }
@@ -1080,8 +1119,21 @@ export interface Variant {
   "option_values": unknown
   "position": number
   "price_minor": number
+  "retired": boolean
+  "selections"?: unknown
   "sku": string
   "title": string
+}
+
+export interface VariantConfig {
+  "color_photos": boolean
+  "options": Array<ProductOption>
+}
+
+export interface VariantTemplate {
+  "definition": ProductOption
+  "id": string
+  "revision": number
 }
 
 export interface VerificationRequest {

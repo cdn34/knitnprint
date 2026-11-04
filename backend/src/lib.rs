@@ -31,6 +31,7 @@ pub mod payments;
 pub mod security;
 pub mod settings;
 pub mod staff;
+pub mod variant_options;
 
 pub const CURRENCY: &str = "EUR";
 
@@ -169,6 +170,22 @@ pub fn app(state: AppState) -> Router {
         .route(
             "/api/admin/products/{product_id}/media/{media_id}",
             axum::routing::delete(catalog::delete_media),
+        )
+        .route(
+            "/api/admin/variant-templates",
+            get(variant_options::templates),
+        )
+        .route(
+            "/api/admin/variant-templates/{id}",
+            axum::routing::put(variant_options::save_template),
+        )
+        .route(
+            "/api/admin/products/{id}/variant-matrix/preview",
+            axum::routing::post(variant_options::preview_matrix),
+        )
+        .route(
+            "/api/admin/products/{id}/variant-matrix",
+            axum::routing::put(variant_options::save_matrix),
         )
         .route(
             "/api/admin/products/{product_id}/variants",

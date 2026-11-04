@@ -915,14 +915,14 @@ async fn load_cart(pool: &PgPool, cart_id: Uuid) -> Result<Cart, sqlx::Error> {
     let rows = sqlx::query_as::<_, CartLineRow>(
         r#"
         SELECT line.id, line.variant_id, product.slug AS product_slug,
-               product.title AS product_title, product.status AS product_status,
+               product.title AS product_title, CASE WHEN variant.retired THEN 'archived' ELSE product.status END AS product_status,
                variant.title AS variant_title, variant.sku, line.quantity,
                line.unit_price_minor, line.currency::text AS currency,
                (
                    SELECT '/api/media/' || media.id || '/thumbnail'
                    FROM product_media relation
                    JOIN media_assets media ON media.id = relation.media_asset_id
-                   WHERE relation.product_id = product.id AND media.status = 'ready'
+                   WHERE relation.product_id = product.id AND media.status = 'ready' AND (NOT EXISTS(SELECT 1 FROM variant_photo_ids(product.variant_config,variant.selections)) OR relation.media_asset_id::text IN (SELECT variant_photo_ids(product.variant_config,variant.selections)))
                    ORDER BY relation.position, media.id LIMIT 1
                ) AS image_url, line.customization, line.customization_media_asset_id,
                line.customization_media_asset_ids
@@ -1657,6 +1657,17 @@ fn area_customization_allowed(
     referenced_media_ids == supplied_media_ids
 }
 
+pub(crate) async fn customization_current(
+    tx: &mut Transaction<'_, Postgres>,
+    id: Uuid,
+    customization: Option<&Value>,
+    media_ids: &[Uuid],
+) -> Result<bool, sqlx::Error> {
+    Ok(active_variant(tx, id)
+        .await?
+        .is_some_and(|v| customization_allowed(&v, customization, media_ids)))
+}
+
 async fn active_variant(
     transaction: &mut Transaction<'_, Postgres>,
     variant_id: Uuid,
@@ -1666,7 +1677,7 @@ async fn active_variant(
         SELECT variant.id, variant.price_minor, variant.currency::text AS currency,
                COALESCE(personalization.mode, 'none') AS personalization_mode,
                COALESCE(personalization.print_areas, '[{"id":"area-1"}]'::jsonb) AS print_areas,
-               COALESCE(personalization.views, '[{"id":"view-front","print_areas":[{"id":"area-1"}]}]'::jsonb) AS personalization_views,
+               variant_views(product.variant_config,variant.selections,COALESCE(personalization.views, '[{"id":"view-front","print_areas":[{"id":"area-1"}]}]'::jsonb)) AS personalization_views,
                COALESCE(personalization.text_max_characters, 35) AS text_max_characters,
                COALESCE(personalization.text_min_size, 12) AS text_min_size,
                COALESCE(personalization.text_max_size, 72) AS text_max_size,
@@ -1675,7 +1686,7 @@ async fn active_variant(
         FROM product_variants variant
         JOIN products product ON product.id = variant.product_id
         LEFT JOIN product_personalization personalization ON personalization.product_id = product.id
-        WHERE variant.id = $1 AND product.status = 'active'
+        WHERE variant.id = $1 AND product.status = 'active' AND NOT variant.retired
         FOR UPDATE OF variant
         "##,
     )

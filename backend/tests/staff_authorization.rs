@@ -229,7 +229,7 @@ async fn staff_authorization_and_audit_lifecycle() {
             "slug": "woven-planter",
             "description": "A tactile home for printed forms.",
             "search_keywords": "stitch private-keyword",
-            "sku": "PLANTER-001",
+            "sku": product_body["variants"][0]["sku"],
             "price_minor": 4200,
             "currency": "EUR",
             "available_quantity": 8

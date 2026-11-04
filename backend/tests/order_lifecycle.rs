@@ -378,7 +378,14 @@ async fn checkout_snapshots_reserves_and_manual_payment_are_idempotent() {
         .execute(&pool)
         .await
         .unwrap();
-    sqlx::query("UPDATE product_variants SET price_minor = 9999, sku = 'RENAMED' WHERE id = $1")
+    assert!(
+        sqlx::query("UPDATE product_variants SET sku = 'RENAMED' WHERE id=$1")
+            .bind(variant_id)
+            .execute(&pool)
+            .await
+            .is_err()
+    );
+    sqlx::query("UPDATE product_variants SET price_minor = 9999 WHERE id = $1")
         .bind(variant_id)
         .execute(&pool)
         .await
@@ -3260,7 +3267,7 @@ async fn checkout_requires_a_ready_cart_and_historical_manual_orders_remain_mana
     assert!(product.get("shipping").is_none());
     let edited = request(&router,"PUT",&format!("/api/admin/products/{}",product["id"].as_str().unwrap()),Some(&owner),Some(json!({
         "title":"Edited without packaging","slug":"no-packaging-required","description":"Updated",
-        "sku":"NO-DELIVERY-PROFILE","price_minor":2700,"currency":"EUR","available_quantity":8
+        "sku":product["variants"][0]["sku"],"price_minor":2700,"currency":"EUR","available_quantity":8
     })),None).await;
     assert_eq!(edited.status(), StatusCode::OK);
     assert!(response_json(edited).await.get("shipping").is_none());

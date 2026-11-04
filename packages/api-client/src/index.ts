@@ -1,3 +1,5 @@
+import type { VariantTemplate, SaveMatrix } from './schema'
+export type { VariantTemplate, SaveMatrix, VariantConfig, ProductOption, OptionValue, MatrixVariant } from './schema'
 export type { DeliveryRate, DeliveryRatesSettings, DeliveryQuote, UpdateDeliveryRatesRequest, TestDeliveryRateRequest } from './schema'
 import type { DeliveryRatesSettings, DeliveryQuote, UpdateDeliveryRatesRequest, TestDeliveryRateRequest } from './schema'
 
@@ -546,6 +548,10 @@ export function createApiClient(options: ApiClientOptions = {}) {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(input),
       }),
+    previewVariantMatrix: (productId: string, input: SaveMatrix) => send<{active_count: number; combination_count: number}>(`/api/admin/products/${productId}/variant-matrix/preview`, { method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify(input) }),
+    variantTemplates: () => send<VariantTemplate[]>('/api/admin/variant-templates'),
+    saveVariantTemplate: (input: VariantTemplate) => send<{ok: boolean}>(`/api/admin/variant-templates/${input.id}`, { method: 'PUT', headers: {'content-type': 'application/json'}, body: JSON.stringify(input) }),
+    saveVariantMatrix: (productId: string, input: SaveMatrix) => send<{ok: boolean}>(`/api/admin/products/${productId}/variant-matrix`, { method: 'PUT', headers: {'content-type': 'application/json'}, body: JSON.stringify(input) }),
     adminProduct: (productId: string) =>
       send<Product>(`/api/admin/products/${productId}`),
     createProduct: (input: CreateProductRequest) =>

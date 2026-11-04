@@ -14,6 +14,10 @@ use crate::{
         description = "Authoritative API for the KnitNPrint storefront and admin."
     ),
     paths(
+        crate::variant_options::templates,
+        crate::variant_options::save_template,
+        crate::variant_options::save_matrix,
+        crate::variant_options::preview_matrix,
         b2b::create,
         b2b::list,
         b2b::detail,

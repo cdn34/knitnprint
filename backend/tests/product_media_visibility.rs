@@ -175,7 +175,7 @@ async fn uploaded_draft_images_are_visible_only_to_catalog_staff_until_published
     // Saving/reloading a photo preserves its permissions and allows removing the final area.
     let mut personalization = created["personalization"].clone();
     let initial_area = personalization["print_areas"].clone();
-    let mut update = json!({"title":"Draft image product", "slug":"draft-image-product", "description":"", "sku":"DRAFT-IMAGE-TEST", "price_minor":1000, "currency":"EUR", "available_quantity":5});
+    let mut update = json!({"title":"Draft image product", "slug":"draft-image-product", "description":"", "sku":created["variants"][0]["sku"], "price_minor":1000, "currency":"EUR", "available_quantity":5});
     for mode in ["text", "photo", "photo_text", "none"] {
         personalization["views"] = json!([{"id":"photo-front", "label":"Frente", "media_id":media_id, "mode":mode, "print_areas":initial_area}]);
         update["personalization"] = personalization.clone();
