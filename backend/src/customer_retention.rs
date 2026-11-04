@@ -48,6 +48,9 @@ pub async fn cleanup_expired_customer_data(
     .await?
     .rows_affected();
 
+    sqlx::query("DELETE FROM customer_google_challenges WHERE expires_at <= now()")
+        .execute(&mut *transaction)
+        .await?;
     let expired = sqlx::query_scalar::<_, Uuid>(
         r#"
         SELECT id

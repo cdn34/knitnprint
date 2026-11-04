@@ -262,6 +262,15 @@ async fn customer_can_edit_profile_confirm_new_email_and_view_only_own_orders() 
         StatusCode::NOT_FOUND
     );
 
+    let proof = request(
+        &router,
+        "POST",
+        "/api/account/reauthenticate",
+        Some(customer_cookie),
+        Some(json!({"password":CUSTOMER_PASSWORD})),
+    )
+    .await;
+    assert_eq!(proof.status(), StatusCode::NO_CONTENT);
     assert_eq!(
         request(
             &router,

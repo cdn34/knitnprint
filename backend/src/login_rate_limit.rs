@@ -107,6 +107,16 @@ pub async fn clear_customer_account_buckets(
             "account",
             &format!("email_change\0{email}"),
         ),
+        bucket_hash(
+            AuthScope::AccountAction,
+            "account",
+            &format!("google_confirm\0{email}"),
+        ),
+        bucket_hash(
+            AuthScope::AccountAction,
+            "account",
+            &format!("reauthenticate\0{email}"),
+        ),
     ];
     let mut removed = 0;
     for hash in hashes {
@@ -263,7 +273,7 @@ impl<'a> AccountLoginGuard<'a> {
     }
 }
 
-async fn consume_request_volume(
+pub(crate) async fn consume_request_volume(
     pool: &PgPool,
     scope: AuthScope,
     client_ip: IpAddr,

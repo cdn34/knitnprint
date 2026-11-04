@@ -1,9 +1,9 @@
 use utoipa::{OpenApi, openapi::OpenApi as OpenApiDocument};
 
 use crate::{
-    admin_notifications, auth, b2b, cancellations, carts, catalog, customer_auth, customers,
-    dashboard, delivery_rates, discounts, error, favorites, feedback, fulfillment, health,
-    inventory, media, notifications, orders, payments, settings, staff,
+    admin_notifications, auth, b2b, cancellations, carts, catalog, customer_auth, customer_google,
+    customers, dashboard, delivery_rates, discounts, error, favorites, feedback, fulfillment,
+    health, inventory, media, notifications, orders, payments, settings, staff,
 };
 
 #[derive(OpenApi)]
@@ -30,6 +30,13 @@ use crate::{
         auth::login,
         auth::logout,
         auth::me,
+        customer_google::config,
+        customer_google::challenge,
+        customer_google::authenticate,
+        customer_google::confirm,
+        customer_google::reauthenticate,
+        customer_google::password,
+        customer_google::unlink,
         customer_auth::register,
         customer_auth::login,
         customer_auth::logout,
@@ -134,6 +141,14 @@ use crate::{
         error::ErrorDetail,
         auth::LoginRequest,
         auth::StaffProfile,
+        customer_google::AuthMethods,
+        customer_google::GoogleConfig,
+        customer_google::ChallengeRequest,
+        customer_google::ChallengeResponse,
+        customer_google::GoogleRequest,
+        customer_google::GoogleConfirmRequest,
+        customer_google::GoogleResult,
+        customer_google::PasswordRequest,
         customer_auth::CustomerRegisterRequest,
         customer_auth::CustomerLoginRequest,
         customer_auth::CreateAccountAddressRequest,

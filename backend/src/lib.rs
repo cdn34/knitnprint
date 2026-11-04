@@ -8,6 +8,7 @@ pub mod catalog;
 pub mod checkout;
 pub mod config;
 pub mod customer_auth;
+pub mod customer_google;
 pub mod customer_retention;
 pub mod customers;
 pub mod dashboard;
@@ -57,6 +58,7 @@ use tower_http::{
 #[derive(Clone, Default)]
 pub struct AppState {
     pub database: Option<PgPool>,
+    pub google: customer_google::GoogleService,
     pub media_storage: Option<object_storage::ObjectStorage>,
     pub media_scanner: media_scanner::MediaScanner,
     pub email: email::EmailService,
@@ -77,6 +79,31 @@ pub fn app(state: AppState) -> Router {
         .collect::<Vec<_>>();
 
     Router::new()
+        .route("/api/account/google/config", get(customer_google::config))
+        .route(
+            "/api/account/google/challenge",
+            axum::routing::post(customer_google::challenge),
+        )
+        .route(
+            "/api/account/google",
+            axum::routing::post(customer_google::authenticate),
+        )
+        .route(
+            "/api/account/google/confirm",
+            axum::routing::post(customer_google::confirm),
+        )
+        .route(
+            "/api/account/reauthenticate",
+            axum::routing::post(customer_google::reauthenticate),
+        )
+        .route(
+            "/api/account/password",
+            axum::routing::put(customer_google::password),
+        )
+        .route(
+            "/api/account/auth-methods/{method}",
+            axum::routing::delete(customer_google::unlink),
+        )
         .route("/api/health", get(health::health))
         .route("/api/ready", get(health::ready))
         .route(

@@ -175,6 +175,65 @@ impl EmailService {
         }
     }
 
+    pub async fn send_google_confirmation(
+        &self,
+        to: &str,
+        token: &str,
+        challenge: uuid::Uuid,
+    ) -> Result<(), String> {
+        let url = format!(
+            "{}/account?google_confirm={token}&google_challenge={challenge}",
+            self.storefront_base_url
+        );
+        self.send_security_message(to, "google_confirmation", "Confirm Google sign-in", &format!("Confirm connecting Google to your KnitNPrint account: {url}\nThis link expires in ten minutes and must be opened in the browser that started sign-in. If you did not request this, ignore this email."), &url).await
+    }
+    pub async fn send_security_notice(&self, to: &str, action: &str) -> Result<(), String> {
+        self.send_security_message(to, "account_security", "KnitNPrint account security change", &format!("Your account sign-in settings changed: {action}. If this was not you, reset your password and contact support@knitnprint.com."), "").await
+    }
+    async fn send_security_message(
+        &self,
+        to: &str,
+        kind: &str,
+        subject: &str,
+        text: &str,
+        url: &str,
+    ) -> Result<(), String> {
+        self.ensure_recipient_allowed(to)?;
+        match &self.delivery {
+            Delivery::Development(mailbox) => {
+                mailbox.write().await.push(DevelopmentEmail {
+                    to: to.into(),
+                    kind: kind.into(),
+                    subject: subject.into(),
+                    action_url: url.into(),
+                    html: None,
+                    text: Some(text.into()),
+                });
+                Ok(())
+            }
+            Delivery::Ses {
+                client,
+                from,
+                configuration_set,
+            } => {
+                send_ses(
+                    client,
+                    from,
+                    configuration_set.as_deref(),
+                    to,
+                    &crate::order_email::RenderedConfirmation {
+                        subject: subject.into(),
+                        text: text.into(),
+                        html: format!("<p>{}</p>", escape_html(text)),
+                    },
+                    Vec::new(),
+                )
+                .await
+            }
+            Delivery::Disabled => Err("email delivery is not configured".into()),
+        }
+    }
+
     pub async fn send_account_action(
         &self,
         to: &str,
