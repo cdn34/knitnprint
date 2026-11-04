@@ -576,3 +576,7 @@ Brand derivatives are generated deterministically from `images/logo.png`:
 ```bash
 npm run assets:brand
 ```
+
+### Google customer sign-in
+
+Optional Google sign-in uses `GOOGLE_CLIENT_ID` on the API and keeps existing customer sessions and account data. See [Google sign-in setup and rollout](docs/operations/google-signin.md) and the [agreed implementation plan](GOOGLE_SIGNIN_PLAN.md).

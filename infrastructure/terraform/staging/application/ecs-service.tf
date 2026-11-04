@@ -73,6 +73,7 @@ resource "aws_ecs_task_definition" "application" {
       ]
       environment = [
         { name = "APP_ENV", value = "staging" },
+        { name = "GOOGLE_CLIENT_ID", value = var.google_client_id },
         { name = "HOST", value = "0.0.0.0" },
         { name = "PORT", value = "8080" },
         { name = "TRUST_PROXY_HEADERS", value = "true" },
