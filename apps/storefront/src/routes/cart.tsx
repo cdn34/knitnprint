@@ -21,6 +21,8 @@ import { CountrySelect } from '../components/country-select'
 import { VerifiedCustomerGate } from '../components/verified-customer-gate'
 import { StorefrontAnnouncement, StorefrontFooter, StorefrontHeader } from '../components/storefront-shell'
 import { useI18n } from '../i18n'
+import { personalizationSummary } from '../personalization-summary'
+import { OrderLinePersonalization } from '../components/order-line-personalization'
 
 export const Route = createFileRoute('/cart')({
   head: () => ({
@@ -34,25 +36,6 @@ export const Route = createFileRoute('/cart')({
   }),
   component: CartPage,
 })
-
-function personalizationSummary(value: unknown, mediaIds: string[], t: ReturnType<typeof useI18n>['t']) {
-  if (!value || typeof value !== 'object') return t('personalization.summary')
-  const customization = value as { areas?: Array<{ view_id?: unknown; photo?: unknown; text?: { content?: unknown } }>; photo?: unknown; text?: { content?: unknown } }
-  if (Array.isArray(customization.areas)) {
-    const photoCount = customization.areas.filter((area) => Boolean(area.photo)).length
-    const textCount = customization.areas.filter((area) => typeof area.text?.content === 'string').length
-    const viewCount = new Set(customization.areas.flatMap((area) => typeof area.view_id === 'string' ? [area.view_id] : [])).size
-    const parts = [
-      viewCount > 1 ? t('personalization.summarySides', { count: viewCount }) : '',
-      t(customization.areas.length === 1 ? 'personalization.summaryArea' : 'personalization.summaryAreas', { count: customization.areas.length }),
-    ].filter(Boolean)
-    if (photoCount) parts.push(t(photoCount === 1 ? 'personalization.summaryPhoto' : 'personalization.summaryPhotos', { count: photoCount }))
-    if (textCount) parts.push(t(textCount === 1 ? 'personalization.summaryText' : 'personalization.summaryTexts', { count: textCount }))
-    return `${t('personalization.summary')} · ${parts.join(' · ')}`
-  }
-  const text = customization.text?.content
-  return `${t('personalization.summary')}${mediaIds.length || customization.photo ? t('personalization.summaryWithPhoto') : ''}${typeof text === 'string' ? ` · “${text}”` : ''}`
-}
 
 function shippingDetails(shipping: { carrier_name: string; method_name: string; transit_hours: number }) {
   const carrier = shipping.carrier_name.trim() || shipping.method_name
@@ -290,7 +273,7 @@ function CartContent() {
 
         {checkoutSuspended && (!order || order.payment_status === 'pending') && <p className="cart-notice cart-checkout-notice" role="status">{t('cart.checkoutSuspended')}</p>}
         {loading && <p className="cart-notice" role="status">{t('cart.loading')}</p>}
-        {!loading && !cart && <p className="cart-notice" role="alert">{message}</p>}
+        {!loading && !cart && !order && <p className="cart-notice" role="alert">{message}</p>}
 
         {order && (
           <OrderConfirmation
@@ -475,10 +458,13 @@ function OrderConfirmation({
       </dl>
       <div className="order-confirmation-lines">
         {order.lines.map((line) => (
-          <div key={line.id}>
-            <span>{line.quantity} × {line.product_title} · {line.variant_title}</span>
-            <strong>{formatCurrency(line.line_total_minor, line.currency)}</strong>
-          </div>
+          <article className="order-confirmation-line" key={line.id}>
+            <div className="order-confirmation-line-heading">
+              <h3>{line.quantity} × {line.product_title} · {line.variant_title}</h3>
+              <strong>{formatCurrency(line.line_total_minor, line.currency)}</strong>
+            </div>
+            <OrderLinePersonalization orderId={order.id} line={line} />
+          </article>
         ))}
       </div>
       <address>

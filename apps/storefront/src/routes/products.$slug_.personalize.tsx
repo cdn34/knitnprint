@@ -2,7 +2,7 @@ import { ApiError } from '@knitnprint/api-client'
 import { createFileRoute, notFound } from '@tanstack/react-router'
 import { ArrowLeft, Eye, ShoppingBag } from 'lucide-react'
 import { useMemo, useState } from 'react'
-import { announceCartUpdate, cartApi, cartMutationKey } from '../cart-api'
+import { redirectToProductsWithCart, cartApi, cartMutationKey } from '../cart-api'
 import { mediaUrl, preferredVariant, publishedProduct, variantStock } from '../catalog-api'
 import { ProductPersonalizer, type CustomerCustomization } from '../components/product-personalizer'
 import { PersonalizationPrice } from '../components/personalization-price'
@@ -60,8 +60,8 @@ function PersonalizeProductContent() {
       if (design.customization && !previews?.length) throw new Error('Personalized preview could not be saved')
       const customization = design.customization
       const cart = await cartApi.addCartItem({ variant_id: variant.id, quantity: 1, personalization_previews: previews ?? [], ...(customization ? { customization } : {}), ...(design.mediaIds.length ? { customization_media_asset_ids: design.mediaIds } : {}) }, cartMutationKey())
-      announceCartUpdate(cart)
       setStatus('added')
+      redirectToProductsWithCart(cart)
     } catch (error) {
       setStatus('error')
       setErrorMessage(error instanceof ApiError && error.body.error.code === 'insufficient_stock'
@@ -73,7 +73,7 @@ function PersonalizeProductContent() {
   }
 
   function requestAddToCart() {
-    if (!variant || soldOut || !calibrationReady || status === 'adding') return
+    if (!variant || soldOut || !calibrationReady || status === 'adding' || status === 'added') return
     setPreviewOpen(false)
     if (design.missing.length) { setConfirmingIncomplete(true); return }
     void addToCart()
@@ -104,14 +104,14 @@ function PersonalizeProductContent() {
         </div>
         <div className="personalization-page-intro"><p>{t('personalization.studio')}</p><h1>{creationTitle}</h1><span>{t('personalization.intro')}</span></div>
       </header>
-      <ProductPersonalizer saving={status === 'adding'} config={product.personalization} variantId={variant?.id ?? ''} variantLabel={product.variants.length > 1 ? variant?.title : undefined} productMedia={productMedia} onChange={setDesign} previewOpen={previewOpen} onPreviewClose={() => setPreviewOpen(false)} onAddToCart={requestAddToCart} addToCartDisabled={!variant || soldOut || !calibrationReady || status === 'adding'} addToCartLabel={addToCartLabel} priceSummary={priceSummary} />
+      <ProductPersonalizer saving={status === 'adding' || status === 'added'} config={product.personalization} variantId={variant?.id ?? ''} variantLabel={product.variants.length > 1 ? variant?.title : undefined} productMedia={productMedia} onChange={setDesign} previewOpen={previewOpen} onPreviewClose={() => setPreviewOpen(false)} onAddToCart={requestAddToCart} addToCartDisabled={!variant || soldOut || !calibrationReady || status === 'adding' || status === 'added'} addToCartLabel={addToCartLabel} priceSummary={priceSummary} />
       <div className="personalization-checkout-bar">
         <div className="personalization-checkout-details">
           {priceSummary}
           <span>{!calibrationReady ? t('personalization.sizeCalibrationPending') : t(soldOut ? 'personalization.soldOutDetail' : design.ready ? 'personalization.ready' : 'personalization.optionalReady')}</span>
         </div>
         <button className="button button--secondary personalization-preview-button" type="button" disabled={!calibrationReady} onClick={() => setPreviewOpen(true)}><Eye /> {t('personalization.previewResult')}</button>
-        <button className="button button--primary" type="button" disabled={!variant || soldOut || !calibrationReady || status === 'adding'} onClick={requestAddToCart}><ShoppingBag />{addToCartLabel}</button>
+        <button className="button button--primary" type="button" disabled={!variant || soldOut || !calibrationReady || status === 'adding' || status === 'added'} onClick={requestAddToCart}><ShoppingBag />{addToCartLabel}</button>
         {status === 'added' && <a className="text-link" href="/cart">{t('personalization.viewCart')}</a>}
         {status === 'error' && <strong role="alert">{errorMessage}</strong>}
       </div>

@@ -22,7 +22,8 @@ test.beforeAll(async () => {
   // The isolated storefront uses this fixture for server-rendered catalog reads.
   api = createServer((request, response) => {
     response.setHeader('content-type', 'application/json')
-    response.end(JSON.stringify(request.url?.split('?')[0] === '/api/products/pricing-shirt' ? product : []))
+    const path = request.url?.split('?')[0]
+    response.end(JSON.stringify(path === '/api/products/pricing-shirt' ? product : path === '/api/products' ? [product] : []))
   })
   await new Promise<void>((resolve, reject) => {
     api.once('error', reject)
@@ -42,6 +43,7 @@ test('counts filled areas once, previews the total and shows the cart surcharge'
     const path = new URL(route.request().url()).pathname
     if (path === '/api/account/me') return route.fulfill({ json: profile })
     if (path === '/api/products/pricing-shirt') return route.fulfill({ json: product })
+    if (path === '/api/products') return route.fulfill({ json: [product] })
     if (path === '/api/cart') return route.fulfill({ json: cart })
     if (path === '/api/payments/options') return route.fulfill({ json: { stripe: false, manual: true, checkout_suspended: false } })
     if (path === '/api/personalization/uploads') {
@@ -99,11 +101,14 @@ test('counts filled areas once, previews the total and shows the cart surcharge'
   expect(submitted).toBeUndefined()
   await page.getByRole('button', { name: 'Adicionar ao carrinho', exact: true }).click()
   await confirmation.getByRole('button', { name: 'Adicionar ao carrinho', exact: true }).click()
-  await expect(page.getByRole('button', { name: 'Adicionado ao carrinho', exact: true })).toBeVisible()
+  await expect(page).toHaveURL(/\/products\/?$/)
+  const drawer = page.getByRole('dialog', { name: 'Carrinho' })
+  await expect(drawer.locator('.cart-drawer-item')).toHaveCount(1)
+  await expect(drawer.locator('.cart-drawer-price-breakdown')).toHaveText(/20,00\s*€.*2,00\s*€/)
   expect(submitted!.customization.areas).toHaveLength(2)
   expect(submitted!.customization.areas[0]).toHaveProperty('photo')
   expect(submitted!.customization.areas[0]).toHaveProperty('text')
-  await page.getByRole('link', { name: 'Ver carrinho', exact: true }).click()
+  await drawer.getByRole('link', { name: 'Ver carrinho e finalizar', exact: true }).click()
   await expect(page.locator('.cart-item-price-breakdown')).toHaveText(/20,00\s*€.*2,00\s*€/)
   await expect(page.locator('.cart-total')).toContainText(/22,00\s*€/)
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)

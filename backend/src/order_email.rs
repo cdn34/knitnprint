@@ -20,7 +20,16 @@ pub fn preview_cid(media_id: Uuid) -> String {
     format!("preview-{media_id}@knitnprint")
 }
 
-pub fn render(order: &Order, locale: &str, base_url: &str) -> RenderedConfirmation {
+pub fn product_cid(order_line_id: Uuid) -> String {
+    format!("product-{order_line_id}@knitnprint")
+}
+
+pub fn render(
+    order: &Order,
+    locale: &str,
+    base_url: &str,
+    images: &[InlineImage],
+) -> RenderedConfirmation {
     let locale = if matches!(locale, "pt" | "es") {
         locale
     } else {
@@ -90,11 +99,20 @@ pub fn render(order: &Order, locale: &str, base_url: &str) -> RenderedConfirmati
         for preview in previews {
             visuals.push_str(&format!("<p style=\"margin:0 0 8px\"><img src=\"cid:{}\" width=\"112\" alt=\"{}\" style=\"display:block;width:112px;max-width:100%;height:auto;border:0\"><span style=\"font-size:11px;color:#6e6864\">{}</span></p>", preview_cid(preview.media_id), h(&preview.view_label), h(&preview.view_label)));
         }
-        if visuals.is_empty() && line.customization.is_some() {
-            visuals = format!(
-                "<span style=\"font-size:11px;color:#6e6864\">{}</span>",
-                h(t("missingPreview"))
-            );
+        if visuals.is_empty() {
+            let cid = product_cid(line.id);
+            if images.iter().any(|image| image.cid == cid) {
+                visuals.push_str(&format!(
+                    "<p style=\"margin:0 0 8px\"><img src=\"cid:{cid}\" width=\"112\" alt=\"{}\" style=\"display:block;width:112px;max-width:100%;height:auto;border:0\"></p>",
+                    h(&line.product_title)
+                ));
+            }
+            if line.customization.is_some() {
+                visuals.push_str(&format!(
+                    "<span style=\"font-size:11px;color:#6e6864\">{}</span>",
+                    h(t("missingPreview"))
+                ));
+            }
         }
         let personal = personalization
             .iter()
@@ -399,30 +417,90 @@ pub async fn load_images(
         let previews: Vec<crate::carts::PersonalizationPreview> =
             serde_json::from_value(line.personalization_previews.clone())
                 .map_err(|_| "order preview snapshot is invalid")?;
+        if previews.is_empty() {
+            if let Some(key) = product_image_key(pool, order.id, line.id).await? {
+                append_image(&mut images, storage, &key, product_cid(line.id)).await?;
+            }
+            continue;
+        }
         for preview in previews {
             if !seen.insert(preview.media_id) {
                 continue;
             }
-            let storage = storage.ok_or("object storage is required for saved order previews")?;
             let key = sqlx::query_scalar::<_, String>("SELECT variant.object_key FROM media_variants variant JOIN media_assets media ON media.id=variant.media_asset_id JOIN order_line_personalization_media retained ON retained.media_asset_id=media.id WHERE retained.order_line_id=$1 AND media.id=$2 AND media.status='ready' AND media.scan_status='clean' AND variant.kind='card'")
                 .bind(line.id).bind(preview.media_id).fetch_optional(pool).await.map_err(|_| "saved order preview could not be loaded")?.ok_or("saved order preview is unavailable")?;
-            let object = storage
-                .get(&key)
-                .await
-                .map_err(|_| "saved order preview could not be read")?;
-            let bytes = tokio::task::spawn_blocking(move || png(&object.bytes))
-                .await
-                .map_err(|_| "saved order preview could not be decoded")??;
-            images.push(InlineImage {
-                cid: preview_cid(preview.media_id),
-                bytes,
-            });
-            if images.iter().map(|image| image.bytes.len()).sum::<usize>() > 15_000_000 {
-                return Err("order preview attachments exceed the email size limit".into());
-            }
+            append_image(&mut images, storage, &key, preview_cid(preview.media_id)).await?;
         }
     }
     Ok(images)
+}
+
+async fn product_image_key(
+    pool: &sqlx::PgPool,
+    order_id: Uuid,
+    line_id: Uuid,
+) -> Result<Option<String>, String> {
+    // Prefer the photo recorded at checkout, even if the catalog is reordered.
+    // Older orders can fall back to a photo of the purchased variant or product.
+    sqlx::query_scalar(
+        r#"
+        WITH candidates AS (
+            SELECT relation.media_asset_id, 0 AS priority, view.position
+            FROM order_lines line
+            CROSS JOIN LATERAL jsonb_array_elements(
+                COALESCE(line.personalization_context->'views', '[]'::jsonb)
+            ) WITH ORDINALITY AS view(value, position)
+            JOIN product_media relation ON relation.product_id = line.product_id
+                AND relation.media_asset_id::text = view.value->>'media_id'
+            WHERE line.id = $1 AND line.order_id = $2 AND line.customization IS NULL
+            UNION ALL
+            SELECT relation.media_asset_id, 1, relation.position::bigint
+            FROM order_lines line
+            JOIN variant_media relation ON relation.variant_id = line.variant_id
+            WHERE line.id = $1 AND line.order_id = $2
+            UNION ALL
+            SELECT relation.media_asset_id, 2, relation.position::bigint
+            FROM order_lines line
+            JOIN product_media relation ON relation.product_id = line.product_id
+            WHERE line.id = $1 AND line.order_id = $2
+        )
+        SELECT variant.object_key
+        FROM candidates
+        JOIN media_assets asset ON asset.id = candidates.media_asset_id
+        JOIN media_variants variant ON variant.media_asset_id = asset.id
+        WHERE asset.status = 'ready' AND asset.scan_status = 'clean'
+          AND variant.kind IN ('card', 'detail', 'thumbnail')
+        ORDER BY candidates.priority, candidates.position, asset.id,
+            CASE variant.kind WHEN 'card' THEN 0 WHEN 'detail' THEN 1 ELSE 2 END
+        LIMIT 1
+        "#,
+    )
+    .bind(line_id)
+    .bind(order_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|_| "order product photo could not be loaded".into())
+}
+
+async fn append_image(
+    images: &mut Vec<InlineImage>,
+    storage: Option<&crate::object_storage::ObjectStorage>,
+    key: &str,
+    cid: String,
+) -> Result<(), String> {
+    let storage = storage.ok_or("object storage is required for order images")?;
+    let object = storage
+        .get(key)
+        .await
+        .map_err(|_| "order image could not be read")?;
+    let bytes = tokio::task::spawn_blocking(move || png(&object.bytes))
+        .await
+        .map_err(|_| "order image could not be decoded")??;
+    images.push(InlineImage { cid, bytes });
+    if images.iter().map(|image| image.bytes.len()).sum::<usize>() > 15_000_000 {
+        return Err("order image attachments exceed the email size limit".into());
+    }
+    Ok(())
 }
 
 fn png(bytes: &[u8]) -> Result<Vec<u8>, String> {

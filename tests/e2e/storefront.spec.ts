@@ -202,7 +202,7 @@ test('adds an available product, captures delivery, and creates an order', async
   const addButton = page.getByRole('button', { name: 'Add to cart' })
   await expect(addButton).toBeEnabled()
   await addButton.click()
-  await page.getByRole('link', { name: 'View your cart' }).click()
+  await page.getByRole('dialog', { name: 'Your cart' }).getByRole('link', { name: 'View cart and checkout' }).click()
 
   await expect(page.locator('.cart-item')).toHaveCount(1)
   await page.getByLabel('Email').fill(email)

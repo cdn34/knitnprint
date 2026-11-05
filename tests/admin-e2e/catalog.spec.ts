@@ -351,7 +351,7 @@ test('lets an owner manage the catalog and complete an order with configured del
   await page.setViewportSize({ width: 1280, height: 900 })
   await page.locator('.variant-option').filter({ hasText: 'Oat' }).click()
   await page.getByRole('button', { name: 'Add to cart' }).click()
-  await page.getByRole('link', { name: 'View your cart' }).click()
+  await page.getByRole('dialog', { name: 'Your cart' }).getByRole('link', { name: 'View cart and checkout' }).click()
   await page.getByLabel('Email').fill(orderEmail)
   await page.getByLabel('First name').fill('Order')
   await page.getByLabel('Last name').fill('Browser')

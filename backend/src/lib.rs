@@ -322,6 +322,10 @@ pub fn app(state: AppState) -> Router {
         .route("/api/orders", axum::routing::post(orders::create))
         .route("/api/orders/{order_id}", get(orders::customer_detail))
         .route(
+            "/api/orders/{order_id}/personalization/{media_id}",
+            get(media::customer_order_personalization_asset),
+        )
+        .route(
             "/api/orders/{order_id}/payment",
             axum::routing::post(payments::start_checkout),
         )

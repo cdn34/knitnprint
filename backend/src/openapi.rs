@@ -104,6 +104,7 @@ use crate::{
         media::initiate_personalization,
         media::complete_personalization,
         media::admin_personalization_asset,
+        media::customer_order_personalization_asset,
         media::admin_order_product_asset,
         inventory::list,
         inventory::movements,

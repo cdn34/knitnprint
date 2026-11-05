@@ -10,7 +10,7 @@ import {
   ShieldCheck,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { announceCartUpdate, cartApi, cartMutationKey } from '../cart-api'
+import { redirectToProductsWithCart, cartApi, cartMutationKey } from '../cart-api'
 import { ContextualFaqs } from '../components/contextual-faqs'
 import { ProductFeedback } from '../components/product-feedback'
 import { customerAccess } from '../components/verified-customer-gate'
@@ -88,8 +88,8 @@ function ProductPage() {
         { variant_id: variant.id, quantity: 1 },
         cartMutationKey(),
       )
-      announceCartUpdate(cart)
       setCartState('added')
+      redirectToProductsWithCart(cart)
     } catch {
       setCartState('error')
     }
@@ -107,7 +107,7 @@ function ProductPage() {
   const addToCartButton = <button
     className={`button ${personalizable ? 'button--secondary' : 'button--primary'}`}
     type="button"
-    disabled={!hydrated || !variant || stock?.state === 'sold-out' || cartState === 'adding'}
+    disabled={!hydrated || !variant || stock?.state === 'sold-out' || cartState === 'adding' || cartState === 'added'}
     onClick={addToCart}
   >
     {addToCartLabel}
