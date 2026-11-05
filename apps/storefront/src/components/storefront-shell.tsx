@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react'
 import {
   ChevronDown,
   CircleUserRound,
@@ -9,6 +9,7 @@ import {
 } from 'lucide-react'
 import { cartApi, CART_COUNT_UPDATED } from '../cart-api'
 import { localeLabels, supportedLocales, useI18n, type Locale } from '../i18n'
+import { CartDrawer } from './cart-drawer'
 
 export function StorefrontAnnouncement() {
   const { t } = useI18n()
@@ -26,6 +27,13 @@ export function StorefrontHeader() {
   const [menuOpen, setMenuOpen] = useState(false)
   const [interactive, setInteractive] = useState(false)
   const menuButtonRef = useRef<HTMLButtonElement>(null)
+  const cartLinkRef = useRef<HTMLAnchorElement>(null)
+  const [cartOpen, setCartOpen] = useState(false)
+  const [cartAdded, setCartAdded] = useState(false)
+  const closeCart = useCallback(() => {
+    setCartOpen(false)
+    cartLinkRef.current?.focus({ preventScroll: true })
+  }, [])
   const navigationLinks = [
     { href: '/products', label: t('shell.shop') },
     { href: '/collections', label: t('shell.collections') },
@@ -38,7 +46,15 @@ export function StorefrontHeader() {
     let active = true
     const updateCount = (event: Event) => setCartCount((event as CustomEvent<number>).detail)
     window.addEventListener(CART_COUNT_UPDATED, updateCount)
-    cartApi.cart().then((cart) => {
+    const search = new URLSearchParams(window.location.search)
+    const showAddedCart = search.get('cart') === 'open'
+    if (showAddedCart) {
+      setCartAdded(true)
+      setCartOpen(true)
+      search.delete('cart')
+      const query = search.toString()
+      window.history.replaceState(window.history.state, '', `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`)
+    } else cartApi.cart().then((cart) => {
       if (!active) return
       setCartCount(cart.item_count)
     }).catch(() => undefined)
@@ -59,6 +75,14 @@ export function StorefrontHeader() {
     window.addEventListener('keydown', closeOnEscape)
     return () => window.removeEventListener('keydown', closeOnEscape)
   }, [menuOpen])
+
+  function openCart(event: MouseEvent<HTMLAnchorElement>) {
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+    event.preventDefault()
+    setMenuOpen(false)
+    setCartAdded(false)
+    setCartOpen(true)
+  }
 
   return (
     <div className="site-header-shell">
@@ -96,7 +120,7 @@ export function StorefrontHeader() {
           <a className="icon-button" aria-label={t('shell.account')} href="/account">
             <CircleUserRound />
           </a>
-          <a className="icon-button cart-icon-button" aria-label={`${t('shell.viewCart')} · ${cartCount}`} href="/cart">
+          <a className="icon-button cart-icon-button" ref={cartLinkRef} aria-label={`${t('shell.viewCart')} · ${cartCount}`} aria-haspopup={interactive ? 'dialog' : undefined} aria-expanded={interactive ? cartOpen : undefined} href="/cart" onClick={openCart}>
             <ShoppingBag />
             {cartCount > 0 && <span className="cart-count-badge" aria-hidden="true">{cartCount > 999 ? '999+' : cartCount}</span>}
           </a>
@@ -110,6 +134,7 @@ export function StorefrontHeader() {
       <nav id="mobile-primary-nav" className="mobile-nav" aria-label={t('shell.mainNavigation')} hidden={!menuOpen}>
         {navigationLinks.map((link) => <a key={link.href} href={link.href} onClick={() => setMenuOpen(false)}>{link.label}</a>)}
       </nav>
+      {cartOpen && <CartDrawer added={cartAdded} onClose={closeCart} />}
     </div>
   )
 }

@@ -704,7 +704,7 @@ async fn create_order(
         return Err(CreateError::NotReady);
     }
 
-    let lines = sqlx::query_as::<_, CheckoutLine>(
+    let mut lines = sqlx::query_as::<_, CheckoutLine>(
         r#"
         SELECT product.id AS product_id, variant.id AS variant_id,
                product.title AS product_title, product.status AS product_status,
@@ -750,7 +750,12 @@ async fn create_order(
         return Err(CreateError::Changed);
     }
     let mut subtotal_minor = 0_i64;
-    for line in &lines {
+    for line in &mut lines {
+        line.current_price_minor = crate::personalization_pricing::unit_price_minor(
+            line.current_price_minor,
+            line.customization.as_ref(),
+        )
+        .ok_or(CreateError::Changed)?;
         if line.product_status != "active"
             || line.stored_price_minor != line.current_price_minor
             || line.stored_currency != line.current_currency

@@ -79,6 +79,12 @@ async fn checkout_snapshots_reserves_and_manual_payment_are_idempotent() {
         .await
         .expect("migrations should run");
     let variant_id = insert_product(&pool).await;
+    // The personalized unit remains EUR 32: EUR 31 base plus one EUR 1 area.
+    sqlx::query("UPDATE product_variants SET price_minor=3100 WHERE id=$1")
+        .bind(variant_id)
+        .execute(&pool)
+        .await
+        .unwrap();
     let product_id: Uuid =
         sqlx::query_scalar("SELECT product_id FROM product_variants WHERE id = $1")
             .bind(variant_id)
@@ -259,6 +265,13 @@ async fn checkout_snapshots_reserves_and_manual_payment_are_idempotent() {
     )
     .await;
     assert_eq!(added.status(), StatusCode::CREATED);
+    let added_body = response_json(added).await;
+    assert_eq!(added_body["items"][0]["base_unit_price_minor"], 3100);
+    assert_eq!(
+        added_body["items"][0]["personalization_unit_price_minor"],
+        100
+    );
+    assert_eq!(added_body["items"][0]["unit_price_minor"], 3200);
     let delivered = request(
         &router,
         "POST",
@@ -347,6 +360,91 @@ async fn checkout_snapshots_reserves_and_manual_payment_are_idempotent() {
     );
     assert_eq!(created_body["shipping_address"]["line1"], "9 Thread Street");
     let order_id = created_body["id"].as_str().unwrap();
+
+    let preview_path = format!("/api/orders/{order_id}/personalization/{preview_media_id}");
+    let preview = request(&router, "GET", &preview_path, None, None, None).await;
+    assert_eq!(preview.status(), StatusCode::OK);
+    assert_eq!(preview.headers()[header::CONTENT_TYPE], "image/webp");
+    assert_eq!(
+        preview.headers()[header::CACHE_CONTROL],
+        "private, no-store"
+    );
+    assert_eq!(
+        to_bytes(preview.into_body(), usize::MAX)
+            .await
+            .unwrap()
+            .as_ref(),
+        include_bytes!("../assets/wordmark.webp")
+    );
+    for path in [
+        format!("/api/orders/{order_id}/personalization/{product_media_id}"),
+        format!("/api/orders/{order_id}/personalization/{}", Uuid::new_v4()),
+        format!(
+            "/api/orders/{}/personalization/{preview_media_id}",
+            Uuid::new_v4()
+        ),
+    ] {
+        assert_eq!(
+            request(&router, "GET", &path, None, None, None)
+                .await
+                .status(),
+            StatusCode::NOT_FOUND
+        );
+    }
+    let anonymous = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(&preview_path)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(anonymous.status(), StatusCode::UNAUTHORIZED);
+
+    let other_customer = Uuid::now_v7();
+    let other_token = format!("other-preview-customer-{other_customer}");
+    sqlx::query("INSERT INTO customers (id, customer_type, email, first_name, last_name) VALUES ($1, 'registered', 'other-preview@example.test', 'Other', 'Customer')")
+        .bind(other_customer).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO customer_accounts (customer_id, password_hash, email_verified_at) VALUES ($1, 'test-fixture', now())")
+        .bind(other_customer).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO customer_sessions (id, customer_id, token_hash, expires_at) VALUES ($1, $2, $3, now() + interval '1 day')")
+        .bind(Uuid::now_v7()).bind(other_customer).bind(Sha256::digest(other_token.as_bytes()).as_slice()).execute(&pool).await.unwrap();
+    let foreign = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(&preview_path)
+                .header(header::COOKIE, format!("knitnprint_customer={other_token}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(foreign.status(), StatusCode::NOT_FOUND);
+    sqlx::query("DELETE FROM customers WHERE id = $1")
+        .bind(other_customer)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    sqlx::query("UPDATE media_assets SET status = 'pending_deletion' WHERE id = $1")
+        .bind(preview_media_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        request(&router, "GET", &preview_path, None, None, None)
+            .await
+            .status(),
+        StatusCode::NOT_FOUND
+    );
+    sqlx::query("UPDATE media_assets SET status = 'ready' WHERE id = $1")
+        .bind(preview_media_id)
+        .execute(&pool)
+        .await
+        .unwrap();
 
     let replay = request(
         &router,
@@ -2247,8 +2345,9 @@ impl knitnprint_api::object_storage::StorageBackend for PreviewStorage {
     > {
         assert!(
             key == "tests/saved-preview.png"
-                || (key.starts_with("tests/saved-preview-") && key.ends_with(".png")),
-            "worker must read the saved composite, not original customer photos"
+                || (key.starts_with("tests/saved-preview-") && key.ends_with(".png"))
+                || key == "tests/order-product-card.png",
+            "worker must read the saved composite or purchased product photo, not customer originals or a different catalog photo"
         );
         Ok(knitnprint_api::object_storage::StoredObject {
             bytes: include_bytes!("../assets/wordmark.webp").to_vec(),
@@ -2605,6 +2704,207 @@ async fn editable_destination_rates_control_cart_checkout_and_immutable_order_pr
         .await
         .unwrap();
     admin.close().await;
+}
+
+#[tokio::test]
+async fn personalized_areas_are_charged_once_per_unit_through_cart_and_checkout() {
+    let Some((admin, pool, schema)) = regression_database().await else {
+        return;
+    };
+    sqlx::migrate!("../migrations").run(&pool).await.unwrap();
+    let variant = insert_product(&pool).await;
+    sqlx::query("UPDATE product_variants SET price_minor=2000 WHERE id=$1")
+        .bind(variant)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE inventory_items SET available_quantity=100 WHERE variant_id=$1")
+        .bind(variant)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let views = json!([
+        {"id":"front","mode":"photo_text","print_areas":[{"id":"one"},{"id":"two"}]},
+        {"id":"back","mode":"photo_text","print_areas":[{"id":"one"}]}
+    ]);
+    sqlx::query("INSERT INTO product_personalization (product_id,mode,views,allowed_fonts) SELECT product_id,'photo_text',$2,$3 FROM product_variants WHERE id=$1")
+        .bind(variant).bind(views).bind(json!(["Roboto"])).execute(&pool).await.unwrap();
+    create_verified_customer(&pool).await;
+    let router = app(AppState {
+        database: Some(pool.clone()),
+        manual_payments_enabled: true,
+        ..AppState::default()
+    });
+    let product =
+        response_json(request(&router, "GET", "/api/products/order-loom", None, None, None).await)
+            .await;
+    assert_eq!(product["personalization_area_price_minor"], 100);
+    let cart = request(&router, "GET", "/api/cart", None, None, None).await;
+    let cookie = response_cookie(&cart);
+    let cart_id = Uuid::parse_str(response_json(cart).await["id"].as_str().unwrap()).unwrap();
+    let media_id = Uuid::now_v7();
+    sqlx::query("INSERT INTO media_assets (id,object_key,content_type,byte_size,status,scan_status,scanned_at,completed_at,personalization_cart_id) VALUES ($1,$2,'image/png',1,'ready','clean',now(),now(),$3)")
+        .bind(media_id).bind(format!("pricing/{media_id}.png")).bind(cart_id).execute(&pool).await.unwrap();
+    let text = json!({"content":"Hello","font":"Roboto","color":"#111111","size":20,"x":10,"y":10,"width":80,"height":30});
+    let photo = json!({"media_id":media_id,"x":10,"y":10,"width":80,"height":50,"crop_x":50,"crop_y":50,"scale":1});
+    let designs = [
+        (None, 2000),
+        (
+            Some(json!({"version":5,"areas":[{"view_id":"front","area_id":"one","text":text}]})),
+            2100,
+        ),
+        (
+            Some(json!({"version":5,"areas":[{"view_id":"front","area_id":"one","photo":photo}]})),
+            2100,
+        ),
+        (
+            Some(
+                json!({"version":5,"areas":[{"view_id":"front","area_id":"one","text":text,"photo":photo}]}),
+            ),
+            2100,
+        ),
+        (
+            Some(
+                json!({"version":5,"areas":[{"view_id":"front","area_id":"one","text":text},{"view_id":"front","area_id":"two","photo":photo}]}),
+            ),
+            2200,
+        ),
+        (
+            Some(
+                json!({"version":5,"areas":[{"view_id":"front","area_id":"one","text":text},{"view_id":"back","area_id":"one","text":text}]}),
+            ),
+            2200,
+        ),
+    ];
+    let mut combined_line = String::new();
+    let mut expected_subtotal = 0;
+    for (index, (customization, expected_unit_price)) in designs.into_iter().enumerate() {
+        let uses_photo = customization
+            .as_ref()
+            .and_then(|design| design["areas"].as_array())
+            .is_some_and(|areas| areas.iter().any(|area| area.get("photo").is_some()));
+        let added = request(
+            &router,
+            "POST",
+            "/api/cart/items",
+            Some(&cookie),
+            Some(json!({
+                "variant_id":variant,"quantity":1,"customization":customization,
+                "customization_media_asset_ids":if uses_photo {vec![media_id]} else {vec![]},
+                "unit_price_minor":1,"personalization_unit_price_minor":0
+            })),
+            Some(&format!("personalization-pricing-{index}-0001")),
+        )
+        .await;
+        let status = added.status();
+        let body = response_json(added).await;
+        assert_eq!(status, StatusCode::CREATED, "pricing case {index}: {body}");
+        let line = body["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|line| line["customization"] == customization.clone().unwrap_or(Value::Null))
+            .unwrap();
+        assert_eq!(line["base_unit_price_minor"], 2000);
+        assert_eq!(line["unit_price_minor"], expected_unit_price);
+        assert_eq!(
+            line["personalization_unit_price_minor"],
+            expected_unit_price - 2000
+        );
+        expected_subtotal += expected_unit_price;
+        assert_eq!(body["subtotal_minor"], expected_subtotal);
+        assert_eq!(body["issues"], json!([]));
+        if index == 3 {
+            combined_line = line["id"].as_str().unwrap().to_owned();
+        }
+    }
+    let updated = request(
+        &router,
+        "PATCH",
+        &format!("/api/cart/items/{combined_line}"),
+        Some(&cookie),
+        Some(json!({"quantity":2})),
+        Some("personalized-quantity-0001"),
+    )
+    .await;
+    assert_eq!(updated.status(), StatusCode::OK);
+    assert_eq!(response_json(updated).await["subtotal_minor"], 14800);
+    let delivered = request(
+        &router,
+        "POST",
+        "/api/cart/delivery",
+        Some(&cookie),
+        Some(delivery_fixture()),
+        Some("personalized-delivery-0001"),
+    )
+    .await;
+    let reviewed = response_json(delivered).await;
+    assert_eq!(reviewed["checkout_ready"], true);
+    sqlx::query("UPDATE product_variants SET price_minor=2100 WHERE id=$1")
+        .bind(variant)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let stale = request(
+        &router,
+        "POST",
+        "/api/orders",
+        Some(&cookie),
+        Some(json!({"payment_method":"manual","checkout_quote":reviewed["checkout_quote"]})),
+        Some("personalized-stale-quote-0001"),
+    )
+    .await;
+    assert_eq!(stale.status(), StatusCode::CONFLICT);
+    assert_eq!(response_json(stale).await["error"]["code"], "cart_changed");
+    let changed =
+        response_json(request(&router, "GET", "/api/cart", Some(&cookie), None, None).await).await;
+    assert_eq!(changed["subtotal_minor"], 15500);
+    assert_eq!(changed["issues"].as_array().unwrap().len(), 6);
+    let reviewed =
+        response_json(request(&router, "GET", "/api/cart", Some(&cookie), None, None).await).await;
+    assert_eq!(reviewed["issues"], json!([]));
+    assert_eq!(reviewed["subtotal_minor"], 15500);
+    assert_eq!(reviewed["checkout_ready"], true);
+    let created = request(
+        &router,
+        "POST",
+        "/api/orders",
+        Some(&cookie),
+        Some(json!({"payment_method":"manual","checkout_quote":reviewed["checkout_quote"]})),
+        Some("personalized-order-0001"),
+    )
+    .await;
+    let status = created.status();
+    let order = response_json(created).await;
+    assert_eq!(status, StatusCode::CREATED, "{order}");
+    assert_eq!(order["total_minor"], 15500);
+    let combined = order["lines"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|line| line["quantity"] == 2)
+        .unwrap();
+    assert_eq!(combined["unit_price_minor"], 2200);
+    assert_eq!(combined["line_total_minor"], 4400);
+    sqlx::query("UPDATE product_variants SET price_minor=9999 WHERE id=$1")
+        .bind(variant)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let saved = response_json(
+        request(
+            &router,
+            "GET",
+            &format!("/api/orders/{}", order["id"].as_str().unwrap()),
+            Some(&cookie),
+            None,
+            None,
+        )
+        .await,
+    )
+    .await;
+    assert_eq!(saved["total_minor"], 15500);
+    cleanup_regression_database(admin, pool, schema).await;
 }
 
 async fn regression_database() -> Option<(PgPool, PgPool, String)> {
@@ -2976,6 +3276,32 @@ async fn checkout_saves_locale_and_sends_localized_branded_confirmation_once() {
     let pool = isolated_pool(&url, &schema).await;
     sqlx::migrate!("../migrations").run(&pool).await.unwrap();
     let variant = insert_product(&pool).await;
+    let product_id: Uuid =
+        sqlx::query_scalar("SELECT product_id FROM product_variants WHERE id=$1")
+            .bind(variant)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let product_photo = Uuid::now_v7();
+    let other_photo = Uuid::now_v7();
+    for (id, key, position) in [
+        (product_photo, "tests/order-product-card.png", 0),
+        (other_photo, "tests/different-catalog-photo.png", 1),
+    ] {
+        sqlx::query("INSERT INTO media_assets (id,object_key,content_type,byte_size,status,scan_status,scanned_at) VALUES ($1,$2,'image/png',100,'ready','clean',now())")
+            .bind(id).bind(format!("original-{id}.png")).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO media_variants (media_asset_id,kind,object_key,content_type,width,height,byte_size) VALUES ($1,'card',$2,'image/png',96,96,100)")
+            .bind(id).bind(key).execute(&pool).await.unwrap();
+        sqlx::query(
+            "INSERT INTO product_media (product_id,media_asset_id,position) VALUES ($1,$2,$3)",
+        )
+        .bind(product_id)
+        .bind(id)
+        .bind(position)
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
     insert_owner(&pool).await;
     create_verified_customer(&pool).await;
     let email = EmailService::development("https://shop.example.test");
@@ -2994,6 +3320,8 @@ async fn checkout_saves_locale_and_sends_localized_branded_confirmation_once() {
         (1, "es", "es", "Tu pedido está confirmado."),
         (2, "en", "en", "Your order is confirmed."),
     ] {
+        sqlx::query("UPDATE product_media SET position=CASE WHEN media_asset_id=$2 THEN 0 ELSE 1 END WHERE product_id=$1")
+            .bind(product_id).bind(product_photo).execute(&pool).await.unwrap();
         let cookie = response_cookie(&request(&router, "GET", "/api/cart", None, None, None).await);
         let added = request(
             &router,
@@ -3030,9 +3358,23 @@ async fn checkout_saves_locale_and_sends_localized_branded_confirmation_once() {
                     .bind(id).bind(format!("private-preview-{id}.png")).bind(cart_id).execute(&pool).await.unwrap();
                 sqlx::query("INSERT INTO media_variants (media_asset_id,kind,object_key,content_type,width,height,byte_size) VALUES ($1,'card',$2,'image/png',96,96,100)").bind(id).bind(format!("tests/saved-preview-{id}.png")).execute(&pool).await.unwrap();
             }
-            sqlx::query("UPDATE cart_lines SET customization=$2,personalization_previews=$3 WHERE cart_id=$1")
+            sqlx::query("UPDATE cart_lines SET customization=$2,personalization_previews=$3,unit_price_minor=unit_price_minor+200 WHERE cart_id=$1")
                 .bind(cart_id).bind(json!({"version":7,"areas":[{"view_id":"front","view_label":"Front","text":{"content":"<script>Maria & João</script>"}},{"view_id":"back","view_label":"Back","text":{"content":"Made for you"}}],"previews":[{"view_id":"front","view_label":"Front","media_id":preview_ids[0]},{"view_id":"back","view_label":"Back","media_id":preview_ids[1]}]}))
                 .bind(json!([{"view_id":"front","view_label":"Front","media_id":preview_ids[0]},{"view_id":"back","view_label":"Back","media_id":preview_ids[1]}])).execute(&pool).await.unwrap();
+            // The same product, bought both with and without personalization.
+            assert_eq!(
+                request(
+                    &router,
+                    "POST",
+                    "/api/cart/items",
+                    Some(&cookie),
+                    Some(json!({"variant_id":variant,"quantity":1})),
+                    Some("localized-plain-add-0001"),
+                )
+                .await
+                .status(),
+                StatusCode::CREATED
+            );
         }
         let review =
             response_json(request(&router, "GET", "/api/cart", Some(&cookie), None, None).await)
@@ -3051,7 +3393,7 @@ async fn checkout_saves_locale_and_sends_localized_branded_confirmation_once() {
         let order = response_json(created).await;
         assert_eq!(status, StatusCode::CREATED, "{order}");
         assert_eq!(order["shipping_minor"], 0);
-        assert_eq!(order["total_minor"], 3200);
+        assert_eq!(order["total_minor"], if index == 0 { 6600 } else { 3200 });
         let id = Uuid::parse_str(order["id"].as_str().unwrap()).unwrap();
         let saved: String = sqlx::query_scalar("SELECT email_locale FROM orders WHERE id=$1")
             .bind(id)
@@ -3078,6 +3420,9 @@ async fn checkout_saves_locale_and_sends_localized_branded_confirmation_once() {
                 .await
                 .is_err()
         );
+        // Reordering the catalog after checkout must preserve the purchased photo.
+        sqlx::query("UPDATE product_media SET position=CASE WHEN media_asset_id=$2 THEN 1 ELSE 0 END WHERE product_id=$1")
+            .bind(product_id).bind(product_photo).execute(&pool).await.unwrap();
         let pay_path = format!("/api/admin/orders/{id}/manual-payment");
         for _ in 0..2 {
             assert_eq!(
@@ -3130,6 +3475,21 @@ async fn checkout_saves_locale_and_sends_localized_branded_confirmation_once() {
         assert!(html.contains(&format!("order_id={id}")));
         assert!(!html.contains("manual") && !html.contains("progress"));
         assert!(!html.contains("<script>"));
+        let lines = order["lines"].as_array().unwrap();
+        let plain_line = lines
+            .iter()
+            .find(|line| line["customization"].is_null())
+            .unwrap();
+        assert_eq!(
+            plain_line["personalization_context"]["views"][0]["media_id"],
+            product_photo.to_string()
+        );
+        assert!(html.contains(&format!(
+            "cid:product-{}@knitnprint",
+            plain_line["id"].as_str().unwrap()
+        )));
+        assert!(html.contains("alt=\"Order Loom\""));
+        assert!(!html.contains("/api/media/") && !html.contains("data:image/"));
         if index == 0 {
             assert!(html.contains("&lt;script&gt;Maria &amp; João&lt;/script&gt;"));
             assert_eq!(
@@ -3138,6 +3498,9 @@ async fn checkout_saves_locale_and_sends_localized_branded_confirmation_once() {
                 "email previews must not be treated as production originals"
             );
             assert!(html.contains("alt=\"Front\"") && html.contains("alt=\"Back\""));
+            for preview in preview_ids {
+                assert!(html.contains(&format!("cid:preview-{preview}@knitnprint")));
+            }
             let retained: i64 = sqlx::query_scalar("SELECT count(*) FROM order_line_personalization_media retained JOIN order_lines line ON line.id=retained.order_line_id WHERE line.order_id=$1")
                 .bind(id).fetch_one(&pool).await.unwrap();
             assert_eq!(retained, 2);

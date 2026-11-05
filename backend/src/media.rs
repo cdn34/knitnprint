@@ -16,6 +16,7 @@ use crate::{
     AppState,
     auth::{AuthenticatedStaff, require_capability},
     carts::resolve_cart,
+    customer_auth::AuthenticatedCustomer,
     error::ErrorBody,
     media_scanner::ScanOutcome,
 };
@@ -498,6 +499,66 @@ pub async fn public_asset(
     {
         response.headers_mut().insert(header::ETAG, etag);
     }
+    response
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/orders/{order_id}/personalization/{media_id}",
+    params(("order_id" = Uuid, Path), ("media_id" = Uuid, Path)),
+    tag = "customer orders",
+    responses(
+        (status = 200, description = "Personalization image belonging to the customer's order"),
+        (status = 401, body = ErrorBody),
+        (status = 404, body = ErrorBody),
+        (status = 503, body = ErrorBody)
+    )
+)]
+pub async fn customer_order_personalization_asset(
+    State(state): State<AppState>,
+    customer: AuthenticatedCustomer,
+    Path((order_id, media_id)): Path<(Uuid, Uuid)>,
+) -> Response {
+    let (Some(pool), Some(storage)) = (state.database, state.media_storage) else {
+        return unavailable();
+    };
+    let asset = sqlx::query_as::<_, (String, String)>(
+        r#"SELECT variant.object_key, variant.content_type
+        FROM orders customer_order
+        JOIN order_lines line ON line.order_id = customer_order.id
+        JOIN order_line_personalization_media attachment ON attachment.order_line_id = line.id
+        JOIN media_assets asset ON asset.id = attachment.media_asset_id
+        JOIN media_variants variant ON variant.media_asset_id = asset.id
+        WHERE customer_order.id = $1 AND customer_order.customer_id = $2
+          AND asset.id = $3 AND asset.status = 'ready' AND asset.scan_status = 'clean'
+          AND variant.kind IN ('detail', 'card')
+        ORDER BY (variant.kind = 'detail') DESC
+        LIMIT 1"#,
+    )
+    .bind(order_id)
+    .bind(customer.id)
+    .bind(media_id)
+    .fetch_optional(&pool)
+    .await;
+    let (object_key, content_type) = match asset {
+        Ok(Some(asset)) => asset,
+        Ok(None) => return not_found(),
+        Err(_) => return unavailable(),
+    };
+    let Ok(object) = storage.get(&object_key).await else {
+        return not_found();
+    };
+    let mut response = Response::new(Body::from(object.bytes));
+    response.headers_mut().insert(
+        header::CONTENT_TYPE,
+        content_type
+            .parse()
+            .unwrap_or_else(|_| header::HeaderValue::from_static("image/webp")),
+    );
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        header::HeaderValue::from_static("private, no-store"),
+    );
     response
 }
 

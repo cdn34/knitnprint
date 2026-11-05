@@ -12,6 +12,11 @@ export function cartMutationKey() {
   return crypto.randomUUID()
 }
 
+export function redirectToProductsWithCart(cart: Pick<Cart, 'item_count'>) {
+  announceCartUpdate(cart)
+  window.location.assign('/products?cart=open')
+}
+
 export function formatMoney(minor: number, currency: string) {
   return new Intl.NumberFormat('en', {
     style: 'currency',
