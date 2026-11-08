@@ -1,3 +1,4 @@
+import { VariantTemplatesManagement } from './variant-templates'
 import { VariantMatrix } from './variant-matrix'
 import {
   StrictMode,
@@ -229,6 +230,7 @@ function AdminShell({ profile }: Readonly<{ profile: StaffProfile }>) {
     ...(profile.capabilities.includes('catalog.read')
       ? [
           { id: 'products', label: 'Products', icon: Package },
+          { id: 'variant-templates', label: 'Variant templates', icon: SlidersHorizontal },
           { id: 'feedback', label: 'Feedback validation', icon: MessageSquareText },
         ]
       : []),
@@ -329,6 +331,8 @@ function AdminShell({ profile }: Readonly<{ profile: StaffProfile }>) {
                   ? 'Order operations.'
                 : page === 'b2b'
                   ? 'Business enquiries.'
+                : page === 'variant-templates'
+                  ? 'Variant templates.'
                 : page === 'products'
                   ? 'Product catalog.'
                   : page === 'feedback'
@@ -369,6 +373,7 @@ function AdminShell({ profile }: Readonly<{ profile: StaffProfile }>) {
             initialOrderId={target.entityId}
           />
         )}
+        {page === 'variant-templates' && profile.capabilities.includes('catalog.read') && <VariantTemplatesManagement canWrite={profile.capabilities.includes('catalog.write')} />}
         {page === 'products' &&
           profile.capabilities.includes('catalog.read') && (
           <CatalogManagement
@@ -2667,33 +2672,6 @@ function CatalogManagement({
       setPreview(product)
     },
   })
-  const addVariant = useMutation({
-    mutationFn: ({
-      productId,
-      price,
-      sku,
-      title,
-      currency,
-    }: {
-      productId: string
-      price: number
-      sku: string
-      title: string
-      currency: string
-    }) =>
-      api.addProductVariant(productId, {
-        title,
-        sku,
-        price_minor: Math.round(price * 100),
-        currency,
-        option_values: {},
-      }),
-    onSuccess: (product) => {
-      client.invalidateQueries({ queryKey: productsKey })
-      client.invalidateQueries({ queryKey: inventoryKey })
-      setPreview(product)
-    },
-  })
   const createCategory = useMutation({
     mutationFn: api.createCategory,
     onSuccess: () => client.invalidateQueries({ queryKey: categoriesKey }),
@@ -3043,23 +3021,6 @@ function CatalogManagement({
     setTextMaxSize(72)
     setAllowedFonts('Roboto, Montserrat, Playfair Display, Dancing Script, Pacifico')
     setAllowedColors('#111111, #ffffff, #9c5263, #1f4f78, #b3232f')
-  }
-
-  function submitVariant(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    if (!preview) return
-    const formElement = event.currentTarget
-    const form = new FormData(formElement)
-    addVariant.mutate(
-      {
-        productId: preview.id,
-        title: String(form.get('new-variant-title') ?? ''),
-        sku: '',
-        price: Number(form.get('new-variant-price')),
-        currency: 'EUR',
-      },
-      { onSuccess: () => formElement.reset() },
-    )
   }
 
   function submitCategory(event: FormEvent<HTMLFormElement>) {
@@ -3581,44 +3542,9 @@ function CatalogManagement({
           </div>
         </article>
       )}
-      {preview && canWrite && <VariantMatrix key={`${preview.id}-${preview.variant_revision}`} product={preview} onSaved={() => { void api.adminProduct(preview.id).then(product => loadProduct(product)); client.invalidateQueries({ queryKey: productsKey }); client.invalidateQueries({ queryKey: inventoryKey }) }} />}
+      {preview && canWrite && <VariantMatrix key={`${preview.id}-${preview.variant_revision}`} product={preview} disabled={editorDirty} onSaved={async () => { const product = await api.adminProduct(preview.id); loadProduct(product); await Promise.all([client.invalidateQueries({ queryKey: productsKey }), client.invalidateQueries({ queryKey: inventoryKey })]) }} />}
       {preview && canWrite && (
         <div className="catalog-editor" aria-label={`Edit ${preview.title}`}>
-          <section>
-            <div className="panel-title">
-              <Plus size={17} />
-              <div>
-                <strong>Variants</strong>
-                <span>{preview.variants.length} configured for this product.</span>
-              </div>
-            </div>
-            <ul className="variant-list">
-              {preview.variants.map((variant) => (
-                <li key={variant.id}>
-                  <span><strong>{variant.title}</strong><small>{variant.sku}</small></span>
-                  <b>{formatMoney(variant.price_minor, variant.currency)}</b>
-                </li>
-              ))}
-            </ul>
-            {preview.variant_config.options.length === 0 && <form className="compact-form" onSubmit={submitVariant}>
-              <label htmlFor="new-variant-title">Variant title</label>
-              <input id="new-variant-title" name="new-variant-title" required />
-              <label htmlFor="new-variant-sku">SKU</label>
-              <input id="new-variant-sku" name="new-variant-sku" value="Generated on save" readOnly />
-              <div className="price-fields">
-                <div>
-                  <label htmlFor="new-variant-price">Price</label>
-                  <input id="new-variant-price" name="new-variant-price" type="number" min="0" step="0.01" required />
-                </div>
-                <div>
-                  <label htmlFor="new-variant-currency">Currency</label>
-                  <input id="new-variant-currency" name="new-variant-currency" value="EUR" readOnly />
-                </div>
-              </div>
-              {addVariant.isError && <p className="panel-error" role="alert">{addVariant.error.message}</p>}
-              <button className="primary-button" disabled={addVariant.isPending}>Add variant</button>
-            </form>}
-          </section>
           <section>
             <div className="panel-title">
               <Package size={17} />

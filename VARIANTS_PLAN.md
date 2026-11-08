@@ -6,7 +6,7 @@ Build on the existing variant-based pricing and inventory system. Administrators
 
 ## Templates and product editing
 
-- Add a template library within Catalog using existing catalog permissions.
+- Add a separate Variant templates section in the admin navigation using existing catalog permissions; product editing only applies and customizes template copies.
 - Seed Color, Adult size (XS–XXL), Baby size in months (0–6, 6–12, 12–18, 18–24), and Children's size in years (1–2, 2–4, 5–6). All defaults are configurable.
 - Provide color swatches with text labels, choice buttons, and dropdowns. Administrators can create templates such as capacity, material, finish, and pack quantity without code changes.
 - Applying a template copies it into a product. Product values, labels, swatches, and ordering can change independently; template edits affect future copies only.

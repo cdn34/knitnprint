@@ -2,8 +2,15 @@
 
 The implementation plan is saved in [VARIANTS_PLAN.md](../../VARIANTS_PLAN.md).
 
+Use **Variant templates** in the admin navigation to create, edit, or delete
+shared defaults independently of products. Deleting a template does not remove
+options or variants already copied into products.
+
 Create a draft product, then open **Options and variants** in its editor. Choose
-Color or a size preset, customize its copied values, and generate the matrix.
+**Add Color option**, then **Add Size option** (or another template). Select
+the values on each card, then generate their combinations. For example, two
+colors and three sizes produce six variants. The template choices stay visible
+so more options can be added without replacing the first one.
 Map existing variants before generating if their stock and SKU should be kept.
 Review combinations, exclude ones that are not sold, and set prices/stock before
 saving. Unchecked new combinations are not created; unchecked saved variants

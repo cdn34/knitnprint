@@ -1,68 +1,55 @@
-import { useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import type { Product } from "@knitnprint/api-client";
-type Value = {
-  code: string;
-  label: string;
-  color?: string;
-  media_ids?: string[];
-};
-type Axis = { code: string; label: string; control: string; values: Value[] };
-type Config = { options: Axis[]; color_photos: boolean };
-type Row = {
-  id?: string;
-  sku?: string;
-  selections: Record<string, string>;
-  price_minor: number;
-  available_quantity: number;
-  expected_quantity?: number;
-  retired: boolean;
-};
-type Template = { id: string; definition: Axis; revision: number };
-async function request<T>(
-  path: string,
-  body?: unknown,
-  method = "PUT",
-): Promise<T> {
-  const response = await fetch(`/api/admin/${path}`, {
-    credentials: "include",
-    method: body ? method : "GET",
-    headers: body ? { "Content-Type": "application/json" } : undefined,
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const data = await response.json();
-  if (!response.ok) throw new Error(data.error?.message ?? "Could not save");
-  return data;
+import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { Layers, Plus, Save, RefreshCw, Trash2 } from 'lucide-react'
+import {
+  ApiError,
+  createApiClient,
+  type Product,
+  type VariantConfig,
+  type ProductOption,
+  type OptionValue,
+  type MatrixVariant,
+} from '@knitnprint/api-client'
+import {
+  OptionFields,
+  templateKey,
+  controlName,
+  optionCode,
+} from './variant-fields'
+const api = createApiClient()
+type Row = Omit<MatrixVariant, 'id' | 'selections'> & {
+  id?: string
+  sku?: string
+  selections: Record<string, string>
 }
-const code = (label: string) =>
-  label
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toUpperCase()
-    .replace(/[^A-Z0-9]/g, "")
-    .slice(0, 6) || "OPTION";
-const uniqueCode = (label: string, codes: string[]) => {
-  const base = code(label);
-  let next = base,
-    n = 1;
-  while (codes.includes(next)) next = base + n++;
-  return next;
-};
+const identity = (selections: Record<string, string>) =>
+  JSON.stringify(Object.entries(selections).sort())
+
 export function VariantMatrix({
   product,
   onSaved,
+  disabled = false,
 }: {
-  product: Product;
-  onSaved: () => void;
+  product: Product
+  onSaved: () => void | Promise<void>
+  disabled?: boolean
 }) {
-  const client = useQueryClient();
   const templates = useQuery({
-    queryKey: ["variant-templates"],
-    queryFn: () => request<Template[]>("variant-templates"),
-  });
-  const [config, setConfig] = useState<Config>(
-    product.variant_config as unknown as Config,
-  );
+    queryKey: templateKey,
+    queryFn: api.variantTemplates,
+    refetchOnWindowFocus: false,
+  })
+  const [config, setConfig] = useState<VariantConfig>(
+    structuredClone(product.variant_config),
+  )
+  const [pools, setPools] = useState<Record<string, OptionValue[]>>(
+    Object.fromEntries(
+      product.variant_config.options.map((o) => [
+        o.code,
+        structuredClone(o.values),
+      ]),
+    ),
+  )
   const [rows, setRows] = useState<Row[]>(
     product.variants.map((v) => ({
       id: v.id,
@@ -73,574 +60,664 @@ export function VariantMatrix({
       expected_quantity: v.available_quantity,
       retired: v.retired,
     })),
-  );
-  const [message, setMessage] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [template, setTemplate] = useState<Template | null>(null);
-  const changeAxis = (index: number, axis: Axis) =>
+  )
+  const [needsPreview, setNeedsPreview] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [message, setMessage] = useState('')
+  const combinations = config.options.length
+    ? config.options.reduce((n, o) => n * o.values.length, 1)
+    : 1
+  const active = rows.filter((r) => !r.retired).length
+  function changeOption(index: number, next: ProductOption) {
     setConfig((c) => ({
       ...c,
-      options: c.options.map((o, i) => (i === index ? axis : o)),
-    }));
+      options: c.options.map((o, i) => (i === index ? next : o)),
+    }))
+    setPools((p) => ({
+      ...p,
+      [next.code]: [
+        ...next.values,
+        ...(p[next.code] ?? []).filter(
+          (v) => !next.values.some((n) => n.code === v.code),
+        ),
+      ],
+    }))
+    setNeedsPreview(true)
+    setMessage('')
+    setError('')
+  }
+  function addOption(option: ProductOption) {
+    if (
+      config.options.some(
+        (o) =>
+          o.label.trim().toLowerCase() === option.label.trim().toLowerCase(),
+      )
+    )
+      return
+    const copy = structuredClone(option)
+    if (config.options.some((o) => o.code === copy.code))
+      copy.code = optionCode(
+        copy.label,
+        config.options.map((o) => o.code),
+      )
+    setConfig((c) => ({ ...c, options: [...c.options, copy] }))
+    setPools((p) => ({ ...p, [copy.code]: copy.values }))
+    setNeedsPreview(true)
+    setError('')
+    setMessage('')
+  }
   function generate() {
-    let combos: Record<string, string>[] = [{}];
-    for (const o of config.options) {
-      if (combos.length * o.values.length > 1000) {
-        setMessage("Too many combinations to preview (maximum 1,000).");
-        return;
+    for (const option of config.options) {
+      if (!option.label.trim() || option.values.some((v) => !v.label.trim())) {
+        setError(
+          'Give every option and value a name before generating variants.',
+        )
+        return
       }
-      combos = combos.flatMap((s) =>
-        o.values.map((v) => ({ ...s, [o.code]: v.code })),
-      );
+      if (
+        new Set(option.values.map((v) => v.label.trim().toLowerCase())).size !==
+        option.values.length
+      ) {
+        setError(
+          `Use a different name for each ${option.label.toLowerCase()} value.`,
+        )
+        return
+      }
     }
-    const key = (s: Record<string, string>) =>
-      JSON.stringify(Object.entries(s).sort());
-    const generated = combos.map(
+    if (
+      new Set(config.options.map((o) => o.label.trim().toLowerCase())).size !==
+      config.options.length
+    ) {
+      setError('Each product option needs a different name.')
+      return
+    }
+
+    if (!combinations || combinations > 1000) {
+      setError(
+        'Choose at least one value per option, with no more than 1,000 combinations to preview.',
+      )
+      return
+    }
+    let choices: Record<string, string>[] = [{}]
+    for (const o of config.options)
+      choices = choices.flatMap((selection) =>
+        o.values.map((v) => ({ ...selection, [o.code]: v.code })),
+      )
+    const generated = choices.map(
       (selections) =>
-        rows.find((r) => key(r.selections) === key(selections)) ?? {
+        rows.find((r) => identity(r.selections) === identity(selections)) ?? {
           selections,
-          price_minor: rows[0]?.price_minor ?? 0,
+          price_minor: rows.find((r) => !r.retired)?.price_minor ?? 0,
           available_quantity: 0,
           retired: false,
         },
-    );
+    )
     setRows([
       ...generated,
       ...rows
         .filter((r) => r.id && !generated.some((g) => g.id === r.id))
         .map((r) => ({ ...r, retired: true })),
-    ]);
+    ])
+    setNeedsPreview(false)
+    setError('')
     setMessage(
-      "Preview ready. Review mappings, excluded combinations, prices and stock before saving.",
-    );
+      `${generated.length} combinations generated. Review prices and stock, then save.`,
+    )
   }
   async function save() {
-    setBusy(true);
-    setMessage("");
+    setBusy(true)
+    setError('')
+    setMessage('')
     try {
-      const payload = {
+      const input = {
         revision: product.variant_revision,
         config,
         variants: rows.filter((r) => r.id || !r.retired),
-      };
-      await request(
-        `products/${product.id}/variant-matrix/preview`,
-        payload,
-        "POST",
-      );
-      await request(`products/${product.id}/variant-matrix`, payload);
-      onSaved();
-      setMessage("Variants saved.");
+      }
+      await api.previewVariantMatrix(product.id, input)
+      await api.saveVariantMatrix(product.id, input)
+      await onSaved()
+      setMessage('Options and variants saved.')
     } catch (e) {
-      setMessage((e as Error).message);
+      setError(
+        e instanceof ApiError
+          ? e.body.error.message
+          : 'Variants could not be saved. Please try again.',
+      )
     } finally {
-      setBusy(false);
+      setBusy(false)
     }
   }
   const changeRow = (i: number, patch: Partial<Row>) =>
-    setRows((rs) => rs.map((r, n) => (n === i ? { ...r, ...patch } : r)));
+    setRows((rs) => rs.map((r, n) => (n === i ? { ...r, ...patch } : r)))
   return (
-    <section className="catalog-editor variant-matrix">
-      <h3>Options and variants</h3>
-      <p>
-        Product SKU: <strong>{product.sku}</strong> ·{" "}
-        {rows.filter((r) => !r.retired).length}/100 active combinations
+    <section
+      className="variant-ui variant-matrix"
+      aria-labelledby="product-variants-heading"
+    >
+      <div className="section-heading">
+        <div>
+          <p>Product options</p>
+          <h2 id="product-variants-heading">Options and variants</h2>
+        </div>
+        <span>{active}/100 active combinations</span>
+      </div>
+      <p className="variant-intro">
+        Combine choices such as color and size. For example, 2 colors × 3 sizes
+        creates 6 variants, each with its own SKU, price, and stock.
       </p>
-      <p>
-        Map existing variants before generating combinations. Templates are
-        copied into this product. Labels and swatches can change; identity codes
-        and saved SKUs stay permanent.
-      </p>
-      <label>
-        Add option template{" "}
-        <select
-          value=""
-          onChange={(e) => {
-            const t = templates.data?.find((t) => t.id === e.target.value);
-            if (t && !config.options.some((o) => o.code === t.definition.code))
-              setConfig((c) => ({
-                ...c,
-                options: [...c.options, structuredClone(t.definition)],
-              }));
-          }}
-        >
-          <option value="">Choose template</option>
-          {templates.data?.map((t) => (
-            <option
-              key={t.id}
-              value={t.id}
-              disabled={config.options.some(
-                (o) => o.code === t.definition.code,
-              )}
-            >
-              {t.definition.label} ({t.definition.control})
-            </option>
-          ))}
-        </select>
-      </label>
-      {config.options.map((o, i) => (
-        <fieldset key={o.code}>
-          <legend>
-            {o.label} · {o.code}
-          </legend>
-          <label>
-            Option label
-            <input
-              value={o.label}
-              onChange={(e) => changeAxis(i, { ...o, label: e.target.value })}
-            />
-          </label>
-          <label>
-            Display
-            <select
-              value={o.control}
-              onChange={(e) => changeAxis(i, { ...o, control: e.target.value })}
-            >
-              <option value="buttons">Buttons</option>
-              <option value="select">Dropdown</option>
-              <option value="swatch">Color swatches</option>
-            </select>
-          </label>
-          {o.values.map((v, j) => (
-            <div className="option-value" key={v.code}>
-              <small>{v.code}</small>
-              <input
-                aria-label={`${o.label} value ${j + 1}`}
-                value={v.label}
-                onChange={(e) =>
-                  changeAxis(i, {
-                    ...o,
-                    values: o.values.map((v, n) =>
-                      n === j ? { ...v, label: e.target.value } : v,
-                    ),
-                  })
-                }
-              />
-              {o.control === "swatch" && (
-                <input
-                  aria-label={`Swatch ${v.label}`}
-                  type="color"
-                  value={v.color ?? "#000000"}
-                  onChange={(e) =>
-                    changeAxis(i, {
-                      ...o,
-                      values: o.values.map((v, n) =>
-                        n === j ? { ...v, color: e.target.value } : v,
-                      ),
-                    })
-                  }
-                />
-              )}
-              <button
-                type="button"
-                onClick={() =>
-                  changeAxis(i, {
-                    ...o,
-                    values: o.values.filter((_, n) => n !== j),
-                  })
-                }
-              >
-                Remove {v.label}
-              </button>
-              <button
-                type="button"
-                disabled={!j}
-                onClick={() => {
-                  const values = [...o.values];
-                  [values[j - 1], values[j]] = [values[j], values[j - 1]];
-                  changeAxis(i, { ...o, values });
-                }}
-              >
-                Move up
-              </button>
-              {config.color_photos && o.control === "swatch" && (
-                <fieldset>
-                  <legend>
-                    Photos for {v.label} (none uses shared gallery)
-                  </legend>
-                  {product.media.map((m) => (
-                    <label key={m.id}>
-                      <input
-                        type="checkbox"
-                        checked={v.media_ids?.includes(m.id) ?? false}
-                        onChange={(e) =>
-                          changeAxis(i, {
-                            ...o,
-                            values: o.values.map((v, n) =>
-                              n === j
-                                ? {
-                                    ...v,
-                                    media_ids: e.target.checked
-                                      ? [...(v.media_ids ?? []), m.id]
-                                      : (v.media_ids ?? []).filter(
-                                          (id) => id !== m.id,
-                                        ),
-                                  }
-                                : v,
-                            ),
-                          })
-                        }
-                      />
-                      <img src={m.thumbnail_url} alt={m.alt_text} width={60} />
-                    </label>
-                  ))}
-                </fieldset>
-              )}
+      {disabled && (
+        <p className="variant-message">
+          Save the product details above before changing its variants.
+        </p>
+      )}
+      <fieldset className="variant-builder" disabled={disabled || busy}>
+        <div className="variant-card">
+          <div className="panel-title">
+            <Layers size={18} />
+            <div>
+              <strong>1. Add product options</strong>
+              <span>
+                Add more than one template to combine options. Manage shared
+                defaults in <a href="#variant-templates">Variant templates</a>.
+              </span>
             </div>
-          ))}
-          <button
-            type="button"
-            onClick={() => {
-              const label = window.prompt("New option value");
-              if (label)
-                changeAxis(i, {
-                  ...o,
-                  values: [
-                    ...o.values,
-                    {
-                      code: uniqueCode(
-                        label,
-                        o.values.map((v) => v.code),
-                      ),
-                      label,
-                      color: "#000000",
-                    },
-                  ],
-                });
-            }}
-          >
-            Add value
-          </button>
-          <button
-            type="button"
-            onClick={() =>
-              setConfig((c) => ({
-                ...c,
-                options: c.options.filter((_, n) => n !== i),
-              }))
-            }
-          >
-            Remove option
-          </button>
-          <button
-            type="button"
-            disabled={i === 0}
-            onClick={() =>
-              setConfig((c) => {
-                const options = [...c.options];
-                [options[i - 1], options[i]] = [options[i], options[i - 1]];
-                return { ...c, options };
-              })
-            }
-          >
-            Move option up
-          </button>
-        </fieldset>
-      ))}
-      <label>
-        <input
-          type="checkbox"
-          checked={config.color_photos}
-          onChange={(e) =>
-            setConfig((c) => ({ ...c, color_photos: e.target.checked }))
-          }
-        />
-        Use color-specific photos (optional)
-      </label>
-      <button type="button" onClick={generate}>
-        Generate / refresh matrix preview
-      </button>
-      <label>
-        Bulk price (€)
-        <input
-          type="number"
-          min="0"
-          step=".01"
-          onChange={(e) => {
-            if (e.target.value)
-              setRows((rs) =>
-                rs.map((r) =>
-                  r.retired
-                    ? r
-                    : {
-                        ...r,
-                        price_minor: Math.round(Number(e.target.value) * 100),
-                      },
-                ),
-              );
-          }}
-        />
-      </label>
-      <label>
-        Bulk recorded stock
-        <input
-          type="number"
-          step="1"
-          onChange={(e) => {
-            if (e.target.value)
-              setRows((rs) =>
-                rs.map((r) =>
-                  r.retired
-                    ? r
-                    : { ...r, available_quantity: Number(e.target.value) },
-                ),
-              );
-          }}
-        />
-      </label>
-      <div className="matrix-scroll">
-        <table>
-          <thead>
-            <tr>
-              <th>Sell</th>
-              {config.options.map((o) => (
-                <th key={o.code}>{o.label}</th>
+          </div>
+          {templates.isPending && (
+            <p role="status" className="panel-message">
+              Loading option templates…
+            </p>
+          )}
+          {templates.isError && (
+            <p role="alert" className="panel-error">
+              Templates could not be loaded.{' '}
+              <button type="button" onClick={() => void templates.refetch()}>
+                Try again
+              </button>
+            </p>
+          )}
+          <div className="variant-template-choices">
+            {templates.data?.map((t) => {
+              const added = config.options.some(
+                (o) =>
+                  o.label.trim().toLowerCase() ===
+                  t.definition.label.trim().toLowerCase(),
+              )
+              const colorBlocked =
+                t.definition.control === 'swatch' &&
+                config.options.some((o) => o.control === 'swatch')
+              return (
+                <button
+                  className={`variant-template-choice${added ? ' added' : ''}`}
+                  key={t.id}
+                  aria-label={`Add ${t.definition.label} option`}
+                  type="button"
+                  disabled={added || colorBlocked || config.options.length >= 6}
+                  onClick={() => addOption(t.definition)}
+                >
+                  <Plus size={17} />
+                  <span>
+                    <strong>{t.definition.label}</strong>
+                    <small>
+                      {added
+                        ? 'Already added'
+                        : colorBlocked
+                          ? 'One color option per product'
+                          : `${t.definition.values.length} values · ${controlName(t.definition.control)}`}
+                    </small>
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+          {templates.data?.length === 0 && (
+            <p className="panel-message">
+              Create your first template in{' '}
+              <a href="#variant-templates">Variant templates</a>, then add it
+              here.
+            </p>
+          )}
+        </div>
+        {config.options.length > 0 && (
+          <div className="variant-card">
+            <div className="panel-title">
+              <Layers size={18} />
+              <div>
+                <strong>2. Choose values for this product</strong>
+                <span>
+                  Your selections are independent of the shared templates.
+                </span>
+              </div>
+            </div>
+            <div className="product-option-grid">
+              {config.options.map((o, i) => (
+                <section
+                  className="product-option-card"
+                  key={o.code}
+                  aria-label={`${o.label} option`}
+                >
+                  <header>
+                    <div>
+                      <h3>{o.label}</h3>
+                      <span>{o.values.length} values selected</span>
+                    </div>
+                    <button
+                      type="button"
+                      className="variant-icon-button danger"
+                      aria-label={`Remove ${o.label} option`}
+                      onClick={() => {
+                        setConfig((c) => ({
+                          ...c,
+                          options: c.options.filter((_, n) => n !== i),
+                        }))
+                        setNeedsPreview(true)
+                      }}
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </header>
+                  <div className="variant-value-choices">
+                    {(pools[o.code] ?? o.values).map((v) => (
+                      <label className="variant-value-choice" key={v.code}>
+                        <input
+                          type="checkbox"
+                          aria-label={`${o.label}: ${v.label}`}
+                          checked={o.values.some((n) => n.code === v.code)}
+                          onChange={(e) => {
+                            setConfig((c) => ({
+                              ...c,
+                              options: c.options.map((axis, n) =>
+                                n === i
+                                  ? {
+                                      ...axis,
+                                      values: e.target.checked
+                                        ? [...axis.values, v]
+                                        : axis.values.filter(
+                                            (n) => n.code !== v.code,
+                                          ),
+                                    }
+                                  : axis,
+                              ),
+                            }))
+                            setNeedsPreview(true)
+                            setMessage('')
+                          }}
+                        />
+                        {o.control === 'swatch' && (
+                          <i style={{ background: v.color ?? '#000000' }} />
+                        )}
+                        {v.label}
+                      </label>
+                    ))}
+                  </div>
+                  <details className="variant-customize">
+                    <summary>
+                      Customize {o.label.toLowerCase()} for this product
+                    </summary>
+                    <OptionFields
+                      option={o}
+                      allowSwatch={
+                        !config.options.some(
+                          (axis) =>
+                            axis.code !== o.code && axis.control === 'swatch',
+                        )
+                      }
+                      onChange={(next) => changeOption(i, next)}
+                    />
+                  </details>
+                </section>
               ))}
-              <th>Permanent SKU</th>
-              <th>Price (€)</th>
-              <th>Recorded stock</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r, i) => (
-              <tr key={r.id ?? JSON.stringify(r.selections)}>
-                <td>
+            </div>
+            {config.options.some((o) => o.control === 'swatch') && (
+              <>
+                <label className="variant-checkbox">
                   <input
-                    aria-label={`Sell combination ${i + 1}`}
                     type="checkbox"
-                    checked={!r.retired}
+                    checked={config.color_photos}
                     onChange={(e) =>
-                      changeRow(i, { retired: !e.target.checked })
+                      setConfig((c) => ({
+                        ...c,
+                        color_photos: e.target.checked,
+                      }))
                     }
                   />
-                </td>
-                {config.options.map((o) => (
-                  <td key={o.code}>
-                    <select
-                      aria-label={`Map ${o.label} ${i + 1}`}
-                      disabled={Boolean(
-                        product.variants.find((v) => v.id === r.id)?.selections,
+                  Use color-specific photos (optional)
+                </label>
+                {config.color_photos && (
+                  <div className="variant-photo-grid">
+                    {config.options
+                      .filter((o) => o.control === 'swatch')
+                      .flatMap((o) =>
+                        o.values.map((v) => (
+                          <fieldset key={v.code}>
+                            <legend>Photos for {v.label}</legend>
+                            <p className="variant-help">
+                              Leave empty to use the shared product gallery.
+                            </p>
+                            {product.media.map((m) => (
+                              <label key={m.id}>
+                                <input
+                                  type="checkbox"
+                                  aria-label={`${v.label}: ${m.alt_text}`}
+                                  checked={v.media_ids?.includes(m.id) ?? false}
+                                  onChange={(e) =>
+                                    setConfig((c) => ({
+                                      ...c,
+                                      options: c.options.map((axis) =>
+                                        axis.code === o.code
+                                          ? {
+                                              ...axis,
+                                              values: axis.values.map(
+                                                (value) =>
+                                                  value.code === v.code
+                                                    ? {
+                                                        ...value,
+                                                        media_ids: e.target
+                                                          .checked
+                                                          ? [
+                                                              ...(value.media_ids ??
+                                                                []),
+                                                              m.id,
+                                                            ]
+                                                          : (
+                                                              value.media_ids ??
+                                                              []
+                                                            ).filter(
+                                                              (id) =>
+                                                                id !== m.id,
+                                                            ),
+                                                      }
+                                                    : value,
+                                              ),
+                                            }
+                                          : axis,
+                                      ),
+                                    }))
+                                  }
+                                />
+                                <img src={m.thumbnail_url} alt={m.alt_text} />
+                              </label>
+                            ))}
+                            {!product.media.length && (
+                              <p className="variant-help">
+                                Add product photos first to assign them to
+                                colors.
+                              </p>
+                            )}
+                          </fieldset>
+                        )),
                       )}
-                      value={r.selections[o.code] ?? ""}
-                      onChange={(e) =>
-                        changeRow(i, {
-                          selections: {
-                            ...r.selections,
-                            [o.code]: e.target.value,
-                          },
-                        })
-                      }
-                    >
-                      <option value="">Choose</option>
-                      {o.values.map((v) => (
-                        <option key={v.code} value={v.code}>
-                          {v.label}
-                        </option>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
+        {config.options.length > 0 &&
+          product.variants.some((v) => !v.selections && !v.retired) && (
+            <details className="variant-card legacy-mapping">
+              <summary>
+                Match existing stock to these options (optional)
+              </summary>
+              <p className="variant-help">
+                Choose the options represented by an existing SKU before
+                generating combinations to keep its stock and history. Unmatched
+                variants will be retired.
+              </p>
+              {rows.map(
+                (r, i) =>
+                  r.id &&
+                  !product.variants.find((v) => v.id === r.id)?.selections && (
+                    <div className="legacy-mapping-row" key={r.id}>
+                      <strong>{r.sku}</strong>
+                      {config.options.map((o) => (
+                        <label key={o.code}>
+                          {o.label}
+                          <select
+                            aria-label={`Map ${o.label} ${i + 1}`}
+                            value={r.selections[o.code] ?? ''}
+                            onChange={(e) => {
+                              changeRow(i, {
+                                selections: {
+                                  ...r.selections,
+                                  [o.code]: e.target.value,
+                                },
+                              })
+                              setNeedsPreview(true)
+                            }}
+                          >
+                            <option value="">Choose</option>
+                            {o.values.map((v) => (
+                              <option key={v.code} value={v.code}>
+                                {v.label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
                       ))}
-                    </select>
-                  </td>
-                ))}
-                <td>{r.sku ?? "Generated on save"}</td>
-                <td>
+                    </div>
+                  ),
+              )}
+            </details>
+          )}
+        <div className="variant-card">
+          <div className="panel-title">
+            <Layers size={18} />
+            <div>
+              <strong>3. Generate and review combinations</strong>
+              <span>
+                {config.options
+                  .map(
+                    (o) => `${o.values.length} ${o.label.toLowerCase()} values`,
+                  )
+                  .join(' × ') || 'No options: one default variant'}{' '}
+                = {combinations} combinations
+              </span>
+            </div>
+          </div>
+          <div className="variant-actions">
+            <button
+              className="variant-button"
+              type="button"
+              disabled={!combinations || combinations > 1000}
+              onClick={generate}
+            >
+              <RefreshCw size={16} />
+              Generate {combinations} variants
+            </button>
+            <small className="variant-help">
+              Exclude combinations you do not sell. Existing SKUs are never
+              changed.
+            </small>
+          </div>
+          {needsPreview &&
+            product.variants.some(
+              (v) =>
+                !v.retired &&
+                v.selections &&
+                Object.keys(v.selections).sort().join() !==
+                  config.options
+                    .map((o) => o.code)
+                    .sort()
+                    .join(),
+            ) && (
+              <p className="variant-message">
+                Changing the product options creates new variants. Previous
+                combinations will be retired when you save; their SKUs and stock
+                history stay attached to them. Enter stock for the new
+                combinations before saving.
+              </p>
+            )}
+          {needsPreview ? (
+            <p className="variant-message" role="status">
+              Options changed. Generate the combined variants to continue.
+            </p>
+          ) : (
+            <>
+              <div className="variant-bulk-fields">
+                <label>
+                  Bulk price (€)
                   <input
-                    aria-label={`Price ${i + 1}`}
                     type="number"
                     min="0"
                     step=".01"
-                    value={r.price_minor / 100}
-                    onChange={(e) =>
-                      changeRow(i, {
-                        price_minor: Math.round(Number(e.target.value) * 100),
-                      })
-                    }
+                    placeholder="Apply to active variants"
+                    onChange={(e) => {
+                      if (e.target.value)
+                        setRows((rs) =>
+                          rs.map((r) =>
+                            r.retired
+                              ? r
+                              : {
+                                  ...r,
+                                  price_minor: Math.round(
+                                    Number(e.target.value) * 100,
+                                  ),
+                                },
+                          ),
+                        )
+                    }}
                   />
-                </td>
-                <td>
+                </label>
+                <label>
+                  Bulk recorded stock
                   <input
-                    aria-label={`Stock ${i + 1}`}
                     type="number"
                     step="1"
-                    value={r.available_quantity}
-                    onChange={(e) =>
-                      changeRow(i, {
-                        available_quantity: Number(e.target.value),
-                      })
-                    }
+                    placeholder="Apply to active variants"
+                    onChange={(e) => {
+                      if (e.target.value)
+                        setRows((rs) =>
+                          rs.map((r) =>
+                            r.retired
+                              ? r
+                              : {
+                                  ...r,
+                                  available_quantity: Number(e.target.value),
+                                },
+                          ),
+                        )
+                    }}
                   />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <button
-        type="button"
-        disabled={busy || rows.filter((r) => !r.retired).length > 100}
-        onClick={() => void save()}
-      >
-        Save options and variants
-      </button>
-      <p role="status">{message}</p>
-      <details>
-        <summary>Manage shared templates</summary>
-        <p>Changes here affect future copies only.</p>
-        {templates.data?.map((t) => (
-          <button
-            type="button"
-            key={t.id}
-            onClick={() => setTemplate(structuredClone(t))}
-          >
-            Edit {t.definition.label}
-          </button>
-        ))}
-        <button
-          type="button"
-          onClick={() =>
-            setTemplate({
-              id: crypto.randomUUID(),
-              revision: 0,
-              definition: {
-                code: "CUSTOM",
-                label: "New option",
-                control: "select",
-                values: [{ code: "VALUE", label: "Value" }],
-              },
-            })
-          }
-        >
-          New template
-        </button>
-        {template && (
-          <TemplateEditor
-            template={template}
-            onChange={setTemplate}
-            onSave={async () => {
-              try {
-                await request(`variant-templates/${template.id}`, template);
-                await client.invalidateQueries({
-                  queryKey: ["variant-templates"],
-                });
-                setTemplate(null);
-                setMessage("Template saved.");
-              } catch (e) {
-                setMessage((e as Error).message);
-              }
-            }}
-          />
-        )}
-      </details>
-    </section>
-  );
-}
-function TemplateEditor({
-  template: t,
-  onChange,
-  onSave,
-}: {
-  template: Template;
-  onChange: (t: Template) => void;
-  onSave: () => void;
-}) {
-  const change = (definition: Axis) => onChange({ ...t, definition });
-  return (
-    <fieldset>
-      <legend>Shared template</legend>
-      <label>
-        Name
-        <input
-          value={t.definition.label}
-          onChange={(e) => change({ ...t.definition, label: e.target.value })}
-        />
-      </label>
-      <label>
-        Identity code
-        <input
-          maxLength={8}
-          value={t.definition.code}
-          onChange={(e) =>
-            change({ ...t.definition, code: code(e.target.value) })
-          }
-        />
-      </label>
-      <label>
-        Control
-        <select
-          value={t.definition.control}
-          onChange={(e) => change({ ...t.definition, control: e.target.value })}
-        >
-          <option value="select">Dropdown</option>
-          <option value="buttons">Buttons</option>
-          <option value="swatch">Color swatches</option>
-        </select>
-      </label>
-      {t.definition.values.map((v, i) => (
-        <div key={i}>
-          <input
-            aria-label={`Default value ${i + 1}`}
-            value={v.label}
-            onChange={(e) =>
-              change({
-                ...t.definition,
-                values: t.definition.values.map((v, n) =>
-                  n === i ? { ...v, label: e.target.value } : v,
-                ),
-              })
-            }
-          />
-          {t.definition.control === "swatch" && (
-            <input
-              type="color"
-              aria-label={`Default color ${i + 1}`}
-              value={v.color ?? "#000000"}
-              onChange={(e) =>
-                change({
-                  ...t.definition,
-                  values: t.definition.values.map((v, n) =>
-                    n === i ? { ...v, color: e.target.value } : v,
-                  ),
-                })
-              }
-            />
+                </label>
+              </div>
+              <div
+                className="matrix-scroll"
+                role="region"
+                aria-label="Variant combinations"
+                tabIndex={0}
+              >
+                <table>
+                  <caption className="sr-only">
+                    Variant combinations, prices and recorded stock
+                  </caption>
+                  <thead>
+                    <tr>
+                      <th>Sell</th>
+                      {config.options.map((o) => (
+                        <th key={o.code}>{o.label}</th>
+                      ))}
+                      <th>SKU</th>
+                      <th>Price (€)</th>
+                      <th>Recorded stock</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((r, i) => (
+                      <tr
+                        className={r.retired ? 'retired' : ''}
+                        key={r.id ?? identity(r.selections)}
+                      >
+                        <td>
+                          <input
+                            aria-label={`Sell combination ${i + 1}`}
+                            type="checkbox"
+                            checked={!r.retired}
+                            onChange={(e) =>
+                              changeRow(i, { retired: !e.target.checked })
+                            }
+                          />
+                        </td>
+                        {config.options.map((o) => (
+                          <td key={o.code}>
+                            {o.values.find(
+                              (v) => v.code === r.selections[o.code],
+                            )?.label ??
+                              r.selections[o.code] ??
+                              '—'}
+                          </td>
+                        ))}
+                        <td>
+                          <code>{r.sku ?? 'Generated on save'}</code>
+                          {r.retired && <small>Excluded</small>}
+                        </td>
+                        <td>
+                          <input
+                            aria-label={`Price ${i + 1}`}
+                            type="number"
+                            min="0"
+                            step=".01"
+                            value={r.price_minor / 100}
+                            onChange={(e) =>
+                              changeRow(i, {
+                                price_minor: Math.round(
+                                  Number(e.target.value) * 100,
+                                ),
+                              })
+                            }
+                          />
+                        </td>
+                        <td>
+                          <input
+                            aria-label={`Stock ${i + 1}`}
+                            type="number"
+                            step="1"
+                            value={r.available_quantity}
+                            onChange={(e) =>
+                              changeRow(i, {
+                                available_quantity: Number(e.target.value),
+                              })
+                            }
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
+        </div>
+        {active > 100 && (
+          <p className="variant-message error" role="alert">
+            Choose up to 100 active combinations. Exclude the combinations you
+            do not sell.
+          </p>
+        )}
+        {error && (
+          <p className="variant-message error" role="alert">
+            {error}
+          </p>
+        )}
+        {message && (
+          <p className="variant-message success" role="status">
+            {message}
+          </p>
+        )}
+        <div className="variant-actions">
+          <span className="variant-help">Product SKU: {product.sku}</span>
           <button
+            className="variant-button primary"
             type="button"
-            onClick={() =>
-              change({
-                ...t.definition,
-                values: t.definition.values.filter((_, n) => i !== n),
-              })
-            }
+            disabled={needsPreview || active > 100}
+            onClick={() => void save()}
           >
-            Remove
+            <Save size={16} />
+            {busy ? 'Saving…' : 'Save options and variants'}
           </button>
         </div>
-      ))}
-      <button
-        type="button"
-        onClick={() => {
-          const label = window.prompt("New default value");
-          if (label)
-            change({
-              ...t.definition,
-              values: [
-                ...t.definition.values,
-                {
-                  code: uniqueCode(
-                    label,
-                    t.definition.values.map((v) => v.code),
-                  ),
-                  label,
-                  color: "#000000",
-                },
-              ],
-            });
-        }}
-      >
-        Add default
-      </button>
-      <button type="button" onClick={onSave}>
-        Save template
-      </button>
-    </fieldset>
-  );
+      </fieldset>
+    </section>
+  )
 }
