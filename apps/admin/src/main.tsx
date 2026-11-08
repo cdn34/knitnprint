@@ -1,3 +1,4 @@
+import { productSlugBase, productSlugUrl } from './product-slug'
 import { VariantTemplatesManagement } from './variant-templates'
 import { VariantMatrix } from './variant-matrix'
 import {
@@ -2480,7 +2481,7 @@ function CatalogManagement({
     const base = preview.variants.find(v => !v.retired) ?? preview.variants[0]
     return variantCalibrationDirty
       || productTitle !== preview.title
-      || productSlug !== preview.slug
+      || productSlug !== productSlugBase(preview.slug, preview.sku)
       || productDescription !== preview.description
       || productKeywords !== preview.search_keywords
       || productSku !== (base?.sku ?? '')
@@ -2965,7 +2966,7 @@ function CatalogManagement({
     setPreview(product)
     if (!preserveViews) setProductPhotoOrder(product.media.map(({ id }) => id))
     setProductTitle(product.title)
-    setProductSlug(product.slug)
+    setProductSlug(productSlugBase(product.slug, product.sku))
     setProductSlugEdited(true)
     setProductDescription(product.description)
     setProductKeywords(product.search_keywords)
@@ -3201,7 +3202,7 @@ function CatalogManagement({
               onChange={(event) => {
                 const title = event.target.value
                 setProductTitle(title)
-                if (!productSlugEdited) setProductSlug(slugify(title))
+                if (!productSlugEdited) setProductSlug(slugify(title).slice(0, 200 - (preview?.sku.length ?? 9) - 1).replace(/-+$/, ''))
               }}
               required
             />
@@ -3211,6 +3212,7 @@ function CatalogManagement({
               name="product-slug"
               pattern="[a-z0-9]+(?:-[a-z0-9]+)*"
               placeholder="woven-planter"
+              maxLength={200 - (preview?.sku.length ?? 9) - 1}
               value={productSlug}
               onChange={(event) => {
                 setProductSlug(event.target.value)
@@ -3220,9 +3222,9 @@ function CatalogManagement({
               required
             />
             <small className="field-help" id="product-slug-help">
-              Generated from the title. You can edit it before saving.
+              Generated from the title. You can edit the name; the permanent product SKU is added automatically.
             </small>
-            {productSlug && <small className="url-preview">/products/{productSlug}</small>}
+            {productSlug && <small className="url-preview">/products/{productSlugUrl(productSlug, preview?.sku)}</small>}
             <label htmlFor="product-description">Description</label>
             <textarea
               id="product-description"

@@ -20,6 +20,7 @@ Build on the existing variant-based pricing and inventory system. Administrators
 - Allocate parent numbers through a database sequence. Names, slugs, prices, labels, and display order never regenerate SKUs.
 - Reserve parent and variant codes in a shared registry; enforce uniqueness during concurrent creation and never reuse retired codes. Resolve allocation collisions, including existing legacy codes.
 - Enforce SKU immutability through API and database guards. Display SKUs read-only in the admin.
+- Include the permanent parent SKU in canonical product URLs, preserve historical URLs for the original product, and never reassign deleted-product URLs.
 - Matrix refreshes preserve existing variant IDs, SKUs, stock history, and personalization measurements.
 - Real option identity changes require a new combination/SKU. Retire rather than delete old combinations; reactivation retains their identity. Display labels and swatches remain editable.
 - Backfill parent codes for existing products and preserve all existing variant SKUs. Offer explicit one-time mapping of legacy variants to structured options without replacing IDs or histories; mapped identities become immutable.

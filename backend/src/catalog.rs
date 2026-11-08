@@ -177,6 +177,7 @@ struct ProductRow {
 #[derive(Deserialize, ToSchema)]
 pub struct CreateProductRequest {
     pub title: String,
+    /// Editable URL name; the server appends the permanent parent SKU. Returned product slugs are canonical.
     pub slug: String,
     #[serde(default)]
     pub description: String,
@@ -203,6 +204,7 @@ pub struct CreateVariantRequest {
 #[derive(Deserialize, ToSchema)]
 pub struct UpdateProductRequest {
     pub title: String,
+    /// Editable URL name; the server appends the permanent parent SKU. Returned product slugs are canonical.
     pub slug: String,
     #[serde(default)]
     pub description: String,
@@ -1471,7 +1473,7 @@ pub async fn public_detail(State(state): State<AppState>, Path(slug): Path<Strin
         r#"
         SELECT id, title, slug, description, status, search_keywords
         FROM products
-        WHERE slug = $1 AND status = 'active'
+        WHERE id = (SELECT product_id FROM product_slug_history WHERE slug=$1) AND status = 'active'
         "#,
     )
     .bind(slug)

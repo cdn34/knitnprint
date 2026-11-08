@@ -184,7 +184,7 @@ test('lets an owner manage the catalog and complete an order with configured del
   const publicProduct = await publicResponse.json()
   expect(publicProduct).toMatchObject({
     title,
-    slug,
+    slug: createdProduct.slug,
     status: 'active',
     search_keywords: '',
     variants: [

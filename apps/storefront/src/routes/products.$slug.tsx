@@ -1,6 +1,6 @@
 import { activePersonalizationViews } from '../personalization-views'
 import { VariantPicker, configuration, variantPhotos, variantPersonalization } from '../components/variant-picker'
-import { createFileRoute, notFound } from '@tanstack/react-router'
+import { createFileRoute, notFound, redirect } from '@tanstack/react-router'
 import {
   ArrowLeft,
   ChevronLeft,
@@ -27,9 +27,10 @@ import { useI18n } from '../i18n'
 import { useLocalizedCatalog } from '../i18n/catalog'
 
 export const Route = createFileRoute('/products/$slug')({
-  loader: async ({ params }) => {
+  loader: async ({ params, location }) => {
     const product = await publishedProduct(params.slug)
     if (!product) throw notFound()
+    if (params.slug !== product.slug) throw redirect({ href: `/products/${product.slug}${location.searchStr}`, statusCode: 301 })
     const feedback = await publishedProductFeedback(params.slug)
     return { product, feedback }
   },

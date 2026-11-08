@@ -1,13 +1,14 @@
-import { createFileRoute, notFound } from '@tanstack/react-router'
+import { createFileRoute, notFound, redirect } from '@tanstack/react-router'
 import { ArrowLeft, CircleCheck, ShoppingBag } from 'lucide-react'
 import { StorefrontAnnouncement, StorefrontFooter, StorefrontHeader } from '../components/storefront-shell'
 import { publishedProduct } from '../catalog-api'
 import { useI18n } from '../i18n'
 
 export const Route = createFileRoute('/products/$slug_/feedback-thanks')({
-  loader: async ({ params }) => {
+  loader: async ({ params, location }) => {
     const product = await publishedProduct(params.slug)
     if (!product) throw notFound()
+    if (params.slug !== product.slug) throw redirect({ href: `/products/${product.slug}/feedback-thanks${location.searchStr}`, statusCode: 301 })
     return product
   },
   head: () => ({

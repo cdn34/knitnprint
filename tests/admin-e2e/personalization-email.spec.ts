@@ -43,7 +43,8 @@ test('saves both personalized faces with the order for confirmation emails', asy
   expect((await page.request.post(`/api/admin/products/${product.id}/status`, { data: { status: 'active' } })).ok()).toBe(true)
   const email = `preview-${unique}@example.test`
   await signInVerifiedCustomer(page.request, email, 'Preview', 'Tester')
-  await page.goto(`http://127.0.0.1:3000/products/${product.slug}/personalize`)
+  await page.goto(`http://127.0.0.1:3000/products/email-preview-${unique}/personalize?variant=${product.variants[0].id}`)
+  await expect(page).toHaveURL(`http://127.0.0.1:3000/products/${product.slug}/personalize?variant=${product.variants[0].id}`)
   await page.locator('.personalizer-tools textarea').fill('Front design')
   await page.locator('.personalizer-view-switcher').getByRole('tab', { name: /Back/ }).click()
   await page.locator('.personalizer-tools textarea').fill('Back design')

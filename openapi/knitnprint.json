@@ -7693,7 +7693,8 @@
             "type": "string"
           },
           "slug": {
-            "type": "string"
+            "type": "string",
+            "description": "Editable URL name; the server appends the permanent parent SKU. Returned product slugs are canonical."
           },
           "title": {
             "type": "string"
@@ -10919,7 +10920,8 @@
             "type": "string"
           },
           "slug": {
-            "type": "string"
+            "type": "string",
+            "description": "Editable URL name; the server appends the permanent parent SKU. Returned product slugs are canonical."
           },
           "title": {
             "type": "string"

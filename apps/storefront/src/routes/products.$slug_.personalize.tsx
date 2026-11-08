@@ -1,6 +1,6 @@
 import { VariantPicker, configuration, variantPhotos, variantPersonalization } from '../components/variant-picker'
 import { ApiError } from '@knitnprint/api-client'
-import { createFileRoute, notFound } from '@tanstack/react-router'
+import { createFileRoute, notFound, redirect } from '@tanstack/react-router'
 import { ArrowLeft, Eye, ShoppingBag } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { announceCartUpdate, cartApi, cartMutationKey } from '../cart-api'
@@ -13,9 +13,10 @@ import { activePersonalizationViews } from '../personalization-views'
 
 export const Route = createFileRoute('/products/$slug_/personalize')({
   validateSearch: (search: Record<string, unknown>) => ({ variant: typeof search.variant === 'string' ? search.variant : undefined }),
-  loader: async ({ params }) => {
+  loader: async ({ params, location }) => {
     const product = await publishedProduct(params.slug)
     if (!product || product.personalization.mode === 'none') throw notFound()
+    if (params.slug !== product.slug) throw redirect({ href: `/products/${product.slug}/personalize${location.searchStr}`, statusCode: 301 })
     return product
   },
   head: ({ loaderData }) => ({ meta: [{ title: loaderData ? `${loaderData.title} — KnitNPrint` : 'KnitNPrint' }] }),

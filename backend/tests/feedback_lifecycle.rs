@@ -120,7 +120,10 @@ async fn approved_product_and_storefront_feedback_share_the_homepage() {
     assert_eq!(homepage["average_rating"], 4.5);
     assert_eq!(homepage["reviews"].as_array().unwrap().len(), 2);
     assert!(homepage["reviews"].as_array().unwrap().iter().any(|item| {
-        item["product_slug"] == "story-tee" && item["product_title"] == "Story Tee"
+        item["product_slug"]
+            .as_str()
+            .is_some_and(|slug| slug.starts_with("story-tee-kp-"))
+            && item["product_title"] == "Story Tee"
     }));
     assert!(
         homepage["reviews"]

@@ -642,7 +642,7 @@ pub async fn reply(
 }
 
 async fn active_product_id(pool: &PgPool, slug: &str) -> Result<Option<Uuid>, sqlx::Error> {
-    sqlx::query_scalar("SELECT id FROM products WHERE slug=$1 AND status='active'")
+    sqlx::query_scalar("SELECT id FROM products WHERE id=(SELECT product_id FROM product_slug_history WHERE slug=$1) AND status='active'")
         .bind(slug)
         .fetch_optional(pool)
         .await

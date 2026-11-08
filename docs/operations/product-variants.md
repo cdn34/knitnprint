@@ -41,6 +41,14 @@ same variant IDs. New combinations need their own calibration where required.
 Deleting a photo clears its color assignments; historical order photos remain
 protected by the existing retention rules.
 
+Product URLs include the parent SKU in lowercase, for example
+`/products/linen-shirt-kp-000123`. The editor changes only the readable name;
+the server adds the permanent parent identifier, never a variant SKU. Existing
+products receive canonical URLs through migration 0060. Previous URLs redirect
+to the current URL of their original product, including personalization links
+and their query parameters. Deleting a product permanently reserves its previous
+URLs, so a same-name replacement cannot inherit its links.
+
 Saved variants are retired rather than deleted. Existing carts containing a
 retired variant must be corrected before checkout; historical orders remain
 usable. Current EUR-only pricing and backorder behavior are preserved. Recorded
@@ -51,7 +59,7 @@ Matrix saves require the product revision and each existing variant's expected
 stock quantity. Stale saves return 409 and must be reloaded. Template saves also
 check their revision. Successful template and matrix changes create audit entries.
 
-Migration 0059 is additive and preserves all previous migration files. Apply it
+Migrations 0059 and 0060 preserve all previous migration files. Apply them
 before deploying the updated API, then deploy the admin and storefront together.
 Use `npm run check:local` against a disposable PostgreSQL database and run both
 browser suites before pushing. The new browser coverage is in
