@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { Product, Variant } from "@knitnprint/api-client";
+import { useI18n } from '../i18n';
 export type Choice = {
   code: string;
   label: string;
@@ -56,6 +57,7 @@ export function VariantPicker({
   variant?: Variant;
   onChange: (id: string) => void;
 }) {
+  const { t } = useI18n();
   const [hydrated, setHydrated] = useState(false);
   useEffect(() => setHydrated(true), []);
   const options = configuration(product).options;
@@ -63,7 +65,7 @@ export function VariantPicker({
   if (!options.length) return null;
   return (
     <div className="structured-variant-picker">
-      {options.map((axis, index) => {
+      {options.map((axis, index) => ({ axis, index })).sort((a, b) => Number(b.axis.control === 'swatch') - Number(a.axis.control === 'swatch')).map(({ axis, index }) => {
         const match = (code: string) =>
           product.variants.find((v) => {
             const selected = v.selections as Record<string, string> | undefined;
@@ -89,13 +91,17 @@ export function VariantPicker({
           const next = match(code);
           if (next) onChange(next.id);
         };
+        const label = /^(color|colour)$/i.test(axis.label) ? t('product.variantColor')
+          : /^size$/i.test(axis.label) ? t('product.variantSize')
+          : /^size \(months\)$/i.test(axis.label) ? t('product.variantSizeMonths')
+          : /^size \(years\)$/i.test(axis.label) ? t('product.variantSizeYears') : axis.label;
         return (
           <fieldset key={axis.code}>
-            <legend>{axis.label}</legend>
+            <legend>{label}</legend>
             {axis.control === "select" ? (
               <select
                 disabled={!hydrated}
-                aria-label={axis.label}
+                aria-label={label}
                 value={selections?.[axis.code] ?? ""}
                 onChange={(e) => choose(e.target.value)}
               >
@@ -110,11 +116,11 @@ export function VariantPicker({
                 ))}
               </select>
             ) : (
-              <div className="variant-options">
+              <div className="structured-variant-options">
                 {axis.values.map((v) => (
                   <button
                     type="button"
-                    className="variant-option"
+                    className="structured-variant-choice"
                     key={v.code}
                     aria-pressed={selections?.[axis.code] === v.code}
                     disabled={!hydrated || !match(v.code)}

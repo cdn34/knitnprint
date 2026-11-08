@@ -6,15 +6,25 @@ Use **Variant templates** in the admin navigation to create, edit, or delete
 shared defaults independently of products. Deleting a template does not remove
 options or variants already copied into products.
 
-Create a draft product, then open **Options and variants** in its editor. Choose
-**Add Color option**, then **Add Size option** (or another template). Select
-the values on each card, then generate their combinations. For example, two
-colors and three sizes produce six variants. The template choices stay visible
-so more options can be added without replacing the first one.
+Create a draft product, then open **Tamanhos e cores** in its editor.
+The workspace follows three numbered sections: product options, photographs,
+and generated combinations. Enable **Tem tamanhos** and **Tem cores**, set the
+base price, and choose the size and color chips. The quick-add fields accept
+custom sizes and colors. **Modelos e outras opções** retains the reusable
+templates, custom option types, and name/value editors. Generate combinations
+after changing options; for example, two colors and three sizes produce six variants.
 Map existing variants before generating if their stock and SKU should be kept.
 Review combinations, exclude ones that are not sold, and set prices/stock before
 saving. Unchecked new combinations are not created; unchecked saved variants
 are retired. Refreshing the matrix preserves saved combinations and identities.
+The table groups option labels in one **Variante** column. Stock remains editable
+in each row; enable **Definir preços diferentes por variante** to edit individual
+prices. Hiding these price fields preserves the recorded prices. Under
+**Opções avançadas das combinações**, use **Aplicar preço ou stock em lote** for
+bulk fields, **Mostrar referências** for permanent SKUs, and
+**Mostrar variantes desativadas** to reactivate saved combinations. The
+**Por encomenda** state identifies active variants with no positive recorded
+stock; it does not disable purchasing.
 
 Products support up to six option axes and 100 active variants. The preview is
 bounded to 1,000 combinations; reduce the chosen values before generating larger
@@ -33,13 +43,24 @@ allocation. Update clients may echo the unchanged SKU, but changing it returns
 409. Explicit SQL imports can supply legacy SKUs, which are permanently reserved
 on insertion as well.
 
-**Use color-specific photos** is off by default. When enabled, select the existing
-photos for each color. Unmapped colors use the normal shared gallery. Assigned
+**Usar fotografias específicas por cor (opcional)** is off by default. Each color
+card previews its assigned photographs and identifies shared-gallery fallback
+when no assignment is active. Open **Adicionar fotos** or **Alterar fotos** to
+select existing product photos for a color; opening a chooser enables the optional
+color galleries. **Opções da galeria** also exposes the opt-in switch. Unmapped
+colors use the normal shared gallery. Assigned
 photos also select the personalization views; the server validates that those
 views belong to the chosen variant. Existing measurements stay attached to the
 same variant IDs. New combinations need their own calibration where required.
 Deleting a photo clears its color assignments; historical order photos remain
 protected by the existing retention rules.
+
+**Como fica na loja** previews draft selections, photographs, prices, and recorded
+stock before saving. The public product page uses the same photo/selection layout,
+with color swatches first, size buttons, and a compact availability badge. The
+public API masks stock quantities, so the public badge does not present its
+placeholder quantity as real inventory. Personalization links and cart actions
+continue to use the selected variant.
 
 Product URLs include the parent SKU in lowercase, for example
 `/products/linen-shirt-kp-000123`. The editor changes only the readable name;

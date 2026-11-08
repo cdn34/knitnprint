@@ -6,7 +6,7 @@ export async function signInVerifiedCustomer(
   firstName: string,
   lastName: string,
 ) {
-  const origin = 'http://127.0.0.1:3000'
+  const origin = process.env.E2E_STOREFRONT_URL ?? 'http://127.0.0.1:3000'
   const password = 'browser-customer-passphrase'
   const registration = await request.post(`${origin}/api/account/register`, {
     data: { email, password, first_name: firstName, last_name: lastName },

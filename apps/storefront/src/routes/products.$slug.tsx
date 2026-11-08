@@ -64,6 +64,8 @@ function ProductPage() {
   const photos = variantPhotos(product, variant)
   const selectedMedia = photos[selectedMediaIndex] ?? photos[0]
   const selectedPersonalization = variantPersonalization(product, variant)
+  const options = configuration(product).options
+  const selectionSummary = [...options].sort((a, b) => Number(b.control === 'swatch') - Number(a.control === 'swatch')).map(option => option.values.find(value => value.code === (variant?.selections as Record<string, string> | undefined)?.[option.code])?.label).filter(Boolean).join(' · ')
   const personalizable = selectedPersonalization.mode !== 'none' && (!Array.isArray(selectedPersonalization.views) || activePersonalizationViews(selectedPersonalization).length > 0)
 
   function showPreviousPhoto() {
@@ -123,6 +125,7 @@ function ProductPage() {
       <StorefrontHeader />
       <main className="product-page" id="main-content" tabIndex={-1}>
         <a className="text-link page-back-link" href="/#shop"><ArrowLeft size={17} /> {t('product.backToShop')}</a>
+        <div className="product-presentation">
         <div className="product-gallery">
           <div className={`product-detail-art${selectedMedia ? ' product-detail-art--photo' : ''}`}>
             {selectedMedia ? (
@@ -164,14 +167,14 @@ function ProductPage() {
           )}
         </div>
         <section className="product-detail-copy">
-          <p className="eyebrow">{t('product.collection')}</p>
+          {!options.length && <p className="eyebrow">{t('product.collection')}</p>}
           <h1>{product.title}</h1>
           <p className="product-detail-price">
             {priceForVariant(variant)}
           </p>
-          <p className="product-detail-description">{product.description}</p>
+          {personalizable && <p className="product-personalization-hint">{t('product.personalizationAvailable')}</p>}
+          {product.description && <p className="product-detail-description">{product.description}</p>}
           <VariantPicker product={product} variant={variant} onChange={id => { setSelectedVariantId(id); setSelectedMediaIndex(0) }} />
-          {configuration(product).options.length > 0 && variant && <small>{t('product.sku')} {variant.sku}</small>}
           {!configuration(product).options.length && product.variants.length > 0 && (
             <fieldset className="variant-picker">
               <legend>{t('product.chooseOption')}</legend>
@@ -212,9 +215,10 @@ function ProductPage() {
             >
               {stock.state === 'available' && <CircleCheck aria-hidden="true" />}
               {stock.state === 'sold-out' && <PackageX aria-hidden="true" />}
-              <span><strong>{localizedStock?.label}</strong></span>
+              <span><strong>{options.length && stock.state === 'available' ? t('product.variantAvailable') : localizedStock?.label}</strong></span>
             </div>
           )}
+          {selectionSummary && <p className="product-selection-summary">{selectionSummary}</p>}
           {personalizable && stock?.state !== 'sold-out' ? <div className="product-purchase-actions">
             <a className="button button--primary personalization-start-button" href={`/products/${product.slug}/personalize${variant ? `?variant=${encodeURIComponent(variant.id)}` : ''}`}>{t('personalization.start')}</a>
             {addToCartButton}
@@ -225,11 +229,13 @@ function ProductPage() {
               <span>{t('product.cartError')}</span>
             )}
           </div>
+          {options.length > 0 && variant && <details className="product-variant-reference"><summary>{t('product.variantDetails')}</summary><small>{t('product.sku')} {variant.sku}</small></details>}
           <div className="product-promises">
             <span><PackageCheck /> {t('product.smallBatches')}</span>
             <span><ShieldCheck /> {t('product.secureCheckout')}</span>
           </div>
         </section>
+        </div>
         <ProductFeedback productSlug={product.slug} productTitle={product.title} summary={feedback} />
         <ContextualFaqs
           id="product-faqs"

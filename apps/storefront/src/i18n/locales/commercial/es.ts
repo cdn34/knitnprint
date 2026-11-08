@@ -1,4 +1,11 @@
 export const commercialEs = {
+  'product.variantColor': 'Color',
+  'product.variantSize': 'Talla',
+  'product.variantSizeMonths': 'Talla (meses)',
+  'product.variantSizeYears': 'Talla (años)',
+  'product.variantDetails': 'Detalles de la variante',
+  'product.variantAvailable': 'Disponible',
+  'product.personalizationAvailable': 'Personalización disponible',
   'product.variantArtworkChange': 'Cambiar el color borrará el diseño en las fotografías diferentes. ¿Continuar?',
   'b2b.title': 'Soluciones a medida para tu empresa',
   'b2b.intro': 'Convierte tu identidad en una imagen de marca. En KnitNPrint personalizamos ropa y regalos corporativos que refuerzan el espíritu de equipo, realzan los eventos y marcan la diferencia ante clientes y colaboradores.',
