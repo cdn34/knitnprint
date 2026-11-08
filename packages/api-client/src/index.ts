@@ -549,6 +549,7 @@ export function createApiClient(options: ApiClientOptions = {}) {
         body: JSON.stringify(input),
       }),
     previewVariantMatrix: (productId: string, input: SaveMatrix) => send<{active_count: number; combination_count: number}>(`/api/admin/products/${productId}/variant-matrix/preview`, { method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify(input) }),
+    deleteVariantTemplate: (templateId: string, input: {revision: number}) => send<{ok: boolean}>(`/api/admin/variant-templates/${templateId}`, { method: 'DELETE', headers: {'content-type': 'application/json'}, body: JSON.stringify(input) }),
     variantTemplates: () => send<VariantTemplate[]>('/api/admin/variant-templates'),
     saveVariantTemplate: (input: VariantTemplate) => send<{ok: boolean}>(`/api/admin/variant-templates/${input.id}`, { method: 'PUT', headers: {'content-type': 'application/json'}, body: JSON.stringify(input) }),
     saveVariantMatrix: (productId: string, input: SaveMatrix) => send<{ok: boolean}>(`/api/admin/products/${productId}/variant-matrix`, { method: 'PUT', headers: {'content-type': 'application/json'}, body: JSON.stringify(input) }),

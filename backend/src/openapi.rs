@@ -16,6 +16,7 @@ use crate::{
     paths(
         crate::variant_options::templates,
         crate::variant_options::save_template,
+        crate::variant_options::delete_template,
         crate::variant_options::save_matrix,
         crate::variant_options::preview_matrix,
         b2b::create,

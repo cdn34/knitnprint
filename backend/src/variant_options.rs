@@ -121,6 +121,25 @@ pub async fn save_template(
     let Ok(mut tx) = p.begin().await else {
         return fail(StatusCode::SERVICE_UNAVAILABLE, "Database unavailable");
     };
+    if sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
+        .bind(format!("variant-template:{id}"))
+        .execute(&mut *tx)
+        .await
+        .is_err()
+    {
+        return fail(StatusCode::SERVICE_UNAVAILABLE, "Could not lock template");
+    }
+    let deleted = sqlx::query_scalar::<_,bool>("SELECT EXISTS(SELECT 1 FROM audit_log WHERE action='product.variant_template_delete' AND entity_type='variant_template' AND entity_id=$1)").bind(id.to_string()).fetch_one(&mut *tx).await;
+    match deleted {
+        Ok(false) => {}
+        Ok(true) => {
+            return fail(
+                StatusCode::CONFLICT,
+                "This template was deleted. Reload before saving.",
+            );
+        }
+        Err(_) => return fail(StatusCode::SERVICE_UNAVAILABLE, "Could not load template"),
+    }
     match sqlx::query("INSERT INTO variant_templates(id,definition) VALUES($1,$2) ON CONFLICT(id) DO UPDATE SET definition=excluded.definition,revision=variant_templates.revision+1 WHERE variant_templates.revision=$3").bind(id).bind(json!(input.definition)).bind(input.revision).execute(&mut *tx).await {
       Ok(r) if r.rows_affected()==1=>{}, Ok(_)=>return fail(StatusCode::CONFLICT,"Template changed; reload before saving"), Err(_)=>return fail(StatusCode::SERVICE_UNAVAILABLE,"Could not save template")
     }
@@ -376,4 +395,55 @@ pub async fn preview_matrix(
         Ok(None) => fail(StatusCode::NOT_FOUND, "Product not found"),
         Err(_) => fail(StatusCode::SERVICE_UNAVAILABLE, "Database unavailable"),
     }
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct DeleteTemplateRequest {
+    pub revision: i64,
+}
+
+#[utoipa::path(delete,path="/api/admin/variant-templates/{id}",params(("id"=Uuid,Path)),request_body=DeleteTemplateRequest,responses((status=200),(status=409)),tag="admin catalog")]
+pub async fn delete_template(
+    State(state): State<AppState>,
+    actor: AuthenticatedStaff,
+    Path(id): Path<Uuid>,
+    Json(input): Json<DeleteTemplateRequest>,
+) -> Response {
+    if let Err(e) = require_capability(&actor, "catalog.write") {
+        return e.into_response();
+    }
+    let Some(pool) = state.database else {
+        return fail(StatusCode::SERVICE_UNAVAILABLE, "Database unavailable");
+    };
+    let Ok(mut tx) = pool.begin().await else {
+        return fail(StatusCode::SERVICE_UNAVAILABLE, "Database unavailable");
+    };
+    if sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
+        .bind(format!("variant-template:{id}"))
+        .execute(&mut *tx)
+        .await
+        .is_err()
+    {
+        return fail(StatusCode::SERVICE_UNAVAILABLE, "Could not lock template");
+    }
+    match sqlx::query("DELETE FROM variant_templates WHERE id=$1 AND revision=$2")
+        .bind(id)
+        .bind(input.revision)
+        .execute(&mut *tx)
+        .await
+    {
+        Ok(result) if result.rows_affected() == 1 => {}
+        Ok(_) => {
+            return fail(
+                StatusCode::CONFLICT,
+                "This template changed or was removed. Reload before deleting.",
+            );
+        }
+        Err(_) => return fail(StatusCode::SERVICE_UNAVAILABLE, "Could not delete template"),
+    }
+    if sqlx::query("INSERT INTO audit_log(actor_staff_user_id,action,entity_type,entity_id) VALUES($1,'product.variant_template_delete','variant_template',$2)")
+        .bind(actor.id).bind(id.to_string()).execute(&mut *tx).await.is_err() || tx.commit().await.is_err() {
+        return fail(StatusCode::SERVICE_UNAVAILABLE, "Could not delete template");
+    }
+    Json(json!({"ok":true})).into_response()
 }

@@ -263,6 +263,50 @@ async fn matrix_preserves_legacy_identity_and_rejects_stale_or_invalid_changes()
         .await
         .unwrap();
     assert_eq!(copied["options"][0]["label"], "Color");
+    let denied_delete = knitnprint_api::variant_options::delete_template(
+        State(state.clone()),
+        denied.clone(),
+        Path(template_id),
+        Json(knitnprint_api::variant_options::DeleteTemplateRequest { revision: 1 }),
+    )
+    .await;
+    assert_eq!(denied_delete.status(), StatusCode::FORBIDDEN);
+    let stale_delete = knitnprint_api::variant_options::delete_template(
+        State(state.clone()),
+        actor.clone(),
+        Path(template_id),
+        Json(knitnprint_api::variant_options::DeleteTemplateRequest { revision: 0 }),
+    )
+    .await;
+    assert_eq!(stale_delete.status(), StatusCode::CONFLICT);
+    let deleted = knitnprint_api::variant_options::delete_template(
+        State(state.clone()),
+        actor.clone(),
+        Path(template_id),
+        Json(knitnprint_api::variant_options::DeleteTemplateRequest { revision: 1 }),
+    )
+    .await;
+    assert_eq!(deleted.status(), StatusCode::OK);
+    let after_delete: Value = sqlx::query_scalar("SELECT variant_config FROM products WHERE id=$1")
+        .bind(product)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(after_delete, copied);
+    let resurrect = knitnprint_api::variant_options::save_template(
+        State(state.clone()),
+        actor.clone(),
+        Path(template_id),
+        Json(
+            serde_json::from_value(
+                json!({"id":template_id,"revision":1,"definition":copied["options"][0]}),
+            )
+            .unwrap(),
+        ),
+    )
+    .await;
+    assert_eq!(resurrect.status(), StatusCode::CONFLICT);
+
     // Concurrent parent allocation produces distinct globally reserved identifiers.
     let first = Uuid::new_v4();
     let second = Uuid::new_v4();

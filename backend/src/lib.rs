@@ -177,7 +177,8 @@ pub fn app(state: AppState) -> Router {
         )
         .route(
             "/api/admin/variant-templates/{id}",
-            axum::routing::put(variant_options::save_template),
+            axum::routing::put(variant_options::save_template)
+                .delete(variant_options::delete_template),
         )
         .route(
             "/api/admin/products/{id}/variant-matrix/preview",

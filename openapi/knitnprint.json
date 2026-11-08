@@ -5137,6 +5137,41 @@
             "description": ""
           }
         }
+      },
+      "delete": {
+        "tags": [
+          "admin catalog"
+        ],
+        "operationId": "delete_template",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeleteTemplateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "409": {
+            "description": ""
+          }
+        }
       }
     },
     "/api/b2b/requests": {
@@ -8339,6 +8374,18 @@
           },
           "reason": {
             "type": "string"
+          }
+        }
+      },
+      "DeleteTemplateRequest": {
+        "type": "object",
+        "required": [
+          "revision"
+        ],
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "format": "int64"
           }
         }
       },

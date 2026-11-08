@@ -455,6 +455,10 @@ export interface DeleteCustomerAccountRequest {
   "reason": string
 }
 
+export interface DeleteTemplateRequest {
+  "revision": number
+}
+
 export interface DeliveryQuote {
   "amount_minor"?: number | null
   "available": boolean
