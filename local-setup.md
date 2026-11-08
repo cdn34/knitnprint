@@ -327,3 +327,22 @@ Delete all local PostgreSQL and SeaweedFS data only when a full reset is intende
 ```bash
 docker compose down --volumes
 ```
+
+
+
+## Debug Rust backend not running
+
+```bash
+  # Initial process check—blocked by the sandbox
+  ps -axo pid=,ppid=,command= | rg 'knitnprint-api|cargo run|cargo watch'
+
+  # Check listening ports
+  lsof -nP -iTCP -sTCP:LISTEN | rg 'knitnprint|:8080|:43210'
+
+  # Process check outside the sandbox—no matches
+  ps -axo pid=,ppid=,command= | rg '[k]nitnprint-api|[c]argo run|[c]argo watch'
+
+  # Identify running containers and their ports
+  docker ps --format 'table {{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Ports}}'
+
+```
