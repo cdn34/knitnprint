@@ -21,3 +21,8 @@ replace the vulnerable dependency before accepting that change.
 All other Rust advisories, production npm auditing, repository dependency/secret
 scans and API image vulnerability scans remain enabled. This does not exclude
 SQLite advisories from the operating-system/container scanners.
+
+CI invokes the official `cargo-audit` CLI directly. The GitHub security job reports
+its exit status, so vulnerabilities still fail CI without relying on the separate
+Check Runs API update used by `rustsec/audit-check`. The auditor version is pinned
+and installed with its published lockfile.

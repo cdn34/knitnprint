@@ -176,19 +176,18 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      checks: write
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - name: Verify exclusions belong only to disabled SQLx drivers
         run: sh scripts/check-postgres-only-dependencies.sh
-      - uses: rustsec/audit-check@v2.0.0
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          # SQLx retains optional MySQL/RSA and SQLite packages in Cargo.lock.
-          # The preceding guard fails if any become enabled for any target.
-          # RUSTSEC-2023-0071: disabled MySQL/RSA; RUSTSEC-2026-0459: disabled SQLite.
-          ignore: RUSTSEC-2023-0071, RUSTSEC-2026-0459
+      - name: Install Rust security auditor
+        run: cargo install cargo-audit --locked --version 0.23.0
+      - name: Audit Rust dependencies
+        # SQLx retains optional MySQL/RSA and SQLite packages in Cargo.lock.
+        # The preceding guard fails if any become enabled for any target.
+        # RUSTSEC-2023-0071: disabled MySQL/RSA; RUSTSEC-2026-0459: disabled SQLite.
+        run: cargo audit --ignore RUSTSEC-2023-0071 --ignore RUSTSEC-2026-0459
       - name: Scan repository dependencies and secrets
         uses: aquasecurity/trivy-action@v0.36.0
         with:
