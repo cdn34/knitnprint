@@ -103,7 +103,7 @@ test('returns to the catalog with the preserved design from both personalization
       await page.getByRole('button', { name: 'Add to cart', exact: true }).click()
     }
     const added = page.waitForResponse(response => new URL(response.url()).pathname === '/api/cart/items' && response.request().method() === 'POST')
-    await page.getByRole('alertdialog').getByRole('button', { name: 'Yes, add it', exact: true }).click()
+    await page.getByRole('alertdialog').getByRole('button', { name: 'Add to cart', exact: true }).click()
     const response = await added
     expect(response.status()).toBe(201)
     const input = response.request().postDataJSON()

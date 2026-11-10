@@ -93,6 +93,7 @@ export function CartDrawer({ added, onClose }: Readonly<{ added: boolean; onClos
                   <h3><a href={`/products/${item.product_slug}`}>{item.product_title}</a></h3>
                   <p>{item.variant_title}</p>
                   {Boolean(item.customization) && <p className="cart-drawer-personalization">{personalizationSummary(item.customization, item.customization_media_asset_ids ?? [], t)}</p>}
+                  {item.personalization_unit_price_minor > 0 && <p className="cart-drawer-price-breakdown">{t('personalization.cartPriceBreakdown', { base: formatCurrency(item.base_unit_price_minor, item.currency), personalization: formatCurrency(item.personalization_unit_price_minor, item.currency) })}</p>}
                   <div className="cart-drawer-item-total"><span>{t('cart.quantity')}: {item.quantity}</span><strong>{formatCurrency(item.line_total_minor, item.currency)}</strong></div>
                   {!item.available && <p className="cart-drawer-item-unavailable">{t('product.unavailable')}</p>}
                 </div>

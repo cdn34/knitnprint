@@ -1,5 +1,5 @@
 import type { Product } from '@knitnprint/api-client'
-import { Heart } from 'lucide-react'
+import { FavoriteButton } from './favorite-button'
 import {
   mediaUrl,
   productStock,
@@ -36,9 +36,7 @@ export function CatalogProductGrid({ products }: Readonly<{ products: Product[] 
                   <span className={`product-form product-form--${form}`} />
                 )}
               </a>
-              <button className="heart" aria-label={t('common.saveProduct', { name: product.title })} type="button">
-                <Heart size={19} />
-              </button>
+              <FavoriteButton productId={product.id} title={product.title} />
             </div>
             <div className="product-info">
               <div>

@@ -22,6 +22,7 @@ use crate::{
         find_by_code_in_transaction, normalize_code,
     },
     error::ErrorBody,
+    personalization_pricing,
     settings::TaxSelection,
 };
 
@@ -90,6 +91,8 @@ pub struct CartItem {
     pub sku: String,
     pub quantity: i32,
     pub unit_price_minor: i64,
+    pub base_unit_price_minor: i64,
+    pub personalization_unit_price_minor: i64,
     pub currency: String,
     pub line_total_minor: i64,
     pub available_quantity: i64,
@@ -149,6 +152,8 @@ struct CartLineRow {
     sku: String,
     quantity: i32,
     unit_price_minor: i64,
+    base_unit_price_minor: i64,
+    stored_currency: String,
     currency: String,
     image_url: Option<String>,
     customization: Option<Value>,
@@ -374,6 +379,12 @@ pub async fn add_item(
             EnsureCurrencyError::Mismatch => currency_mismatch(),
         };
     }
+    let Some(unit_price_minor) = personalization_pricing::unit_price_minor(
+        variant.price_minor,
+        input.customization.as_ref(),
+    ) else {
+        return unavailable();
+    };
     if sqlx::query(
         r##"
         INSERT INTO cart_lines (id, cart_id, variant_id, quantity, unit_price_minor, currency, customization, customization_media_asset_id, customization_media_asset_ids, personalization_previews)
@@ -389,7 +400,7 @@ pub async fn add_item(
     .bind(session.id)
     .bind(input.variant_id)
     .bind(resulting_quantity)
-    .bind(variant.price_minor)
+    .bind(unit_price_minor)
     .bind(&variant.currency)
     .bind(&input.customization)
     .bind(photo_ids.first().copied())
@@ -456,8 +467,8 @@ pub async fn update_item(
         Ok(MutationClaim::New) => {}
         Err(_) => return unavailable(),
     }
-    let variant_id: Uuid = match sqlx::query_scalar(
-        "SELECT variant_id FROM cart_lines WHERE id = $1 AND cart_id = $2 FOR UPDATE",
+    let (variant_id, customization): (Uuid, Option<Value>) = match sqlx::query_as(
+        "SELECT variant_id, customization FROM cart_lines WHERE id = $1 AND cart_id = $2 FOR UPDATE",
     )
     .bind(line_id)
     .bind(session.id)
@@ -473,6 +484,11 @@ pub async fn update_item(
         Ok(None) => return unavailable_item(),
         Err(_) => return unavailable(),
     };
+    let Some(unit_price_minor) =
+        personalization_pricing::unit_price_minor(variant.price_minor, customization.as_ref())
+    else {
+        return unavailable();
+    };
     if sqlx::query(
         r#"
         UPDATE cart_lines
@@ -483,7 +499,7 @@ pub async fn update_item(
     .bind(line_id)
     .bind(session.id)
     .bind(input.quantity)
-    .bind(variant.price_minor)
+    .bind(unit_price_minor)
     .bind(variant.currency)
     .execute(&mut *transaction)
     .await
@@ -875,33 +891,6 @@ async fn cart_response_with_status(
 }
 
 async fn load_cart(pool: &PgPool, cart_id: Uuid) -> Result<Cart, sqlx::Error> {
-    let repriced: Vec<Uuid> = sqlx::query_scalar(
-        r#"
-        SELECT line.id
-        FROM cart_lines line
-        JOIN product_variants variant ON variant.id = line.variant_id
-        WHERE line.cart_id = $1
-          AND (line.unit_price_minor <> variant.price_minor OR line.currency <> variant.currency)
-        "#,
-    )
-    .bind(cart_id)
-    .fetch_all(pool)
-    .await?;
-    sqlx::query(
-        r#"
-        UPDATE cart_lines line
-        SET unit_price_minor = variant.price_minor,
-            currency = variant.currency,
-            updated_at = CASE
-                WHEN line.unit_price_minor <> variant.price_minor OR line.currency <> variant.currency
-                THEN now() ELSE line.updated_at END
-        FROM product_variants variant
-        WHERE line.cart_id = $1 AND variant.id = line.variant_id
-        "#,
-    )
-    .bind(cart_id)
-    .execute(pool)
-    .await?;
     let cart = sqlx::query_as::<_, CartRow>(
         r#"
         SELECT currency::text AS currency, customer_id, discount_id,
@@ -917,7 +906,8 @@ async fn load_cart(pool: &PgPool, cart_id: Uuid) -> Result<Cart, sqlx::Error> {
         SELECT line.id, line.variant_id, product.slug AS product_slug,
                product.title AS product_title, CASE WHEN variant.retired THEN 'archived' ELSE product.status END AS product_status,
                variant.title AS variant_title, variant.sku, line.quantity,
-               line.unit_price_minor, line.currency::text AS currency,
+               line.unit_price_minor, variant.price_minor AS base_unit_price_minor,
+               line.currency::text AS stored_currency, variant.currency::text AS currency,
                (
                    SELECT '/api/media/' || media.id || '/thumbnail'
                    FROM product_media relation
@@ -941,7 +931,15 @@ async fn load_cart(pool: &PgPool, cart_id: Uuid) -> Result<Cart, sqlx::Error> {
     let mut items = Vec::with_capacity(rows.len());
     let mut item_count = 0_i64;
     let mut subtotal_minor = 0_i64;
+    let mut repriced_ids = Vec::new();
+    let mut repriced_prices = Vec::new();
+    let mut repriced_currencies = Vec::new();
     for row in rows {
+        let unit_price_minor = personalization_pricing::unit_price_minor(
+            row.base_unit_price_minor,
+            row.customization.as_ref(),
+        )
+        .ok_or_else(|| sqlx::Error::Protocol("personalized unit price overflow".into()))?;
         let published = row.product_status == "active";
         if !published {
             issues.push(CartIssue {
@@ -950,7 +948,10 @@ async fn load_cart(pool: &PgPool, cart_id: Uuid) -> Result<Cart, sqlx::Error> {
                 message: format!("{} is no longer available.", row.product_title),
             });
         }
-        if repriced.contains(&row.id) {
+        if row.unit_price_minor != unit_price_minor || row.stored_currency != row.currency {
+            repriced_ids.push(row.id);
+            repriced_prices.push(unit_price_minor);
+            repriced_currencies.push(row.currency.clone());
             issues.push(CartIssue {
                 code: "price_changed".into(),
                 line_id: Some(row.id),
@@ -967,7 +968,7 @@ async fn load_cart(pool: &PgPool, cart_id: Uuid) -> Result<Cart, sqlx::Error> {
                 ),
             });
         }
-        let line_total_minor = row.unit_price_minor.saturating_mul(i64::from(row.quantity));
+        let line_total_minor = unit_price_minor.saturating_mul(i64::from(row.quantity));
         item_count = item_count.saturating_add(i64::from(row.quantity));
         subtotal_minor = subtotal_minor.saturating_add(line_total_minor);
         items.push(CartItem {
@@ -978,7 +979,9 @@ async fn load_cart(pool: &PgPool, cart_id: Uuid) -> Result<Cart, sqlx::Error> {
             variant_title: row.variant_title,
             sku: row.sku,
             quantity: row.quantity,
-            unit_price_minor: row.unit_price_minor,
+            unit_price_minor,
+            base_unit_price_minor: row.base_unit_price_minor,
+            personalization_unit_price_minor: unit_price_minor - row.base_unit_price_minor,
             currency: row.currency,
             line_total_minor,
             available_quantity: 100,
@@ -988,6 +991,24 @@ async fn load_cart(pool: &PgPool, cart_id: Uuid) -> Result<Cart, sqlx::Error> {
             customization_media_asset_id: row.customization_media_asset_id,
             customization_media_asset_ids: row.customization_media_asset_ids,
         });
+    }
+    if !repriced_ids.is_empty() {
+        sqlx::query(
+            r#"
+            UPDATE cart_lines line
+            SET unit_price_minor = price.unit_price_minor, currency = price.currency,
+                updated_at = now()
+            FROM unnest($1::uuid[], $2::bigint[], $3::text[])
+                AS price(id, unit_price_minor, currency)
+            WHERE line.cart_id = $4 AND line.id = price.id
+            "#,
+        )
+        .bind(&repriced_ids)
+        .bind(&repriced_prices)
+        .bind(&repriced_currencies)
+        .bind(cart_id)
+        .execute(pool)
+        .await?;
     }
     let mut discount = None;
     let mut discount_minor = 0;

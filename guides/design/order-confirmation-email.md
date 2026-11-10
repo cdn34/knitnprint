@@ -20,6 +20,8 @@ products, prices and personalization shown in the prototype are illustrative.
   each customized face when applicable. The production email must use previews
   saved with that order, matching the customer's submitted design, positioning
   and sizing. A generic catalog photo is not a substitute for that confirmation.
+- Show a product photo for non-personalized items as well, preferring the photo
+  recorded at checkout over later catalog ordering changes.
 - Under Payment, display only the confirmed status; omit the payment method.
 - Include the delivery address, a link to the customer's order and the support
   address `support@knitnprint.com`.
@@ -32,8 +34,11 @@ The garment drawings in the prototype are illustrative. New personalized cart
 items save a PNG of each customized face using the same preview component. Uploads
 are checked against the owning cart and retained with the immutable order media.
 The worker attaches these privately through CID, never public upload URLs or
-generic catalog photos. Older orders without saved previews retain their text
-details and link to the order; the email does not invent a product preview.
+catalog photos presented as a personalized result. Non-personalized items also
+include an inline PNG of the purchased product. Older orders without saved
+previews retain their text details, link to the order, and an explicit
+missing-preview note alongside the product photo; the email does not invent a
+personalized preview.
 
 PT/EN/ES subjects, body copy, dates and monetary formatting follow the immutable
 checkout language, with English as the fallback. Payment confirmation and outbox

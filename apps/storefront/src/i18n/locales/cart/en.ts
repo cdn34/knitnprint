@@ -1,4 +1,12 @@
 export const cartEn = {
+  'order.personalizationDetails': 'Personalization for {name}',
+  'order.photoAdded': 'Photo added',
+  'order.fontLabel': 'Font',
+  'order.colorLabel': 'Color',
+  'order.uploadedPhoto': 'Uploaded photo {number}',
+  'order.previewAlt': 'Personalization for {name} · {view}',
+  'order.openPreview': 'Enlarge personalization · {view}',
+  'order.previewUnavailable': 'The image is unavailable. Your personalization details are still saved.',
   'cartDrawer.close': 'Close cart',
   'cartDrawer.checkout': 'View cart and checkout',
   'cartDrawer.retry': 'Try again',

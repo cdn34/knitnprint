@@ -41,6 +41,9 @@ jobs:
       - run: npm run db:migrate
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
+      - run: npm run test:e2e:personalization
+      - run: npm run test:e2e:favorites
+      - run: npm run test:e2e:cart-drawer
       - run: npm audit --omit=dev
 
   backend:

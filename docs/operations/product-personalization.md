@@ -24,3 +24,14 @@ field, so no database migration is needed. Product-wide availability is derived
 from the enabled areas. The cart validates the saved permissions server-side,
 rejects disallowed content, and prevents older payload formats from bypassing
 area or photograph restrictions. Existing order snapshots remain unchanged.
+
+## Integration with favorites and pricing
+
+The favorites migration is `0062_customer_favorites.sql`. It was renumbered from
+`0059_customer_favorites.sql` when integrating the favorites branch, because
+`0059_variant_templates_and_skus.sql` already exists. Existing migrations and their
+checksums are unchanged. Apply pending migrations normally; do not reset the database.
+
+Each filled area adds EUR 1 per product unit, regardless of whether it contains
+text, a photo, or both. Area permissions continue to be enforced independently
+when calculating and submitting the design.

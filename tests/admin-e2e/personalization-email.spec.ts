@@ -1,6 +1,8 @@
 import { expect, test } from '@playwright/test'
 import { signInVerifiedCustomer } from '../helpers/customer'
 
+const storefrontUrl = process.env.E2E_STOREFRONT_URL ?? 'http://127.0.0.1:3000'
+
 const ownerEmail = process.env.E2E_OWNER_EMAIL ?? 'owner@knitnprint.local'
 const ownerPassword = process.env.E2E_OWNER_PASSWORD ?? 'local-development-passphrase'
 
@@ -43,8 +45,8 @@ test('saves both personalized faces with the order for confirmation emails', asy
   expect((await page.request.post(`/api/admin/products/${product.id}/status`, { data: { status: 'active' } })).ok()).toBe(true)
   const email = `preview-${unique}@example.test`
   await signInVerifiedCustomer(page.request, email, 'Preview', 'Tester')
-  await page.goto(`http://127.0.0.1:3000/products/email-preview-${unique}/personalize?variant=${product.variants[0].id}`)
-  await expect(page).toHaveURL(`http://127.0.0.1:3000/products/${product.slug}/personalize?variant=${product.variants[0].id}`)
+  await page.goto(`${storefrontUrl}/products/email-preview-${unique}/personalize?variant=${product.variants[0].id}`)
+  await expect(page).toHaveURL(`${storefrontUrl}/products/${product.slug}/personalize?variant=${product.variants[0].id}`)
   await page.locator('.personalizer-tools textarea').fill('Front design')
   await page.locator('.personalizer-view-switcher').getByRole('tab', { name: /Back/ }).click()
   await page.locator('.personalizer-tools textarea').fill('Back design')
@@ -59,13 +61,13 @@ test('saves both personalized faces with the order for confirmation emails', asy
   expect(saved.map((view) => view.view_id)).toEqual(['front', 'back'])
   expect(new Set(saved.map((view) => view.media_id)).size).toBe(2)
 
-  const delivery = await page.request.post('http://127.0.0.1:3000/api/cart/delivery', { headers: { 'idempotency-key': `email-delivery-${unique}` }, data: {
+  const delivery = await page.request.post(`${storefrontUrl}/api/cart/delivery`, { headers: { 'idempotency-key': `email-delivery-${unique}` }, data: {
     email, first_name: 'Preview', last_name: 'Tester', phone: '',
     address: { recipient_name: 'Preview Tester', line1: '1 Preview Lane', line2: '', city: 'Lisbon', region: '', postal_code: '1000-001', country_code: 'PT', phone: '' },
   } })
   expect(delivery.ok()).toBe(true)
   const deliveryCart = await delivery.json()
-  const orderResponse = await page.request.post('http://127.0.0.1:3000/api/orders', { headers: { 'idempotency-key': `email-checkout-${unique}` }, data: { payment_method: 'manual', locale: 'pt', shipping_rate_revision: deliveryCart.shipping_quote?.revision, checkout_quote: deliveryCart.checkout_quote } })
+  const orderResponse = await page.request.post(`${storefrontUrl}/api/orders`, { headers: { 'idempotency-key': `email-checkout-${unique}` }, data: { payment_method: 'manual', locale: 'pt', shipping_rate_revision: deliveryCart.shipping_quote?.revision, checkout_quote: deliveryCart.checkout_quote } })
   expect(orderResponse.status()).toBe(201)
   const order = await orderResponse.json()
   expect(order.lines[0].personalization_previews).toEqual(saved.map((view) => ({ ...view, view_label: view.view_id === 'front' ? 'Front' : 'Back' })))

@@ -72,6 +72,7 @@ import {
   type StaffRecord,
 } from '@knitnprint/api-client'
 import { printAreaOffsets } from './personalization-measurements'
+import { OrderLineImages, savedOrderImages } from './order-line-images'
 import { uploadImagesWithProgress, productPhotosInOrder, savedProductPhotoOrder } from './product-image-uploads'
 import { B2bManagement } from './b2b'
 import { DeliveryRatesManagement } from './delivery-rates'
@@ -725,12 +726,14 @@ function OrderDetail({
         {order.lines.map((line) => {
           const mediaIds = line.customization_media_asset_ids?.length ? line.customization_media_asset_ids : line.customization_media_asset_id ? [line.customization_media_asset_id] : []
           const productionSpecs = customizationProductionSpecs(line.customization)
+          const images = savedOrderImages(line)
           return <article className="order-item-card" key={line.id}>
             <header className="order-item-card-heading">
               <span><strong>{line.product_title}</strong><small>{line.variant_title} · {line.sku} · Qty {line.quantity} · Shipped {line.fulfilled_quantity}</small>{Boolean(line.customization) && <small className="order-customization-summary">Personalização: {customizationLabel(line.customization)}</small>}</span>
               <b>{formatMoney(line.line_total_minor, line.currency)}</b>
             </header>
-            {Boolean(line.customization) && <OrderPersonalizationProof line={line} />}
+            {(images.length > 0 || !line.customization) && <OrderLineImages images={images} product={line.product_title} orderNumber={order.order_number} />}
+            {Boolean(line.customization) && images.length === 0 && <OrderPersonalizationProof line={line} />}
             {productionSpecs.length > 0 && <div className="order-customization-specs">{productionSpecs.map((spec) => <span className="order-customization-spec" key={spec.key}><strong>{spec.title}</strong>{spec.photo && <small>{spec.photo}</small>}{spec.text && <small>{spec.text}</small>}</span>)}</div>}
             {mediaIds.length > 0 && <div className="order-originals"><span>Ficheiros originais</span><div>{mediaIds.map((mediaId, index) => <a key={mediaId} href={`/api/admin/personalization/media/${mediaId}/original`}><img src={`/api/admin/personalization/media/${mediaId}/thumbnail`} alt="" />Descarregar original {index + 1}</a>)}</div></div>}
           </article>

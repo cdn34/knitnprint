@@ -8,6 +8,8 @@ import { toBlob } from 'html-to-image'
 
 const SUPPORTED_FONTS = ['Roboto', 'Montserrat', 'Playfair Display', 'Dancing Script', 'Pacifico'] as const
 const DEFAULT_COLORS = ['#111111', '#ffffff', '#9c5263', '#1f4f78', '#b3232f']
+// Use the editor's reference width so text scales with the product in every rendering.
+const DESIGN_REFERENCE_WIDTH = 760
 type Interaction = { pointerX: number; pointerY: number; frame: ElementFrame; handle: 'move' | 'nw' | 'ne' | 'sw' | 'se' }
 type ProductMediaForPersonalizer = { id: string; url: string }
 
@@ -62,6 +64,14 @@ type AreaDesign = {
   photoUrl?: string
   mediaId?: string
   photoFrame: ElementFrame
+}
+
+function personalizationTextStyle(design: AreaDesign) {
+  return {
+    color: design.color,
+    fontFamily: design.font,
+    fontSize: `${design.size * 100 / DESIGN_REFERENCE_WIDTH}cqw`,
+  }
 }
 
 function DesignElement({ frame, kind, label, selected, onSelect, onChange, children }: Readonly<{
@@ -142,7 +152,7 @@ function DesignElement({ frame, kind, label, selected, onSelect, onChange, child
   </div>
 }
 
-export function ProductPersonalizer({ config, variantId, variantLabel, productMedia, onChange, previewOpen, onPreviewClose, onAddToCart, addToCartDisabled, addToCartLabel, saving = false }: Readonly<{
+export function ProductPersonalizer({ config, variantId, variantLabel, productMedia, onChange, previewOpen, onPreviewClose, onAddToCart, addToCartDisabled, addToCartLabel, priceSummary, saving = false }: Readonly<{
   config: PersonalizationConfig
   variantId: string
   variantLabel?: string
@@ -153,6 +163,7 @@ export function ProductPersonalizer({ config, variantId, variantLabel, productMe
   onAddToCart: () => void
   addToCartDisabled: boolean
   addToCartLabel: string
+  priceSummary?: ReactNode
   saving?: boolean
 }>) {
   const { t } = useI18n()
@@ -194,6 +205,7 @@ export function ProductPersonalizer({ config, variantId, variantLabel, productMe
   const [previewViewId, setPreviewViewId] = useState(views[0].id)
   const objectUrls = useRef(new Set<string>())
   const confirmationCanvases = useRef(new Map<string, HTMLDivElement>())
+  const previewContinueButton = useRef<HTMLButtonElement>(null)
   const activeDesignKey = designKey(activeView.id, activeAreaId)
   const activeDesign = designs[activeDesignKey] ?? newDesign(activePrintArea.mode)
   const activeProductImage = productMedia.find(({ id }) => id === activeView.mediaId)?.url ?? (views.length === 1 ? productMedia[0]?.url : undefined)
@@ -280,6 +292,7 @@ export function ProductPersonalizer({ config, variantId, variantLabel, productMe
     const previousOverflow = document.body.style.overflow
     const closeOnEscape = (event: globalThis.KeyboardEvent) => { if (event.key === 'Escape') onPreviewClose() }
     document.body.style.overflow = 'hidden'
+    previewContinueButton.current?.focus({ preventScroll: true })
     window.addEventListener('keydown', closeOnEscape)
     return () => {
       document.body.style.overflow = previousOverflow
@@ -317,7 +330,7 @@ export function ProductPersonalizer({ config, variantId, variantLabel, productMe
               const frame = area.previewFrame ?? area
               return <div key={area.id} className="personalization-final-area" style={{ left: `${frame.x}%`, top: `${frame.y}%`, width: `${frame.width}%`, height: `${frame.height}%` }}>
                 {photoVisible && <div className="personalization-final-element" style={{ left: `${design.photoFrame.x}%`, top: `${design.photoFrame.y}%`, width: `${design.photoFrame.width}%`, height: `${design.photoFrame.height}%` }}><img className="personalization-final-photo" src={design.photoUrl} alt={t('personalization.customPhotoAlt')} /></div>}
-                {textVisible && <div className="personalization-final-element personalization-final-element--text" style={{ left: `${design.textFrame.x}%`, top: `${design.textFrame.y}%`, width: `${design.textFrame.width}%`, height: `${design.textFrame.height}%` }}><span style={{ color: design.color, fontFamily: design.font, fontSize: `${design.size}px` }}>{design.text}</span></div>}
+                {textVisible && <div className="personalization-final-element personalization-final-element--text" style={{ left: `${design.textFrame.x}%`, top: `${design.textFrame.y}%`, width: `${design.textFrame.width}%`, height: `${design.textFrame.height}%` }}><span style={personalizationTextStyle(design)}>{design.text}</span></div>}
               </div>
             })}
           </div>
@@ -351,7 +364,7 @@ export function ProductPersonalizer({ config, variantId, variantLabel, productMe
         </div>}
       </div>
       <div className="personalizer-stage">
-        {activeProductImage ? <div className="personalizer-canvas"><img className="personalizer-product" src={activeProductImage} alt={t('personalization.productPreviewAlt', { view: activeView.label })} />
+        {activeProductImage ? <div className="personalizer-canvas"><img className="personalizer-product" src={activeProductImage} alt={t('personalization.productPreviewAlt', { view: activeView.label })} /><div className="personalizer-design-layer">
           {printAreas.map((area) => {
             const key = designKey(activeView.id, area.id)
             const design = designs[key] ?? newDesign(area.mode)
@@ -362,10 +375,10 @@ export function ProductPersonalizer({ config, variantId, variantLabel, productMe
             return <div key={area.id} className={`personalizer-print-area${active ? ' personalizer-print-area--active' : ''}`} aria-label={area.label} style={{ left: `${frame.x}%`, top: `${frame.y}%`, width: `${frame.width}%`, height: `${frame.height}%` }} onClick={() => selectArea(area)}>
               <span className="personalizer-print-area-label">{area.label}</span>
               {wantsPhoto && (active || design.mediaId) && <DesignElement frame={design.photoFrame} kind="photo" label={t('personalization.photoElement', { view: activeView.label, area: area.label })} selected={active && selected === 'photo'} onSelect={() => { setActiveAreaId(area.id); setSelected('photo') }} onChange={(photoFrame) => updateDesign(key, { photoFrame })}>{design.photoUrl ? <img className="personalizer-photo" src={design.photoUrl} alt={t('personalization.uploadedPhotoAlt')} draggable={false} /> : <span className="personalizer-placeholder"><ImagePlus /> {t('personalization.photo')}</span>}</DesignElement>}
-              {wantsText && (active || design.text.trim()) && <DesignElement frame={design.textFrame} kind="text" label={t('personalization.textElement', { view: activeView.label, area: area.label })} selected={active && selected === 'text'} onSelect={() => { setActiveAreaId(area.id); setSelected('text') }} onChange={(textFrame) => updateDesign(key, { textFrame })}>{design.text.trim() ? <span className="personalizer-text" style={{ color: design.color, fontFamily: design.font, fontSize: `${design.size}px` }}>{design.text}</span> : <span className="personalizer-placeholder"><Type /> {t('personalization.text')}</span>}</DesignElement>}
+              {wantsText && (active || design.text.trim()) && <DesignElement frame={design.textFrame} kind="text" label={t('personalization.textElement', { view: activeView.label, area: area.label })} selected={active && selected === 'text'} onSelect={() => { setActiveAreaId(area.id); setSelected('text') }} onChange={(textFrame) => updateDesign(key, { textFrame })}>{design.text.trim() ? <span className="personalizer-text" style={personalizationTextStyle(design)}>{design.text}</span> : <span className="personalizer-placeholder"><Type /> {t('personalization.text')}</span>}</DesignElement>}
             </div>
           })}
-        </div> : <div className="personalizer-product-empty">{t('personalization.emptyView')}</div>}
+        </div></div> : <div className="personalizer-product-empty">{t('personalization.emptyView')}</div>}
       </div>
     </div>
     <div aria-hidden="true" style={{ position: 'fixed', left: '-10000px', top: 0, width: 'min(680px, calc(100vw - 32px))', pointerEvents: 'none' }}>
@@ -384,7 +397,7 @@ export function ProductPersonalizer({ config, variantId, variantLabel, productMe
           {previewProductImage ? renderFinalPreview(previewView, previewProductImage) : <p>{t('personalization.emptyView')}</p>}
           {previewProductImage && previewHasDesign && <p className="personalization-final-preview-note" role="status">{t(previewIsPrintCapped ? 'personalization.previewPrintCapped' : 'personalization.previewScaleNote')}</p>}
         </div>
-        <footer><span>{t('personalization.previewFooter')}</span><div className="personalization-final-preview-actions"><button className="button button--secondary" type="button" autoFocus onClick={onPreviewClose}>{t('personalization.continuePersonalizing')}</button><button className="button button--primary" type="button" disabled={addToCartDisabled} onClick={onAddToCart}><ShoppingBag />{addToCartLabel}</button></div></footer>
+        <footer><div className="personalization-final-preview-summary">{priceSummary}<span>{t('personalization.previewFooter')}</span></div><div className="personalization-final-preview-actions"><button className="button button--secondary" type="button" ref={previewContinueButton} onClick={onPreviewClose}>{t('personalization.continuePersonalizing')}</button><button className="button button--primary" type="button" disabled={addToCartDisabled} onClick={onAddToCart}><ShoppingBag />{addToCartLabel}</button></div></footer>
       </section>
     </div>}
   </section>

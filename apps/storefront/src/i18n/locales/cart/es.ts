@@ -1,4 +1,12 @@
 export const cartEs = {
+  'order.personalizationDetails': 'Personalización de {name}',
+  'order.photoAdded': 'Fotografía añadida',
+  'order.fontLabel': 'Tipo de letra',
+  'order.colorLabel': 'Color',
+  'order.uploadedPhoto': 'Fotografía enviada {number}',
+  'order.previewAlt': 'Personalización de {name} · {view}',
+  'order.openPreview': 'Ampliar personalización · {view}',
+  'order.previewUnavailable': 'La imagen no está disponible. Los detalles de tu personalización siguen guardados.',
   'cartDrawer.close': 'Cerrar carrito',
   'cartDrawer.checkout': 'Ver carrito y finalizar',
   'cartDrawer.retry': 'Intentar de nuevo',

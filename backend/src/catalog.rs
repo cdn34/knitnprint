@@ -58,6 +58,8 @@ pub struct Product {
     pub media: Vec<ProductMedia>,
     pub categories: Vec<Category>,
     pub personalization: PersonalizationConfig,
+    /// Fixed EUR surcharge per filled print area, per product unit.
+    pub personalization_area_price_minor: i64,
 }
 
 #[derive(Clone, Serialize, Deserialize, ToSchema, FromRow)]
@@ -1548,6 +1550,28 @@ async fn products_response(pool: &PgPool, rows: Vec<ProductRow>) -> Response {
     Json(products).into_response()
 }
 
+pub(crate) async fn public_products_by_ids(
+    pool: &PgPool,
+    ids: &[Uuid],
+) -> Result<Vec<Product>, sqlx::Error> {
+    let rows = sqlx::query_as::<_, ProductRow>(
+        r#"SELECT id, title, slug, description, status, search_keywords
+        FROM products WHERE id = ANY($1) AND status = 'active'
+        ORDER BY array_position($1::uuid[], id)"#,
+    )
+    .bind(ids)
+    .fetch_all(pool)
+    .await?;
+    let mut products = Vec::with_capacity(rows.len());
+    for row in rows {
+        let mut product = hydrate_product(pool, row).await?;
+        product.search_keywords.clear();
+        hide_inventory(&mut product);
+        products.push(product);
+    }
+    Ok(products)
+}
+
 async fn public_products_response(pool: &PgPool, rows: Vec<ProductRow>) -> Response {
     let mut products = Vec::with_capacity(rows.len());
     for row in rows {
@@ -1709,6 +1733,7 @@ async fn hydrate_product(pool: &PgPool, row: ProductRow) -> Result<Product, sqlx
         media,
         categories,
         personalization,
+        personalization_area_price_minor: crate::personalization_pricing::AREA_PRICE_MINOR,
     })
 }
 

@@ -146,6 +146,7 @@ export interface CartIssue {
 export interface CartItem {
   "available": boolean
   "available_quantity": number
+  "base_unit_price_minor": number
   "currency": string
   "customization"?: unknown
   "customization_media_asset_id"?: string | null
@@ -153,6 +154,7 @@ export interface CartItem {
   "id": string
   "image_url"?: string | null
   "line_total_minor": number
+  "personalization_unit_price_minor": number
   "product_slug": string
   "product_title": string
   "quantity": number
@@ -893,6 +895,7 @@ export interface Product {
   "id": string
   "media": Array<ProductMedia>
   "personalization": PersonalizationConfig
+  "personalization_area_price_minor": number
   "search_keywords": string
   "sku": string
   "slug": string

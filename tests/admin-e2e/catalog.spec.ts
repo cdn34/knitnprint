@@ -1,6 +1,8 @@
 import { expect, test } from '@playwright/test'
 import { signInVerifiedCustomer } from '../helpers/customer'
 
+const storefrontUrl = process.env.E2E_STOREFRONT_URL ?? 'http://127.0.0.1:3000'
+
 const ownerEmail = process.env.E2E_OWNER_EMAIL ?? 'owner@knitnprint.local'
 const ownerPassword =
   process.env.E2E_OWNER_PASSWORD ?? 'local-development-passphrase'
@@ -318,7 +320,7 @@ test('lets an owner manage the catalog and complete an order with configured del
   await expect(persistedProduct.locator('.product-thumbnail img')).toBeVisible()
 
   await signInVerifiedCustomer(page.request, orderEmail, 'Order', 'Browser')
-  await page.goto(`http://127.0.0.1:3000/products/${slug}`)
+  await page.goto(`${storefrontUrl}/products/${slug}`)
   await page.waitForLoadState('networkidle')
   await expect(page.getByRole('heading', { level: 1 })).toHaveText(title)
   await expect(page.getByRole('button', { name: 'Show product photo 1' })).toHaveAttribute('aria-pressed', 'true')
@@ -376,7 +378,7 @@ test('lets an owner manage the catalog and complete an order with configured del
   const orderNumber = (await page.locator('.order-confirmation .eyebrow').textContent())?.trim()
   expect(orderNumber).toMatch(/KP-\d{4}-\d{6}/)
 
-  await page.goto('http://127.0.0.1:3001/#customers')
+  await page.goto('/#customers')
   const customers = page.getByRole('region', { name: 'Customers' })
   await customers.getByLabel('Search customers').fill(orderEmail)
   const customerRow = customers.getByRole('button').filter({ hasText: orderEmail })

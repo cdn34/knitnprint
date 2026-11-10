@@ -6,6 +6,7 @@ import { useMemo, useState } from 'react'
 import { redirectToProductsWithCart, cartApi, cartMutationKey } from '../cart-api'
 import { mediaUrl, preferredVariant, publishedProduct, variantStock } from '../catalog-api'
 import { ProductPersonalizer, type CustomerCustomization } from '../components/product-personalizer'
+import { PersonalizationPrice } from '../components/personalization-price'
 import { VerifiedCustomerGate } from '../components/verified-customer-gate'
 import { StorefrontAnnouncement, StorefrontHeader } from '../components/storefront-shell'
 import { useI18n } from '../i18n'
@@ -82,7 +83,12 @@ function PersonalizeProductContent() {
 
   const addToCartLabel = soldOut ? t('personalization.soldOut') : status === 'adding' ? t('personalization.adding') : t('personalization.addToCart')
   const creationTitle = t('personalization.creationTitle', { product: product.title })
-  const extraMissing = design.missing.length > 3 ? t('personalization.moreOptions', { count: design.missing.length - 3 }) : ''
+  const priceSummary = variant ? <PersonalizationPrice
+    basePriceMinor={variant.price_minor}
+    areaPriceMinor={product.personalization_area_price_minor}
+    areaCount={design.customization?.areas.length ?? 0}
+    currency={variant.currency}
+  /> : null
 
   return <>
     <StorefrontAnnouncement />
@@ -100,14 +106,14 @@ function PersonalizeProductContent() {
         </div>
         <div className="personalization-page-intro"><p>{t('personalization.studio')}</p><h1>{creationTitle}</h1><span>{t('personalization.intro')}</span></div>
       </header>
-      {personalizationViews.length > 0 && <ProductPersonalizer key={variantPhotos(product, variant).map(m => m.id).join(',')} saving={status === 'adding'} config={resolvedConfig} variantId={variant?.id ?? ''} variantLabel={product.variants.length > 1 ? variant?.title : undefined} productMedia={productMedia} onChange={setDesign} previewOpen={previewOpen} onPreviewClose={() => setPreviewOpen(false)} onAddToCart={requestAddToCart} addToCartDisabled={!variant || soldOut || !calibrationReady || status === 'adding'} addToCartLabel={addToCartLabel} />}
+      {personalizationViews.length > 0 && <ProductPersonalizer key={variantPhotos(product, variant).map(m => m.id).join(',')} saving={status === 'adding'} config={resolvedConfig} variantId={variant?.id ?? ''} variantLabel={product.variants.length > 1 ? variant?.title : undefined} productMedia={productMedia} onChange={setDesign} previewOpen={previewOpen} onPreviewClose={() => setPreviewOpen(false)} onAddToCart={requestAddToCart} addToCartDisabled={!variant || soldOut || !calibrationReady || status === 'adding'} addToCartLabel={addToCartLabel} priceSummary={priceSummary} />}
       <div className="personalization-checkout-bar">
-        <span>{!calibrationReady ? t('personalization.sizeCalibrationPending') : t(soldOut ? 'personalization.soldOutDetail' : design.ready ? 'personalization.ready' : 'personalization.optionalReady')}</span>
+        <div className="personalization-checkout-details">{priceSummary}<span>{!calibrationReady ? t('personalization.sizeCalibrationPending') : t(soldOut ? 'personalization.soldOutDetail' : design.ready ? 'personalization.ready' : 'personalization.optionalReady')}</span></div>
         <button className="button button--secondary personalization-preview-button" type="button" disabled={!calibrationReady || !personalizationViews.length} onClick={() => setPreviewOpen(true)}><Eye /> {t('personalization.previewResult')}</button>
         <button className="button button--primary" type="button" disabled={!variant || soldOut || !calibrationReady || status === 'adding'} onClick={requestAddToCart}><ShoppingBag />{addToCartLabel}</button>
         {status === 'error' && <strong role="alert">{errorMessage}</strong>}
       </div>
-      {confirmingIncomplete && <div className="personalization-confirmation-backdrop" role="presentation" onKeyDown={(event) => { if (event.key === 'Escape') setConfirmingIncomplete(false) }}><section className="personalization-confirmation" role="alertdialog" aria-modal="true" aria-labelledby="incomplete-personalization-title" aria-describedby="incomplete-personalization-description"><span>{t('personalization.confirmation')}</span><h2 id="incomplete-personalization-title">{t('personalization.incompleteTitle')}</h2><p id="incomplete-personalization-description">{t('personalization.incompleteDescription', { items: design.missing.slice(0, 3).join(', '), extra: extraMissing })}</p><div><button className="button button--secondary" type="button" autoFocus onClick={() => setConfirmingIncomplete(false)}>{t('personalization.continueEditing')}</button><button className="button button--primary" type="button" onClick={() => void addToCart()}>{t('personalization.confirmAdd')}</button></div></section></div>}
+      {confirmingIncomplete && <div className="personalization-confirmation-backdrop" role="presentation" onKeyDown={(event) => { if (event.key === 'Escape') setConfirmingIncomplete(false) }}><section className="personalization-confirmation" role="alertdialog" aria-modal="true" aria-labelledby="incomplete-personalization-title"><span>{t('personalization.confirmation')}</span><h2 id="incomplete-personalization-title">{t('personalization.incompleteTitle')}</h2><div><button className="button button--secondary" type="button" autoFocus onClick={() => setConfirmingIncomplete(false)}>{t('personalization.continueEditing')}</button><button className="button button--primary" type="button" onClick={() => void addToCart()}>{t('personalization.confirmAdd')}</button></div></section></div>}
     </main>
   </>
 }

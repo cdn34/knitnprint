@@ -28,6 +28,8 @@ import {
 } from "../components/storefront-shell";
 import { useI18n } from "../i18n";
 import { CountrySelect } from "../components/country-select";
+import { AccountFavorites } from "../components/account-favorites";
+import { pendingFavorite, useFavorites } from "../favorites";
 
 export const Route = createFileRoute("/account")({
   component: AccountPage,
@@ -68,12 +70,14 @@ function addressFromForm(values: FormData): CreateAccountAddressRequest {
 
 function AccountPage() {
   const { t } = useI18n();
+  const favorites = useFavorites();
   const [profile, setProfile] = useState<CustomerAccountProfile | null>(null);
   const [checkingSession, setCheckingSession] = useState(true);
   const [mode, setMode] = useState<Mode>("login");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [favoriteLoginRequested, setFavoriteLoginRequested] = useState(false);
   const [resetToken, setResetToken] = useState("");
   const [verificationEmail, setVerificationEmail] = useState("");
 
@@ -81,6 +85,7 @@ function AccountPage() {
     let active = true;
     async function initialize() {
       const search = new URLSearchParams(window.location.search);
+      setFavoriteLoginRequested(Boolean(pendingFavorite()));
       const verificationToken = search.get("verify");
       const emailChangeToken = search.get("confirm_email");
       const passwordToken = search.get("reset");
@@ -150,6 +155,13 @@ function AccountPage() {
         setMode("verify");
       } else {
         setProfile(account);
+        setFavoriteLoginRequested(false);
+        await favorites.refresh();
+        const result = await favorites.completePending();
+        if (result) {
+          setNotice(t(result === "saved" ? "favorites.loginSaved" : "favorites.saveError"));
+          return;
+        }
       }
       setNotice(
         mode === "register"
@@ -304,6 +316,8 @@ function AccountPage() {
     setPending(true);
     try {
       await api.logoutCustomer();
+      favorites.clear();
+      setFavoriteLoginRequested(false);
       setProfile(null);
       setMode("login");
       setNotice(t("account.signedOut"));
@@ -338,6 +352,7 @@ function AccountPage() {
               ? t("account.memberIntro")
               : t("account.guestIntro")}
           </p>
+          {profile && <a className="text-link account-favorites-link" href="#favorites">{t("favorites.title")}</a>}
         </section>
 
         <div className="account-workspace">
@@ -346,12 +361,12 @@ function AccountPage() {
               {error}
             </p>
           )}
-          {notice && (
+          {(notice || (favoriteLoginRequested && !profile)) && (
             <p
               className="account-message account-message--success"
               role="status"
             >
-              {notice}
+              {notice || t("favorites.login")}
             </p>
           )}
 
@@ -686,6 +701,8 @@ function AuthenticatedAccount({
           )}
         </div>
       </section>
+
+      <AccountFavorites />
 
       {profile.email_verified && <>
         <OrderSection kind="active" customerId={profile.id} />

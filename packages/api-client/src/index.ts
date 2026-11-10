@@ -262,6 +262,11 @@ export function createApiClient(options: ApiClientOptions = {}) {
     dashboard: () => send<OperationalDashboard>('/api/admin/dashboard'),
     customerAccount: () =>
       send<CustomerAccountProfile>('/api/account/me'),
+    customerFavorites: () => send<Product[]>('/api/account/favorites'),
+    saveCustomerFavorite: (productId: string) =>
+      send<void>(`/api/account/favorites/${encodeURIComponent(productId)}`, { method: 'PUT' }),
+    removeCustomerFavorite: (productId: string) =>
+      send<void>(`/api/account/favorites/${encodeURIComponent(productId)}`, { method: 'DELETE' }),
     updateCustomerProfile: (input: UpdateAccountProfileRequest) =>
       send<CustomerAccountProfile>('/api/account/me', {
         method: 'PUT',

@@ -1,6 +1,7 @@
 import { activePersonalizationViews } from '../personalization-views'
 import { VariantPicker, configuration, variantPhotos, variantPersonalization } from '../components/variant-picker'
 import { createFileRoute, notFound, redirect } from '@tanstack/react-router'
+import { FavoriteButton } from '../components/favorite-button'
 import {
   ArrowLeft,
   ChevronLeft,
@@ -125,6 +126,7 @@ function ProductPage() {
         <div className="product-presentation">
         <div className="product-gallery">
           <div className={`product-detail-art${selectedMedia ? ' product-detail-art--photo' : ''}`}>
+            <FavoriteButton productId={product.id} title={product.title} />
             {selectedMedia ? (
               <img
                 className="product-detail-photo"

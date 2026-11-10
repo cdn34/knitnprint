@@ -265,8 +265,9 @@ impl EmailService {
         storage: Option<&crate::object_storage::ObjectStorage>,
     ) -> Result<(), String> {
         self.ensure_recipient_allowed(&order.customer.email)?;
-        let rendered = crate::order_email::render(order, locale, &self.storefront_base_url);
         let images = crate::order_email::load_images(pool, storage, order).await?;
+        let rendered =
+            crate::order_email::render(order, locale, &self.storefront_base_url, &images);
         match &self.delivery {
             Delivery::Development(mailbox) => {
                 mailbox.write().await.push(DevelopmentEmail {

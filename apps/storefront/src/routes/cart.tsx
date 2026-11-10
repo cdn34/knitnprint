@@ -22,6 +22,7 @@ import { VerifiedCustomerGate } from '../components/verified-customer-gate'
 import { StorefrontAnnouncement, StorefrontFooter, StorefrontHeader } from '../components/storefront-shell'
 import { useI18n } from '../i18n'
 import { personalizationSummary } from '../personalization-summary'
+import { OrderLinePersonalization } from '../components/order-line-personalization'
 
 export const Route = createFileRoute('/cart')({
   head: () => ({
@@ -35,7 +36,6 @@ export const Route = createFileRoute('/cart')({
   }),
   component: CartPage,
 })
-
 
 function shippingDetails(shipping: { carrier_name: string; method_name: string; transit_hours: number }) {
   const carrier = shipping.carrier_name.trim() || shipping.method_name
@@ -273,7 +273,7 @@ function CartContent() {
 
         {checkoutSuspended && (!order || order.payment_status === 'pending') && <p className="cart-notice cart-checkout-notice" role="status">{t('cart.checkoutSuspended')}</p>}
         {loading && <p className="cart-notice" role="status">{t('cart.loading')}</p>}
-        {!loading && !cart && <p className="cart-notice" role="alert">{message}</p>}
+        {!loading && !cart && !order && <p className="cart-notice" role="alert">{message}</p>}
 
         {order && (
           <OrderConfirmation
@@ -322,6 +322,7 @@ function CartContent() {
                       <h3><a href={`/products/${item.product_slug}`}>{item.product_title}</a></h3>
                       <p>{item.variant_title} · {t('cart.sku')} {item.sku}</p>
                       {Boolean(item.customization) && <p className="cart-item-personalization">{personalizationSummary(item.customization, item.customization_media_asset_ids?.length ? item.customization_media_asset_ids : item.customization_media_asset_id ? [item.customization_media_asset_id] : [], t)}</p>}
+                      {item.personalization_unit_price_minor > 0 && <p className="cart-item-price-breakdown">{t('personalization.cartPriceBreakdown', { base: formatCurrency(item.base_unit_price_minor, item.currency), personalization: formatCurrency(item.personalization_unit_price_minor, item.currency) })}</p>}
                       <label>
                         <span>{t('cart.quantity')}</span>
                         <select
@@ -457,10 +458,13 @@ function OrderConfirmation({
       </dl>
       <div className="order-confirmation-lines">
         {order.lines.map((line) => (
-          <div key={line.id}>
-            <span>{line.quantity} × {line.product_title} · {line.variant_title}</span>
-            <strong>{formatCurrency(line.line_total_minor, line.currency)}</strong>
-          </div>
+          <article className="order-confirmation-line" key={line.id}>
+            <div className="order-confirmation-line-heading">
+              <h3>{line.quantity} × {line.product_title} · {line.variant_title}</h3>
+              <strong>{formatCurrency(line.line_total_minor, line.currency)}</strong>
+            </div>
+            <OrderLinePersonalization orderId={order.id} line={line} />
+          </article>
         ))}
       </div>
       <address>

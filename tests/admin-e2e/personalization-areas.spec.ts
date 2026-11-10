@@ -94,6 +94,8 @@ test('saves independent area permissions and enforces them in the editor, previe
   expect(input.customization.areas.map((area: { photo?: unknown; text?: unknown }) => [Boolean(area.photo), Boolean(area.text)])).toEqual([[true, true], [false, true], [false, true]])
   await expect(page).toHaveURL(new RegExp(`${shop}/products/?$`))
   await expect(page.getByRole('dialog', { name: 'Cart', exact: true }).locator('.cart-drawer-personalization')).toContainText('Personalized')
+  const cart = await (await page.request.get(`${shop}/api/cart`)).json()
+  expect(cart.items[0]).toMatchObject({ base_unit_price_minor: 4000, personalization_unit_price_minor: 300, unit_price_minor: 4300 })
   const forged = structuredClone(input)
   forged.customization.areas[1].photo = forged.customization.areas[0].photo
   const rejected = await page.request.post(`${shop}/api/cart/items`, { headers: { 'idempotency-key': `forbidden-area-${unique}` }, data: forged })
