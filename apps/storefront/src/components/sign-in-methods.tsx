@@ -1,3 +1,5 @@
+import { Check, KeyRound, Link2, ShieldCheck } from "lucide-react";
+import { PasswordRequirements } from "./password-requirements";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   createApiClient,
@@ -8,6 +10,7 @@ const api = createApiClient();
 type Result = {
   status: string;
   profile: CustomerAccountProfile | null;
+  google_authenticated_until?: number | null;
 };
 type GoogleApi = {
   initialize: (options: {
@@ -65,15 +68,14 @@ function GoogleButton({
   const callbacks = useRef({ onResult, onChallenge, onError });
   callbacks.current = { onResult, onChallenge, onError };
   const { locale, t } = useI18n();
-  const [enabled, setEnabled] = useState(false);
   useEffect(() => {
     let active = true;
     void (async () => {
       const config = await api.googleConfig();
       if (!config.client_id) return;
-      setEnabled(true);
       onAvailability(true);
       await loadGoogle();
+      if (!active) return;
       const challenge = await api.googleChallenge(purpose);
       if (!active || !ref.current) return;
       callbacks.current.onChallenge(challenge.id);
@@ -88,10 +90,21 @@ function GoogleButton({
             .catch((error) => callbacks.current.onError(error));
         },
       });
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => resolve()),
+      );
+      if (!active || !ref.current) return;
+      const width = Math.min(
+        400,
+        Math.floor(ref.current.getBoundingClientRect().width || 400),
+      );
       ref.current.replaceChildren();
       window.google!.accounts.id.renderButton(ref.current, {
         theme: "outline",
         size: "large",
+        shape: "pill",
+        text: "continue_with",
+        width,
         locale,
       });
     })().catch((error) => {
@@ -101,7 +114,13 @@ function GoogleButton({
       active = false;
     };
   }, [purpose, locale]);
-  return enabled ? <div aria-label={t("account.google")} ref={ref} /> : null;
+  return (
+    <div
+      className="account-google-button"
+      aria-label={t("account.google")}
+      ref={ref}
+    />
+  );
 }
 export function GoogleAccess({
   onProfile,
@@ -110,7 +129,7 @@ export function GoogleAccess({
 }: {
   onProfile: (p: CustomerAccountProfile) => void;
   purpose?: string;
-  onReauthenticated?: () => void;
+  onReauthenticated?: (until: number) => void;
 }) {
   const { t } = useI18n();
   const [challenge, setChallenge] = useState("");
@@ -123,7 +142,10 @@ export function GoogleAccess({
   function received(result: Result) {
     setStatus(result.status);
     if (result.profile) onProfile(result.profile);
-    if (result.status === "reauthenticated") onReauthenticated?.();
+    const until =
+      result.google_authenticated_until ??
+      (result.status === "reauthenticated" ? Date.now() / 1000 + 300 : null);
+    if (until && until * 1000 > Date.now()) onReauthenticated?.(until);
   }
   function failed(error: unknown) {
     setError(
@@ -165,7 +187,7 @@ export function GoogleAccess({
   }
   return (
     <div
-      className="account-panel"
+      className={`account-google-access ${purpose === "sign_in" ? "account-google-access--entry" : "account-google-access--inline"}`}
       hidden={!available && !resuming && !status && !error}
     >
       {!status && !resuming && (
@@ -180,8 +202,12 @@ export function GoogleAccess({
       )}
       {status === "reauthenticated" && (
         <>
-          <p role="status">{t("account.identityConfirmed")}</p>
+          <p className="account-security-confirmed" role="status">
+            <Check aria-hidden="true" />
+            {t("account.identityConfirmed")}
+          </p>
           <button
+            className="account-security-secondary"
             type="button"
             onClick={() => {
               setStatus("");
@@ -194,7 +220,12 @@ export function GoogleAccess({
       )}
       {status === "confirmation_required" && (
         <>
-          <p role="status">{t("account.googleConfirm")}</p>
+          <p
+            className="account-panel-copy account-google-instructions"
+            role="status"
+          >
+            {t("account.googleConfirm")}
+          </p>
           <form onSubmit={confirm} className="account-form">
             <label className="account-field">
               {t("account.currentPassword")}
@@ -206,13 +237,18 @@ export function GoogleAccess({
                 maxLength={256}
               />
             </label>
-            <button disabled={busy}>{t("account.confirm")}</button>
+            <button
+              className="button button--primary account-security-primary"
+              disabled={busy}
+            >
+              {t("account.confirm")}
+            </button>
           </form>
         </>
       )}
       {status === "profile_required" && (
         <form onSubmit={confirm} className="account-form">
-          <p>{t("account.googleNames")}</p>
+          <p className="account-panel-copy">{t("account.googleNames")}</p>
           <label className="account-field">
             {t("account.firstName")}
             <input
@@ -231,13 +267,21 @@ export function GoogleAccess({
               autoComplete="family-name"
             />
           </label>
-          <button disabled={busy}>{t("account.confirm")}</button>
+          <button
+            className="button button--primary account-security-primary"
+            disabled={busy}
+          >
+            {t("account.confirm")}
+          </button>
         </form>
       )}
       {error && (
         <>
-          <p role="alert">{error}</p>
+          <p className="account-message account-message--error" role="alert">
+            {error}
+          </p>
           <button
+            className="account-security-secondary"
             type="button"
             onClick={() => {
               setError("");
@@ -250,22 +294,45 @@ export function GoogleAccess({
           </button>
         </>
       )}
+      {purpose === "sign_in" && (
+        <div className="account-access-divider">
+          <span>{t("account.continueWithEmail")}</span>
+        </div>
+      )}
     </div>
   );
 }
 export function SignInMethods({
   profile,
   onProfile,
+  googleAuthenticatedUntil,
 }: {
   profile: CustomerAccountProfile;
   onProfile: (p: CustomerAccountProfile) => void;
+  googleAuthenticatedUntil?: number | null;
 }) {
   const { t } = useI18n();
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
-  const [googleConfirmed, setGoogleConfirmed] = useState(false);
+  const [googleConfirmedUntil, setGoogleConfirmedUntil] = useState<
+    number | null
+  >(null);
   const [passwordConfirmed, setPasswordConfirmed] = useState(false);
+  const googleConfirmed =
+    googleConfirmedUntil !== null && googleConfirmedUntil * 1000 > Date.now();
+  useEffect(() => {
+    setGoogleConfirmedUntil(googleAuthenticatedUntil ?? null);
+    if (googleAuthenticatedUntil) setPasswordConfirmed(false);
+  }, [googleAuthenticatedUntil]);
+  useEffect(() => {
+    if (!googleConfirmedUntil) return;
+    const timer = window.setTimeout(
+      () => setGoogleConfirmedUntil(null),
+      Math.max(0, googleConfirmedUntil * 1000 - Date.now()),
+    );
+    return () => window.clearTimeout(timer);
+  }, [googleConfirmedUntil]);
   const methods = profile.auth_methods;
   async function run(
     work: () => Promise<void>,
@@ -290,7 +357,7 @@ export function SignInMethods({
     await run(async () => {
       await api.reauthenticateCustomer(password);
       setPasswordConfirmed(true);
-      setGoogleConfirmed(false);
+      setGoogleConfirmedUntil(null);
       form.reset();
     }, t("account.identityConfirmed"));
   }
@@ -304,7 +371,7 @@ export function SignInMethods({
     }
     await run(async () => {
       onProfile(await api.setCustomerPassword(String(data.get("password"))));
-      setGoogleConfirmed(false);
+      setGoogleConfirmedUntil(null);
       setPasswordConfirmed(false);
       form.reset();
     });
@@ -313,7 +380,7 @@ export function SignInMethods({
     await run(async () => {
       const email = methods.google_email;
       onProfile(await api.removeCustomerMethod(method));
-      setGoogleConfirmed(false);
+      setGoogleConfirmedUntil(null);
       setPasswordConfirmed(false);
       if (method === "google" && email && window.google) {
         window.google.accounts.id.disableAutoSelect();
@@ -322,99 +389,236 @@ export function SignInMethods({
     });
   }
   return (
-    <section className="account-panel">
-      <h2>{t("account.signInMethods")}</h2>
-      <p>
-        {t("account.password")}:{" "}
-        {t(methods.password ? "account.connected" : "account.notConnected")}
-      </p>
-      <p>
-        {t("account.google")}:{" "}
-        {methods.google_email || t("account.notConnected")}
-      </p>
-      {methods.google_email && <p>{t("account.googleEmailLocked")}</p>}
-      {methods.password && (
-        <form className="account-form" onSubmit={confirmPassword}>
-          <label className="account-field">
-            {t("account.currentPassword")}
-            <input
-              name="password"
-              type="password"
-              required
-              autoComplete="current-password"
-              maxLength={256}
+    <section
+      className="account-panel account-security"
+      aria-labelledby="account-security-title"
+    >
+      <div className="account-panel-heading account-security-heading">
+        <div className="account-recovery-mark account-security-mark">
+          <ShieldCheck aria-hidden="true" />
+        </div>
+        <div>
+          <p className="eyebrow">{t("account.secureAccess")}</p>
+          <h2 id="account-security-title">{t("account.signInMethods")}</h2>
+          <p className="account-panel-copy">
+            {t("account.signInMethodsIntro")}
+          </p>
+        </div>
+      </div>
+
+      <div className="account-security-methods">
+        <div className="account-security-method">
+          <div className="account-security-method-heading">
+            <div className="account-security-method-icon">
+              <Link2 aria-hidden="true" />
+            </div>
+            <div className="account-security-method-title">
+              <h3>{t("account.google")}</h3>
+              {methods.google_email && <p>{methods.google_email}</p>}
+            </div>
+            <span
+              className={`account-method-status ${methods.google_email ? "account-method-status--connected" : ""}`}
+            >
+              {methods.google_email && <Check aria-hidden="true" />}
+              {t(
+                methods.google_email
+                  ? "account.connected"
+                  : "account.notConnected",
+              )}
+            </span>
+          </div>
+          <p className="account-security-help">
+            {t(
+              methods.google_email
+                ? "account.googleMethodHelp"
+                : "account.googleLinkHelp",
+            )}
+          </p>
+          {methods.google_email &&
+            (googleConfirmed ? (
+              <p className="account-security-confirmed" role="status">
+                <Check aria-hidden="true" />
+                {t("account.identityConfirmed")}
+              </p>
+            ) : (
+              <GoogleAccess
+                key="reauthenticate"
+                purpose="reauthenticate"
+                onProfile={onProfile}
+                onReauthenticated={(until) => {
+                  setGoogleConfirmedUntil(until);
+                  setPasswordConfirmed(false);
+                }}
+              />
+            ))}
+          {!methods.google_email && passwordConfirmed && (
+            <GoogleAccess
+              key="link"
+              purpose="link"
+              onProfile={(updated) => {
+                setPasswordConfirmed(false);
+                setGoogleConfirmedUntil(null);
+                onProfile(updated);
+              }}
+              onReauthenticated={(until) => setGoogleConfirmedUntil(until)}
             />
-          </label>
-          <button disabled={busy}>{t("account.confirm")}</button>
-        </form>
-      )}
-      {methods.google_email && (
-        <GoogleAccess
-          key="reauthenticate"
-          purpose="reauthenticate"
-          onProfile={onProfile}
-          onReauthenticated={() => {
-            setGoogleConfirmed(true);
-            setPasswordConfirmed(false);
-          }}
-        />
-      )}
-      {!methods.google_email && passwordConfirmed && (
-        <GoogleAccess key="link" purpose="link" onProfile={onProfile} />
-      )}
-      <form className="account-form" onSubmit={savePassword}>
-        <label className="account-field">
-          {t("account.newPassword")}
-          <input
-            name="password"
-            type="password"
-            required
-            minLength={12}
-            maxLength={256}
-            autoComplete="new-password"
-          />
-        </label>
-        <label className="account-field">
-          {t("account.confirmPassword")}
-          <input
-            name="repeat"
-            type="password"
-            required
-            minLength={12}
-            maxLength={256}
-            autoComplete="new-password"
-          />
-        </label>
-        <button
-          disabled={
-            busy || !(methods.password ? passwordConfirmed : googleConfirmed)
-          }
-        >
-          {t(
-            methods.password ? "account.changePassword" : "account.setPassword",
           )}
-        </button>
-      </form>
-      {methods.google_email && methods.password && (
-        <>
-          <button
-            type="button"
-            disabled={busy || !passwordConfirmed}
-            onClick={() => void remove("google")}
+          {methods.google_email && methods.password && (
+            <div className="account-security-disconnect">
+              <button
+                className="account-security-secondary account-security-secondary--remove"
+                type="button"
+                disabled={busy || !passwordConfirmed}
+                onClick={() => void remove("google")}
+              >
+                {t("account.removeGoogle")}
+              </button>
+              {!passwordConfirmed && (
+                <p className="account-security-help">
+                  {t("account.confirmPasswordToDisconnect")}
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="account-security-method">
+          <div className="account-security-method-heading">
+            <div className="account-security-method-icon">
+              <KeyRound aria-hidden="true" />
+            </div>
+            <div className="account-security-method-title">
+              <h3>{t("account.password")}</h3>
+            </div>
+            <span
+              className={`account-method-status ${methods.password ? "account-method-status--connected" : ""}`}
+            >
+              {methods.password && <Check aria-hidden="true" />}
+              {t(
+                methods.password ? "account.connected" : "account.notConnected",
+              )}
+            </span>
+          </div>
+          <p className="account-security-help">
+            {t("account.passwordMethodHelp")}
+          </p>
+          {methods.password && (
+            <form
+              className="account-form account-security-verification"
+              onSubmit={confirmPassword}
+            >
+              <label className="account-field">
+                {t("account.currentPassword")}
+                <input
+                  name="password"
+                  type="password"
+                  required
+                  autoComplete="current-password"
+                  maxLength={256}
+                />
+              </label>
+              <button
+                className="account-security-secondary"
+                disabled={busy}
+                type="submit"
+              >
+                {t("account.confirm")}
+              </button>
+            </form>
+          )}
+          <form
+            className="account-form account-security-password-form"
+            onSubmit={savePassword}
           >
-            {t("account.removeGoogle")}
-          </button>
-          <button
-            type="button"
-            disabled={busy || !googleConfirmed}
-            onClick={() => void remove("password")}
-          >
-            {t("account.removePassword")}
-          </button>
-        </>
+            {!methods.password && !googleConfirmed && (
+              <p className="account-security-help" role="status">
+                {t("account.confirmGoogleForPassword")}
+              </p>
+            )}
+            {methods.password && !passwordConfirmed && (
+              <p className="account-security-help">
+                {t("account.confirmPasswordForChange")}
+              </p>
+            )}
+            <label className="account-field">
+              {t("account.newPassword")}
+              <input
+                name="password"
+                type="password"
+                required
+                minLength={12}
+                maxLength={256}
+                autoComplete="new-password"
+                aria-describedby="profile-password-requirements"
+              />
+            </label>
+            <PasswordRequirements id="profile-password-requirements" />
+            <label className="account-field">
+              {t("account.confirmPassword")}
+              <input
+                name="repeat"
+                type="password"
+                required
+                minLength={12}
+                maxLength={256}
+                autoComplete="new-password"
+              />
+            </label>
+            <button
+              className="button button--primary account-security-primary"
+              disabled={
+                busy ||
+                !(methods.password ? passwordConfirmed : googleConfirmed)
+              }
+            >
+              {t(
+                methods.password
+                  ? "account.changePassword"
+                  : "account.setPassword",
+              )}
+            </button>
+          </form>
+          {methods.google_email && methods.password && (
+            <div className="account-security-disconnect">
+              <button
+                className="account-security-secondary account-security-secondary--remove"
+                type="button"
+                disabled={busy || !googleConfirmed}
+                onClick={() => void remove("password")}
+              >
+                {t("account.removePassword")}
+              </button>
+              {!googleConfirmed && (
+                <p className="account-security-help">
+                  {t("account.confirmGoogleToRemovePassword")}
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+      {methods.google_email && (
+        <p className="account-security-footnote">
+          <ShieldCheck aria-hidden="true" />
+          {t("account.googleEmailLocked")}
+        </p>
       )}
-      {notice && <p role="status">{notice}</p>}
-      {error && <p role="alert">{error}</p>}
+      {notice && (
+        <p
+          className="account-message account-message--success account-security-feedback"
+          role="status"
+        >
+          {notice}
+        </p>
+      )}
+      {error && (
+        <p
+          className="account-message account-message--error account-security-feedback"
+          role="alert"
+        >
+          {error}
+        </p>
+      )}
     </section>
   );
 }

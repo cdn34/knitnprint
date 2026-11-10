@@ -1602,6 +1602,84 @@ html[lang='pt'] .home-section-title--categories h2 {
   background: var(--surface);
   box-shadow: var(--shadow);
 }
+
+/* Account access follows the storefront's warm surfaces, serif headings and pill actions. */
+.account-access-panel {
+  width: min(100%, 640px);
+  margin-inline: auto;
+}
+.account-google-access {
+  min-width: 0;
+  display: grid;
+  gap: 1rem;
+}
+.account-google-access[hidden] { display: none; }
+.account-google-access--entry { margin-bottom: 1.5rem; }
+.account-google-instructions { margin-top: 0; }
+.account-google-button {
+  width: 100%;
+  max-width: 400px;
+  min-height: 42px;
+  margin-inline: auto;
+}
+.account-google-button > div { max-width: 100%; }
+.account-access-divider {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  color: var(--ink-muted);
+  font-size: 0.72rem;
+}
+.account-access-divider::before,
+.account-access-divider::after {
+  content: "";
+  height: 1px;
+  flex: 1;
+  background: var(--border);
+}
+.account-security-heading { display: flex; align-items: center; gap: 1rem; }
+.account-security-heading .eyebrow { margin: 0 0 0.55rem; }
+.account-security-mark { flex-shrink: 0; margin: 0; }
+.account-security-methods { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2rem; }
+.account-security-method { min-width: 0; }
+.account-security-method + .account-security-method { padding-left: 2rem; border-left: 1px solid var(--border); }
+.account-security-method-heading { display: flex; align-items: center; gap: 0.7rem; margin-bottom: 1rem; }
+.account-security-method-icon { display: grid; place-items: center; width: 36px; height: 36px; flex-shrink: 0; border-radius: 50%; color: var(--knit-dark); background: var(--canvas); }
+.account-security-method-icon svg { width: 18px; height: 18px; }
+.account-security-method-title { min-width: 0; flex: 1; }
+.account-security-method-title h3 { margin: 0; font: 500 1.3rem/1.15 var(--display); }
+.account-security-method-title p { margin: 0.35rem 0 0; color: var(--ink-muted); font-size: 0.76rem; overflow-wrap: anywhere; line-height: 1.4; }
+.account-method-status { display: inline-flex; align-items: center; gap: 0.3rem; flex-shrink: 0; padding: 0.4rem 0.55rem; border-radius: 999px; color: var(--ink-muted); background: var(--canvas); font-size: 0.6rem; font-weight: 700; }
+.account-method-status svg { width: 12px; height: 12px; }
+.account-method-status--connected { color: #31563f; background: #e5f1e8; }
+.account-security-help { margin: 0 0 1.15rem; color: var(--ink-muted); font-size: 0.76rem; line-height: 1.65; }
+.account-security-confirmed { display: flex; align-items: flex-start; gap: 0.6rem; margin: 0; padding: 0.85rem; border: 1px solid #d4e3d7; border-radius: 0.6rem; color: #31563f; background: #eef5ef; font-size: 0.76rem; line-height: 1.6; }
+.account-security-confirmed svg { width: 17px; height: 17px; flex-shrink: 0; margin-top: 0.1rem; }
+.account-security-password-form > .account-security-help { margin-bottom: 0; }
+.account-security-verification { margin-bottom: 1.25rem; padding-bottom: 1.25rem; border-bottom: 1px solid var(--border); }
+.account-security-primary { width: fit-content; min-height: 44px; border: 0; cursor: pointer; font-family: inherit; }
+.account-security-secondary { width: fit-content; min-height: 42px; padding: 0.65rem 1.1rem; border: 1px solid var(--knit-dark); border-radius: 999px; color: var(--knit-dark); background: transparent; cursor: pointer; font: 600 0.76rem var(--body); }
+.account-security-secondary:hover:not(:disabled) { color: white; background: var(--knit-dark); }
+.account-security-primary:disabled,
+.account-security-secondary:disabled { opacity: 0.5; cursor: not-allowed; }
+.account-security-primary:focus-visible,
+.account-security-secondary:focus-visible { outline: 2px solid var(--knit-dark); outline-offset: 3px; }
+.account-security-disconnect { display: grid; justify-items: start; gap: 0.65rem; margin-top: 1.5rem; padding-top: 1.25rem; border-top: 1px solid var(--border); }
+.account-security-disconnect .account-security-help { margin: 0; }
+.account-security-secondary--remove { border-color: var(--border); color: var(--ink-muted); }
+.account-security-secondary--remove:hover:not(:disabled) { border-color: var(--knit-dark); }
+.account-security-footnote { display: flex; align-items: flex-start; gap: 0.65rem; margin: 1.75rem 0 0; padding: 1rem 0 0; border-top: 1px solid var(--border); color: var(--ink-muted); font-size: 0.72rem; line-height: 1.65; }
+.account-security-footnote svg { flex-shrink: 0; width: 16px; height: 16px; margin-top: 0.15rem; color: var(--knit-dark); }
+.account-security-feedback { margin: 1.25rem 0 0; }
+@media (max-width: 700px) {
+  .account-security-methods { grid-template-columns: minmax(0, 1fr); gap: 1.5rem; }
+  .account-security-method + .account-security-method { padding: 1.5rem 0 0; border-left: 0; border-top: 1px solid var(--border); }
+  .account-security-heading { align-items: flex-start; }
+  .account-security-heading h2 { font-size: 1.9rem; }
+  .account-security-mark { width: 42px; height: 42px; }
+  .account-security-method-title h3 { font-size: 1.2rem; }
+}
+
 .account-loading {
   min-height: 230px;
   display: grid;
@@ -1687,6 +1765,13 @@ html[lang='pt'] .home-section-title--categories h2 {
   color: var(--ink);
   font-size: 0.72rem;
   font-weight: 700;
+}
+.account-password-requirements {
+  margin: 0;
+  color: var(--ink-muted);
+  font-size: 0.78rem;
+  font-weight: 400;
+  line-height: 1.5;
 }
 .account-field input,
 .account-field select {

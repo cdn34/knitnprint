@@ -20,13 +20,14 @@ import {
   PackageCheck,
   PackageOpen,
 } from "lucide-react";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import {
   StorefrontAnnouncement,
   StorefrontFooter,
   StorefrontHeader,
 } from "../components/storefront-shell";
 import { useI18n } from "../i18n";
+import { PasswordRequirements } from "../components/password-requirements";
 import { SignInMethods, GoogleAccess } from "../components/sign-in-methods";
 import { CountrySelect } from "../components/country-select";
 import { AccountFavorites } from "../components/account-favorites";
@@ -74,6 +75,7 @@ function AccountPage() {
   const favorites = useFavorites();
   const [profile, setProfile] = useState<CustomerAccountProfile | null>(null);
   const [checkingSession, setCheckingSession] = useState(true);
+  const [googleAuthenticatedUntil, setGoogleAuthenticatedUntil] = useState<number | null>(null);
   const [mode, setMode] = useState<Mode>("login");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
@@ -111,7 +113,10 @@ function AccountPage() {
           return;
         }
         const account = await api.customerAccount();
-        if (active) setProfile(account);
+        if (active) {
+          setProfile(account);
+          setGoogleAuthenticatedUntil(account.google_authenticated_until ?? null);
+        }
       } catch (cause) {
         if (active && !(cause instanceof ApiError && cause.status === 401)) {
           setError(messageFor(cause, t("account.genericError")));
@@ -157,6 +162,7 @@ function AccountPage() {
         setVerificationEmail(account.email);
         setMode("verify");
       } else {
+        setGoogleAuthenticatedUntil(null);
         setProfile(account);
         setFavoriteLoginRequested(false);
         await favorites.refresh();
@@ -325,6 +331,7 @@ function AccountPage() {
       setFavoriteLoginRequested(false);
       window.google?.accounts.id.disableAutoSelect();
       setProfile(null);
+      setGoogleAuthenticatedUntil(null);
       setMode("login");
       setNotice(t("account.signedOut"));
     } catch (cause) {
@@ -385,7 +392,6 @@ function AccountPage() {
             </section>
           ) : profile ? (
             <>
-            <SignInMethods profile={profile} onProfile={setProfile} />
             <AuthenticatedAccount
               profile={profile}
               pending={pending}
@@ -395,12 +401,15 @@ function AccountPage() {
               onRequestEmailChange={requestEmailChange}
               onLogout={logout}
               onRequestVerification={requestVerification}
-            />
+            >
+              <SignInMethods profile={profile} onProfile={setProfile} googleAuthenticatedUntil={googleAuthenticatedUntil} />
+            </AuthenticatedAccount>
             </>
           ) : (
             <>
-            {(mode === "login" || mode === "register") && <GoogleAccess onProfile={setProfile} />}
             <GuestAccount
+              onGoogleProfile={setProfile}
+              onGoogleReauthenticated={setGoogleAuthenticatedUntil}
               mode={mode}
               pending={pending}
               verificationEmail={verificationEmail}
@@ -425,6 +434,8 @@ function AccountPage() {
 }
 
 function GuestAccount({
+  onGoogleProfile,
+  onGoogleReauthenticated,
   mode,
   pending,
   verificationEmail,
@@ -434,6 +445,8 @@ function GuestAccount({
   onResetPassword,
   onRequestVerification,
 }: Readonly<{
+  onGoogleProfile: (profile: CustomerAccountProfile) => void;
+  onGoogleReauthenticated: (until: number) => void;
   mode: Mode;
   pending: boolean;
   verificationEmail: string;
@@ -521,7 +534,7 @@ function GuestAccount({
   }
 
   return (
-    <section className="account-panel" aria-labelledby="access-title">
+    <section className="account-panel account-access-panel" aria-labelledby="access-title">
       <div className="account-tabs" role="group" aria-label={t("account.accessLabel")}>
         <button
           type="button"
@@ -546,6 +559,7 @@ function GuestAccount({
           {t(mode === "login" ? "account.signInTitle" : "account.createTitle")}
         </h2>
       </div>
+      <GoogleAccess onProfile={onGoogleProfile} onReauthenticated={onGoogleReauthenticated} />
       <form className="account-form" onSubmit={onSubmit}>
         {mode === "register" && (
           <div className="account-form-row">
@@ -617,6 +631,7 @@ function GuestAccount({
 }
 
 function AuthenticatedAccount({
+  children,
   profile,
   pending,
   onAddAddress,
@@ -626,6 +641,7 @@ function AuthenticatedAccount({
   onLogout,
   onRequestVerification,
 }: Readonly<{
+  children: ReactNode;
   profile: CustomerAccountProfile;
   pending: boolean;
   onAddAddress: (event: FormEvent<HTMLFormElement>) => void;
@@ -714,6 +730,8 @@ function AuthenticatedAccount({
           )}
         </div>
       </section>
+
+      {children}
 
       <AccountFavorites />
 
@@ -951,11 +969,13 @@ function PasswordField({
 }: Readonly<{ label: string; name: string; autoComplete: string; minLength: number }>) {
   const { t } = useI18n();
   const [visible, setVisible] = useState(false);
+  const showRequirements = autoComplete === "new-password" && name !== "confirm_password";
+  const requirementsId = `${name}-requirements`;
   return (
     <div className="account-field">
       <label htmlFor={name}>{label}</label>
       <div className="account-password-control">
-        <input id={name} name={name} type={visible ? "text" : "password"} autoComplete={autoComplete} minLength={minLength} required />
+        <input id={name} name={name} type={visible ? "text" : "password"} autoComplete={autoComplete} minLength={minLength} maxLength={256} aria-describedby={showRequirements ? requirementsId : undefined} required />
         <button
           type="button"
           aria-label={t(visible ? "account.hidePassword" : "account.showPassword", { field: label })}
@@ -965,6 +985,7 @@ function PasswordField({
           {visible ? <EyeOff size={18} aria-hidden="true" /> : <Eye size={18} aria-hidden="true" />}
         </button>
       </div>
+      {showRequirements && <PasswordRequirements id={requirementsId} />}
     </div>
   );
 }
