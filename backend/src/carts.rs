@@ -1213,7 +1213,26 @@ fn customization_allowed(
         && variant
             .personalization_views
             .as_array()
-            .is_some_and(|views| views.iter().any(|view| view.get("mode").is_some()))
+            .is_some_and(|views| {
+                views.iter().any(|view| {
+                    view.get("mode").is_some()
+                        || view
+                            .get("print_areas")
+                            .and_then(Value::as_array)
+                            .is_some_and(|areas| {
+                                areas.iter().any(|area| area.get("mode").is_some())
+                            })
+                })
+            })
+    {
+        return false;
+    }
+    if customization.is_some()
+        && version < 4
+        && variant
+            .print_areas
+            .as_array()
+            .is_some_and(|areas| areas.iter().any(|area| area.get("mode").is_some()))
     {
         return false;
     }
@@ -1386,10 +1405,17 @@ fn view_customization_allowed(
         seen_assignments.push((view_id, area_id));
         let photo = area.get("photo");
         let text = area.get("text");
-        let mode = configured_view
+        let view_mode = configured_view
             .get("mode")
             .and_then(Value::as_str)
             .unwrap_or(&variant.personalization_mode);
+        if view_mode == "none" {
+            return false;
+        }
+        let mode = configured_area
+            .get("mode")
+            .and_then(Value::as_str)
+            .unwrap_or(view_mode);
         let shape_valid = match mode {
             "photo" => photo.is_some() && text.is_none(),
             "text" => text.is_some() && photo.is_none(),
@@ -1620,17 +1646,23 @@ fn area_customization_allowed(
         let Some(area_id) = area.get("area_id").and_then(Value::as_str) else {
             return false;
         };
-        if seen_area_ids.contains(&area_id)
-            || !configured_areas
-                .iter()
-                .any(|configured| configured.get("id").and_then(Value::as_str) == Some(area_id))
-        {
+        if seen_area_ids.contains(&area_id) {
             return false;
         }
+        let Some(configured_area) = configured_areas
+            .iter()
+            .find(|configured| configured.get("id").and_then(Value::as_str) == Some(area_id))
+        else {
+            return false;
+        };
         seen_area_ids.push(area_id);
         let photo = area.get("photo");
         let text = area.get("text");
-        let shape_valid = match variant.personalization_mode.as_str() {
+        let mode = configured_area
+            .get("mode")
+            .and_then(Value::as_str)
+            .unwrap_or(&variant.personalization_mode);
+        let shape_valid = match mode {
             "photo" => photo.is_some() && text.is_none(),
             "text" => text.is_some() && photo.is_none(),
             "photo_text" => photo.is_some() || text.is_some(),
@@ -2335,6 +2367,88 @@ mod personalization_tests {
         let legacy = serde_json::json!({"version":4,"areas":[{"area_id":"area-1", "text":text}]});
         assert!(!customization_allowed(&product, Some(&legacy), &[]));
         assert!(customization_allowed(&product, None, &[]));
+    }
+
+    #[test]
+    fn area_permissions_reject_disallowed_content_and_downgraded_payloads() {
+        let mut product = variant("photo_text");
+        product.personalization_views = serde_json::json!([{
+            "id":"backpack", "mode":"photo_text", "print_areas":[
+                {"id":"main", "mode":"photo_text"},
+                {"id":"bottom", "mode":"text"},
+                {"id":"top", "mode":"photo"}
+            ]
+        }]);
+        let media_id = Uuid::new_v4();
+        let text = serde_json::json!({"content":"Nome", "font":"Roboto", "color":"#111111", "size":24, "x":10, "y":20, "width":80, "height":40});
+        let photo = serde_json::json!({"media_id":media_id, "x":5, "y":5, "width":90, "height":50, "crop_x":50, "crop_y":50, "scale":1});
+        let valid = serde_json::json!({"version":5, "areas":[
+            {"view_id":"backpack", "area_id":"main", "photo":photo, "text":text},
+            {"view_id":"backpack", "area_id":"bottom", "text":text},
+            {"view_id":"backpack", "area_id":"top", "photo":photo}
+        ]});
+        assert!(customization_allowed(&product, Some(&valid), &[media_id]));
+        for element in ["photo", "text"] {
+            let mut optional = valid.clone();
+            optional["areas"][0]
+                .as_object_mut()
+                .unwrap()
+                .remove(element);
+            assert!(customization_allowed(
+                &product,
+                Some(&optional),
+                &[media_id]
+            ));
+        }
+        let mut wrong_image = valid.clone();
+        wrong_image["areas"][1]["photo"] = photo.clone();
+        wrong_image["areas"][1]["mode"] = serde_json::json!("photo_text");
+        assert!(!customization_allowed(
+            &product,
+            Some(&wrong_image),
+            &[media_id]
+        ));
+        let mut wrong_text = valid.clone();
+        wrong_text["areas"][2]["text"] = text.clone();
+        assert!(!customization_allowed(
+            &product,
+            Some(&wrong_text),
+            &[media_id]
+        ));
+        let mut legacy = valid.clone();
+        legacy["version"] = serde_json::json!(4);
+        assert!(!customization_allowed(&product, Some(&legacy), &[media_id]));
+        product.personalization_views[0]
+            .as_object_mut()
+            .unwrap()
+            .remove("mode");
+        assert!(!customization_allowed(&product, Some(&legacy), &[media_id]));
+        product.personalization_views[0]["mode"] = serde_json::json!("none");
+        assert!(!customization_allowed(&product, Some(&valid), &[media_id]));
+        assert!(customization_allowed(&product, None, &[]));
+
+        let mut legacy_product = variant("photo_text");
+        legacy_product.print_areas[0]["mode"] = serde_json::json!("text");
+        let legacy_text =
+            serde_json::json!({"version":4, "areas":[{"area_id":"area-1", "text":text}]});
+        assert!(customization_allowed(
+            &legacy_product,
+            Some(&legacy_text),
+            &[]
+        ));
+        let legacy_photo =
+            serde_json::json!({"version":4, "areas":[{"area_id":"area-1", "photo":photo}]});
+        assert!(!customization_allowed(
+            &legacy_product,
+            Some(&legacy_photo),
+            &[media_id]
+        ));
+        let unassigned = serde_json::json!({"version":3, "text":text});
+        assert!(!customization_allowed(
+            &legacy_product,
+            Some(&unassigned),
+            &[]
+        ));
     }
 
     #[test]

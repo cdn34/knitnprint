@@ -1,4 +1,9 @@
 export const cartPt = {
+  'cartDrawer.close': 'Fechar carrinho',
+  'cartDrawer.checkout': 'Ver carrinho e finalizar',
+  'cartDrawer.retry': 'Tentar novamente',
+  'cartDrawer.signInPrompt': 'Inicia sessão para veres o teu carrinho.',
+  'cartDrawer.deliveryNote': 'Consulta os portes, os descontos e o total final no carrinho.',
   'cart.pricingChanged': 'Os dados de entrega ou os preços foram atualizados. Revê a morada e o novo total antes de concluíres a encomenda.',
   'cart.shippingInvalidPostal': 'Verifica o código postal da morada de entrega antes de continuares.',
   'cart.shippingUnavailable': 'Não há portes disponíveis para esta morada. Contacta support@knitnprint.com para obter ajuda.',

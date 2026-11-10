@@ -277,6 +277,10 @@ h1 { margin: .25rem 0 0; font: 500 2rem Georgia, serif; }
 .print-area-name-row input { width: 100%; }
 .print-area-name-row .print-area-remove { width: auto; min-height: 35px; padding: .5rem .65rem; border: 1px solid #d7b6bd; border-radius: .4rem; color: #933e52; background: #fff; font-size: .6rem; font-weight: 700; cursor: pointer; }
 .print-area-name-row .print-area-remove:disabled { opacity: .4; cursor: not-allowed; }
+.print-area-content-settings { display: grid; gap: .4rem; padding: .75rem; border: 1px solid #dcc5cd; border-radius: .5rem; background: #fff9fb; }
+.print-area-content-settings label { display: grid; gap: .35rem; color: #704c5d; font-size: .7rem; font-weight: 700; }
+.print-area-content-settings select { width: 100%; min-height: 40px; background: #fff; }
+.print-area-content-settings small { color: #74656c; font-size: .65rem; line-height: 1.6; overflow-wrap: anywhere; }
 .print-area-coordinate-grid { padding-top: .55rem; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .45rem; border-top: 1px solid #e7ddd7; }
 .print-area-coordinate-grid label { display: grid; gap: .25rem; color: #625a56; font-size: .56rem; font-weight: 700; }
 .print-area-coordinate-grid input { width: 100%; min-width: 0; }

@@ -3,7 +3,11 @@ use sqlx::{FromRow, PgPool, Postgres, Transaction};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::{email::EmailService, object_storage::ObjectStorage, orders::load_order};
+use crate::{
+    email::{AccountEmailKind, EmailService},
+    object_storage::ObjectStorage,
+    orders::load_order,
+};
 
 const MAX_ATTEMPTS: i32 = 8;
 
@@ -28,8 +32,36 @@ pub struct DeliverySummary {
 pub(crate) struct ClaimedNotification {
     pub(crate) id: Uuid,
     pub(crate) attempt_count: i32,
-    pub(crate) order_id: Uuid,
+    pub(crate) order_id: Option<Uuid>,
+    pub(crate) account_token_id: Option<Uuid>,
+    pub(crate) kind: String,
+    pub(crate) recipient_email: String,
     pub(crate) email_locale: String,
+}
+
+pub(crate) enum DeliveryOutcome {
+    Sent,
+    Failed(String),
+    Suppressed(&'static str),
+    Stale,
+}
+
+pub(crate) async fn enqueue_account_action(
+    tx: &mut Transaction<'_, Postgres>,
+    token_id: Uuid,
+    kind: AccountEmailKind,
+    recipient: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("INSERT INTO notification_jobs(id,kind,deduplication_key,recipient_email,account_token_id) VALUES($1,$2,$3,$4,$1) ON CONFLICT(kind,deduplication_key) DO NOTHING")
+        .bind(token_id).bind(kind.as_str()).bind(token_id.to_string()).bind(recipient)
+        .execute(&mut **tx).await?;
+    Ok(())
+}
+
+pub(crate) async fn deliver_account_action(pool: &PgPool, email: &EmailService, token_id: Uuid) {
+    if let Err(error) = deliver_matching(pool, email, 1, None, None, Some(token_id)).await {
+        tracing::warn!(%error, notification_id=%token_id, "immediate account email delivery interrupted; worker will recover the job");
+    }
 }
 
 pub async fn enqueue_order_confirmation(
@@ -85,7 +117,7 @@ pub async fn deliver_due_with_storage(
     batch_size: i64,
     storage: Option<&ObjectStorage>,
 ) -> Result<DeliverySummary, sqlx::Error> {
-    deliver_matching(pool, email, batch_size, storage, None).await
+    deliver_matching(pool, email, batch_size, storage, None, None).await
 }
 
 /// Attempt the first delivery after the payment transaction commits. Persistent
@@ -96,7 +128,7 @@ pub async fn deliver_order_confirmation(
     order_id: Uuid,
     storage: Option<&ObjectStorage>,
 ) {
-    if let Err(error) = deliver_matching(pool, email, 1, storage, Some(order_id)).await {
+    if let Err(error) = deliver_matching(pool, email, 1, storage, Some(order_id), None).await {
         tracing::warn!(%error, %order_id, "immediate order email delivery failed; worker will recover the job");
     }
 }
@@ -107,6 +139,7 @@ async fn deliver_matching(
     batch_size: i64,
     storage: Option<&ObjectStorage>,
     order_id: Option<Uuid>,
+    notification_id: Option<Uuid>,
 ) -> Result<DeliverySummary, sqlx::Error> {
     if !(1..=100).contains(&batch_size) {
         return Err(sqlx::Error::Protocol(
@@ -117,8 +150,9 @@ async fn deliver_matching(
         r#"
         WITH candidates AS (
             SELECT id FROM notification_jobs
-            WHERE kind = 'order_confirmation'
+            WHERE kind IN ('order_confirmation','email_verification','password_reset','email_change')
               AND ($3::uuid IS NULL OR (order_id = $3 AND attempt_count = 0))
+              AND ($4::uuid IS NULL OR (id = $4 AND attempt_count = 0))
               AND (
                 (status = 'pending' AND attempt_count < $1 AND next_attempt_at <= now())
                 OR (status = 'processing' AND locked_at <= now() - interval '15 minutes')
@@ -133,15 +167,17 @@ async fn deliver_matching(
             FROM candidates WHERE job.id = candidates.id
             RETURNING job.*
         )
-        SELECT claimed.id, claimed.attempt_count, claimed.order_id, order_record.email_locale
+        SELECT claimed.id, claimed.attempt_count, claimed.order_id, claimed.account_token_id,
+               claimed.kind, claimed.recipient_email, COALESCE(order_record.email_locale,'en') AS email_locale
         FROM claimed
-        JOIN orders order_record ON order_record.id = claimed.order_id
+        LEFT JOIN orders order_record ON order_record.id = claimed.order_id
         ORDER BY claimed.next_attempt_at, claimed.id
         "#,
     )
     .bind(MAX_ATTEMPTS)
     .bind(batch_size)
     .bind(order_id)
+    .bind(notification_id)
     .fetch_all(pool)
     .await?;
 
@@ -156,18 +192,34 @@ pub(crate) async fn deliver_claimed(
 ) -> Result<DeliverySummary, sqlx::Error> {
     let mut summary = DeliverySummary::default();
     for job in claimed {
-        let outcome = match load_order(pool, job.order_id).await {
-            Ok(Some(order)) => {
-                email
+        let outcome = if AccountEmailKind::from_notification_kind(&job.kind).is_some() {
+            crate::account_notifications::deliver(pool, email, &job).await
+        } else if let Some(order_id) = job.order_id {
+            match load_order(pool, order_id).await {
+                Ok(Some(order)) => match email
                     .send_confirmation(&order, &job.email_locale, pool, storage)
                     .await
+                {
+                    Ok(()) => DeliveryOutcome::Sent,
+                    Err(error) => DeliveryOutcome::Failed(error),
+                },
+                Ok(None) => DeliveryOutcome::Failed("order snapshot is unavailable".into()),
+                Err(_) => DeliveryOutcome::Failed("order snapshot could not be loaded".into()),
             }
-            Ok(None) => Err("order snapshot is unavailable".into()),
-            Err(_) => Err("order snapshot could not be loaded".into()),
+        } else {
+            DeliveryOutcome::Suppressed("Notification has no deliverable request.")
         };
+        if matches!(outcome, DeliveryOutcome::Stale) {
+            continue;
+        }
         let mut transaction = pool.begin().await?;
+        let current = sqlx::query_scalar::<_, Uuid>("SELECT id FROM notification_jobs WHERE id=$1 AND status='processing' AND attempt_count=$2 FOR UPDATE")
+            .bind(job.id).bind(job.attempt_count).fetch_optional(&mut *transaction).await?;
+        if current.is_none() {
+            continue;
+        }
         match outcome {
-            Ok(()) => {
+            DeliveryOutcome::Sent => {
                 sqlx::query(
                     "UPDATE notification_jobs SET status = 'sent', sent_at = now(), locked_at = NULL, last_error = NULL, updated_at = now() WHERE id = $1 AND status = 'processing' AND attempt_count = $2",
                 )
@@ -178,7 +230,7 @@ pub(crate) async fn deliver_claimed(
                 insert_attempt(&mut transaction, job.id, job.attempt_count, "sent", None).await?;
                 summary.sent += 1;
             }
-            Err(error) => {
+            DeliveryOutcome::Failed(error) => {
                 let safe_error = truncate_error(&error);
                 let delay_seconds = retry_delay_seconds(job.attempt_count);
                 let status = if job.attempt_count >= MAX_ATTEMPTS {
@@ -211,6 +263,19 @@ pub(crate) async fn deliver_claimed(
                 .await?;
                 summary.failed += 1;
             }
+            DeliveryOutcome::Suppressed(reason) => {
+                sqlx::query("UPDATE notification_jobs SET status='suppressed',locked_at=NULL,last_error=$3,updated_at=now() WHERE id=$1 AND status='processing' AND attempt_count=$2")
+                    .bind(job.id).bind(job.attempt_count).bind(reason).execute(&mut *transaction).await?;
+                insert_attempt(
+                    &mut transaction,
+                    job.id,
+                    job.attempt_count,
+                    "suppressed",
+                    Some(reason),
+                )
+                .await?;
+            }
+            DeliveryOutcome::Stale => unreachable!(),
         }
         transaction.commit().await?;
     }

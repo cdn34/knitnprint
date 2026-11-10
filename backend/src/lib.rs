@@ -1,3 +1,4 @@
+mod account_notifications;
 pub mod admin_notifications;
 pub mod auth;
 pub mod b2b;

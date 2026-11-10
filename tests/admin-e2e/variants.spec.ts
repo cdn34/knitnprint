@@ -114,8 +114,10 @@ test('copies templates, maps existing stock, and sells a generated color/size co
   const added = page.waitForResponse(r => r.url().endsWith('/api/cart/items') && r.request().method() === 'POST')
   await page.getByRole('button', { name: /Add to (bag|cart)/i }).click()
   const addedResponse = await added
-  expect(addedResponse.status(), await addedResponse.text()).toBe(201)
-  expect((await addedResponse.json()).items.some((item: {variant_id: string}) => item.variant_id === blueM.id)).toBe(true)
+  expect(addedResponse.status()).toBe(201)
+  expect(addedResponse.request().postDataJSON().variant_id).toBe(blueM.id)
+  const cart = await (await page.request.get(`${storefrontUrl}/api/cart`)).json()
+  expect(cart.items.some((item: {variant_id: string}) => item.variant_id === blueM.id)).toBe(true)
   expect(redM.id).toBe(product.variants[0].id)
 })
 

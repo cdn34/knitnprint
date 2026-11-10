@@ -1955,21 +1955,25 @@ fn combined_personalization_mode(views: &Value) -> &'static str {
     let mut photo = false;
     let mut text = false;
     for view in views.as_array().into_iter().flatten() {
-        if view
-            .get("print_areas")
-            .and_then(Value::as_array)
-            .is_none_or(|areas| areas.is_empty())
-        {
+        let mode = view.get("mode").and_then(Value::as_str).unwrap_or("none");
+        if mode == "none" {
             continue;
         }
-        match view.get("mode").and_then(Value::as_str) {
-            Some("photo") => photo = true,
-            Some("text") => text = true,
-            Some("photo_text") => {
-                photo = true;
-                text = true;
+        for area in view
+            .get("print_areas")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+        {
+            match area.get("mode").and_then(Value::as_str).unwrap_or(mode) {
+                "photo" => photo = true,
+                "text" => text = true,
+                "photo_text" => {
+                    photo = true;
+                    text = true;
+                }
+                _ => {}
             }
-            _ => {}
         }
     }
     match (photo, text) {
@@ -2022,6 +2026,10 @@ fn valid_print_areas(value: &Value) -> bool {
             && y + height <= 10_000
             && physical_dimension("physical_width_cm")
             && physical_dimension("physical_height_cm")
+            && area.get("mode").is_none_or(|mode| {
+                mode.as_str()
+                    .is_some_and(|mode| matches!(mode, "photo" | "text" | "photo_text"))
+            })
     })
 }
 
@@ -2220,6 +2228,38 @@ fn unavailable() -> Response {
 #[cfg(test)]
 mod personalization_calibration_tests {
     use super::valid_personalization_views;
+
+    #[test]
+    fn print_areas_validate_independent_modes_and_keep_legacy_inheritance() {
+        let original = super::default_print_areas()[0].clone();
+        let areas: Vec<_> = ["photo_text", "text", "photo"]
+            .into_iter()
+            .enumerate()
+            .map(|(index, mode)| {
+                let mut area = original.clone();
+                area["id"] = serde_json::json!(format!("area-{index}"));
+                area["mode"] = serde_json::json!(mode);
+                area
+            })
+            .collect();
+        let mut views = serde_json::json!([{"id":"backpack", "label":"Mochila", "mode":"text", "print_areas": areas}]);
+        assert!(valid_personalization_views(&views));
+        assert_eq!(super::combined_personalization_mode(&views), "photo_text");
+        views[0]["print_areas"][0]["mode"] = serde_json::json!("text");
+        views[0]["print_areas"][2]["mode"] = serde_json::json!("text");
+        assert_eq!(super::combined_personalization_mode(&views), "text");
+        views[0]["mode"] = serde_json::json!("none");
+        assert_eq!(super::combined_personalization_mode(&views), "none");
+        for invalid in [
+            serde_json::json!("none"),
+            serde_json::json!("video"),
+            serde_json::json!(null),
+        ] {
+            views[0]["print_areas"][0]["mode"] = invalid;
+            assert!(!valid_personalization_views(&views));
+        }
+        assert!(super::valid_print_areas(&super::default_print_areas()));
+    }
 
     #[test]
     fn photographs_keep_independent_modes_and_can_have_no_print_areas() {

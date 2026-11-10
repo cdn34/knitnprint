@@ -1,4 +1,9 @@
 export const cartEs = {
+  'cartDrawer.close': 'Cerrar carrito',
+  'cartDrawer.checkout': 'Ver carrito y finalizar',
+  'cartDrawer.retry': 'Intentar de nuevo',
+  'cartDrawer.signInPrompt': 'Inicia sesión para ver tu carrito.',
+  'cartDrawer.deliveryNote': 'Consulta los gastos de envío, los descuentos y el total final en el carrito.',
   'cart.pricingChanged': 'Los datos de entrega o los precios se han actualizado. Revisa la dirección y el nuevo total antes de finalizar el pedido.',
   'cart.shippingInvalidPostal': 'Comprueba el código postal de la dirección de entrega antes de continuar.',
   'cart.shippingUnavailable': 'El envío no está disponible para esta dirección. Contacta con support@knitnprint.com para obtener ayuda.',

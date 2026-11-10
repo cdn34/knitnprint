@@ -65,7 +65,8 @@ const FIELDS: &str = r#"
     to_char(job.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at,
     to_char(job.next_attempt_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS next_attempt_at,
     to_char(job.sent_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS sent_at,
-    (job.kind = 'order_confirmation' AND job.order_id IS NOT NULL AND (
+    (((job.kind = 'order_confirmation' AND job.order_id IS NOT NULL) OR
+       (job.kind IN ('email_verification','password_reset','email_change') AND job.account_token_id IS NOT NULL)) AND (
         job.status IN ('pending', 'failed') OR
         (job.status = 'processing' AND job.locked_at <= now() - interval '15 minutes')
     )) AS can_send
@@ -244,13 +245,15 @@ async fn claim_manual(
         WITH claimed AS (
             UPDATE notification_jobs SET status = 'processing', locked_at = now(),
                 attempt_count = attempt_count + 1, updated_at = now()
-            WHERE id = $1 AND kind = 'order_confirmation' AND order_id IS NOT NULL
+            WHERE id = $1 AND ((kind = 'order_confirmation' AND order_id IS NOT NULL)
+                OR (kind IN ('email_verification','password_reset','email_change') AND account_token_id IS NOT NULL))
               AND (status IN ('pending', 'failed') OR
                   (status = 'processing' AND locked_at <= now() - interval '15 minutes'))
-            RETURNING id, attempt_count, order_id
+            RETURNING id, attempt_count, order_id, account_token_id, kind, recipient_email
         )
-        SELECT claimed.id, claimed.attempt_count, claimed.order_id, order_record.email_locale
-        FROM claimed JOIN orders order_record ON order_record.id = claimed.order_id
+        SELECT claimed.id, claimed.attempt_count, claimed.order_id, claimed.account_token_id,
+               claimed.kind, claimed.recipient_email, COALESCE(order_record.email_locale,'en') AS email_locale
+        FROM claimed LEFT JOIN orders order_record ON order_record.id = claimed.order_id
     "#,
     )
     .bind(id)

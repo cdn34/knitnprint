@@ -4,11 +4,11 @@ import { printAreaForVariant } from './personalization-scale.ts'
 const safeBasisPoints = (value: unknown, fallback: number) => typeof value === 'number' && Number.isFinite(value) ? value : fallback
 
 export type ElementFrame = { x: number; y: number; width: number; height: number }
-export type PrintArea = ElementFrame & { id: string; label: string; physicalWidthCm: number; physicalHeightCm: number; previewFrame?: ElementFrame }
+export type PrintArea = ElementFrame & { id: string; label: string; mode: string; physicalWidthCm: number; physicalHeightCm: number; previewFrame?: ElementFrame }
 type ArticleReference = ElementFrame & { physicalWidthCm: number; physicalHeightCm: number }
 export type PrintView = { id: string; label: string; mode: string; mediaId?: string; articleReference?: ArticleReference; printAreas: PrintArea[] }
 
-function configuredPrintAreas(raw: unknown, config: PersonalizationConfig, areaLabel: (number: number) => string): PrintArea[] {
+function configuredPrintAreas(raw: unknown, config: PersonalizationConfig, areaLabel: (number: number) => string, fallbackMode: string = config.mode): PrintArea[] {
   if (Array.isArray(raw)) {
     const areas = raw.flatMap((item, index) => {
       if (!item || typeof item !== 'object') return []
@@ -18,6 +18,7 @@ function configuredPrintAreas(raw: unknown, config: PersonalizationConfig, areaL
       return [{
         id: typeof area.id === 'string' && area.id ? area.id : `area-${index + 1}`,
         label: typeof area.label === 'string' && area.label ? area.label : areaLabel(index + 1),
+        mode: typeof area.mode === 'string' && ['photo', 'text', 'photo_text'].includes(area.mode) ? area.mode : fallbackMode,
         x: Number(area.x) / 100,
         y: Number(area.y) / 100,
         width: Number(area.width) / 100,
@@ -28,7 +29,7 @@ function configuredPrintAreas(raw: unknown, config: PersonalizationConfig, areaL
     })
     return areas
   }
-  return [{ id: 'area-1', label: areaLabel(1), x: safeBasisPoints(config.area_x, 2500) / 100, y: safeBasisPoints(config.area_y, 2500) / 100, width: safeBasisPoints(config.area_width, 5000) / 100, height: safeBasisPoints(config.area_height, 5000) / 100, physicalWidthCm: 20, physicalHeightCm: 20 }]
+  return [{ id: 'area-1', label: areaLabel(1), mode: fallbackMode, x: safeBasisPoints(config.area_x, 2500) / 100, y: safeBasisPoints(config.area_y, 2500) / 100, width: safeBasisPoints(config.area_width, 5000) / 100, height: safeBasisPoints(config.area_height, 5000) / 100, physicalWidthCm: 20, physicalHeightCm: 20 }]
 }
 
 export function activePersonalizationViews(config: PersonalizationConfig): Record<string, unknown>[] {
@@ -49,7 +50,7 @@ export function configuredViews(config: PersonalizationConfig, variantId: string
       const view = item as Record<string, unknown>
       const mode = typeof view.mode === 'string' ? view.mode : config.mode
       if (mode === 'none') return []
-      const printAreas = configuredPrintAreas(view.print_areas, config, areaLabel)
+      const printAreas = configuredPrintAreas(view.print_areas, config, areaLabel, mode)
       if (!printAreas.length) return []
       const rawReference = view.article_reference && typeof view.article_reference === 'object' ? view.article_reference as Record<string, unknown> : undefined
       const referenceCoordinates = rawReference ? ['x', 'y', 'width', 'height'].map((key) => rawReference[key]) : []

@@ -1995,7 +1995,7 @@ const PERSONALIZATION_COLOR_OPTIONS = [
 ] as const
 
 type PrintArea = { x: number; y: number; width: number; height: number }
-type NamedPrintArea = PrintArea & { id: string; label: string; physicalWidthCm: number; physicalHeightCm: number }
+type NamedPrintArea = PrintArea & { id: string; label: string; mode?: Exclude<PersonalizationMode, 'none'>; physicalWidthCm: number; physicalHeightCm: number }
 type ArticleReference = PrintArea & { physicalWidthCm: number; physicalHeightCm: number; configured: boolean }
 type VariantReference = { physicalWidthCm: number; physicalHeightCm: number; configured: boolean }
 type PersonalizationMode = 'none' | 'photo' | 'text' | 'photo_text'
@@ -2020,7 +2020,8 @@ function namedPrintAreas(value: unknown, fallback: NamedPrintArea): NamedPrintAr
     const label = typeof candidate.label === 'string' && candidate.label.trim() ? candidate.label.trim() : `Área ${index + 1}`
     const physicalWidthCm = typeof candidate.physical_width_cm === 'number' && Number.isFinite(candidate.physical_width_cm) ? candidate.physical_width_cm : fallback.physicalWidthCm
     const physicalHeightCm = typeof candidate.physical_height_cm === 'number' && Number.isFinite(candidate.physical_height_cm) ? candidate.physical_height_cm : fallback.physicalHeightCm
-    return [{ id, label, physicalWidthCm, physicalHeightCm, ...area }]
+    const mode = ['photo', 'text', 'photo_text'].includes(String(candidate.mode)) ? candidate.mode as Exclude<PersonalizationMode, 'none'> : undefined
+    return [{ id, label, mode, physicalWidthCm, physicalHeightCm, ...area }]
   })
   return areas.slice(0, 8)
 }
@@ -2045,7 +2046,8 @@ function effectivePrintAreaDimensions(view: PersonalizationView, area: NamedPrin
 
 function serializedPrintArea(view: PersonalizationView, area: NamedPrintArea) {
   const physical = effectivePrintAreaDimensions(view, area)
-  return { id: area.id, label: area.label.trim(), x: Math.round(area.x * 100), y: Math.round(area.y * 100), width: Math.round(area.width * 100), height: Math.round(area.height * 100), physical_width_cm: physical.width, physical_height_cm: physical.height }
+  const mode = area.mode ?? (view.mode === 'none' ? undefined : view.mode)
+  return { id: area.id, label: area.label.trim(), ...(mode ? { mode } : {}), x: Math.round(area.x * 100), y: Math.round(area.y * 100), width: Math.round(area.width * 100), height: Math.round(area.height * 100), physical_width_cm: physical.width, physical_height_cm: physical.height }
 }
 
 function serializedArticleReference(reference: ArticleReference | undefined) {
@@ -2437,8 +2439,8 @@ function CatalogManagement({
   const completedProductImages = useRef(new Map<string, string>())
   const primaryPersonalizationView = personalizationViews[0] ?? DEFAULT_PERSONALIZATION_VIEW
   const primaryPrintArea = primaryPersonalizationView.printAreas[0] ?? DEFAULT_PRINT_AREA
-  const photoEnabled = personalizationViews.some((view) => view.printAreas.length > 0 && (view.mode === 'photo' || view.mode === 'photo_text'))
-  const textEnabled = personalizationViews.some((view) => view.printAreas.length > 0 && (view.mode === 'text' || view.mode === 'photo_text'))
+  const photoEnabled = personalizationViews.some((view) => view.mode !== 'none' && view.printAreas.some((area) => ['photo', 'photo_text'].includes(area.mode ?? view.mode)))
+  const textEnabled = personalizationViews.some((view) => view.mode !== 'none' && view.printAreas.some((area) => ['text', 'photo_text'].includes(area.mode ?? view.mode)))
   const personalizationMode: PersonalizationMode = photoEnabled && textEnabled ? 'photo_text' : photoEnabled ? 'photo' : textEnabled ? 'text' : 'none'
   const personalization = {
     mode: personalizationMode,
@@ -3385,7 +3387,9 @@ function CatalogManagement({
                 <div className="personalization-photo-tabs" role="tablist" aria-label="Fotografias do produto">
                   {personalizationMediaChoices.map((media, index) => {
                     const view = personalizationViews.find((candidate) => candidate.mediaId === media.id)
-                    const mode = view?.mode ?? 'none'
+                    const photo = view && view.mode !== 'none' && view.printAreas.some((area) => ['photo', 'photo_text'].includes(area.mode ?? view.mode))
+                    const text = view && view.mode !== 'none' && view.printAreas.some((area) => ['text', 'photo_text'].includes(area.mode ?? view.mode))
+                    const mode = photo && text ? 'photo_text' : photo ? 'photo' : text ? 'text' : 'none'
                     const modeLabel = { none: 'Sem personalização', photo: 'Só fotografia', text: 'Só texto', photo_text: 'Fotografia e texto' }[mode]
                     return <button key={media.id} type="button" role="tab" aria-selected={media.id === personalizationPreviewMedia?.id} className={media.id === personalizationPreviewMedia?.id ? 'active' : ''} onClick={() => selectPersonalizationPhoto(media, index)}>
                       <img src={media.thumbnailUrl} alt={media.altText} />
@@ -3400,7 +3404,7 @@ function CatalogManagement({
                       <option value="none">Sem personalização</option><option value="photo">Só fotografia</option><option value="text">Só texto</option><option value="photo_text">Fotografia e texto</option>
                     </select></div>
                   </div>
-                  {activePersonalizationMode === 'none' && <p className="personalization-photo-note">Esta fotografia é apresentada na loja sem opções de personalização.</p>}
+                  {activePersonalizationMode === 'none' ? <p className="personalization-photo-note">Esta fotografia é apresentada na loja sem opções de personalização.</p> : <p className="field-help">Este é o tipo inicial de personalização. Podes escolher um tipo diferente em cada área abaixo.</p>}
                 </>}
               </> : <p className="field-help">Adiciona fotografias ao produto para configurares a personalização de cada uma.</p>}
               {personalizationPreviewMedia && activePersonalizationMode !== 'none' && (
@@ -3458,6 +3462,13 @@ function CatalogManagement({
                       <label htmlFor="print-area-name">Nome da área<input id="print-area-name" required maxLength={80} value={activePrintArea.label} onChange={(event) => updatePrintArea(activePrintArea.id, { label: event.target.value })} placeholder="Ex.: Bolso frontal" /></label>
                       <button type="button" className="print-area-remove" onClick={removeActivePrintArea}>Remover área</button>
                     </div>
+                    <div className="print-area-content-settings">
+                      <label htmlFor="print-area-mode">Personalização permitida nesta área</label>
+                      <select id="print-area-mode" aria-describedby="print-area-mode-help" value={activePrintArea.mode ?? activePersonalizationMode} onChange={(event) => updatePrintArea(activePrintArea.id, { mode: event.target.value as Exclude<PersonalizationMode, 'none'> })}>
+                        <option value="text">Só texto</option><option value="photo">Só imagem</option><option value="photo_text">Texto e imagem</option>
+                      </select>
+                      <small id="print-area-mode-help">A escolha aplica-se apenas a {activePrintArea.label || 'esta área'}. O cliente só poderá adicionar o conteúdo permitido.</small>
+                    </div>
                     <div className="print-area-coordinate-grid" aria-label="Ajuste fino da área selecionada">
                       <label>Horizontal (%)<input type="number" min="0" max={100 - activePrintArea.width} step="1" value={Math.round(activePrintArea.x)} onChange={(event) => updatePrintArea(activePrintArea.id, { x: Math.max(0, Math.min(100 - activePrintArea.width, Number(event.target.value))) })} /></label>
                       <label>Vertical (%)<input type="number" min="0" max={100 - activePrintArea.height} step="1" value={Math.round(activePrintArea.y)} onChange={(event) => updatePrintArea(activePrintArea.id, { y: Math.max(0, Math.min(100 - activePrintArea.height, Number(event.target.value))) })} /></label>
@@ -3482,7 +3493,7 @@ function CatalogManagement({
                   </div>
                 </>
               )}
-              {personalizationPreviewMedia && (activePersonalizationMode === 'text' || activePersonalizationMode === 'photo_text') && (
+              {personalizationPreviewMedia && activePersonalizationMode !== 'none' && printAreas.some((area) => ['text', 'photo_text'].includes(area.mode ?? activePersonalizationMode)) && (
                 <div className="text-personalization-settings">
                   <label>Limite de caracteres<input type="number" min="1" max="500" value={textMaxCharacters} onChange={(event) => setTextMaxCharacters(Number(event.target.value))} /></label>
                   <div className="print-area-fields">

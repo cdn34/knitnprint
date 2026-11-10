@@ -173,7 +173,7 @@ export function ProductPersonalizer({ config, variantId, variantLabel, productMe
     (number) => t('personalization.areaFallback', { number }),
     productMedia,
   ), [config, variantId, t, productMedia])
-  const newDesign = (mode = views[0].mode): AreaDesign => ({
+  const newDesign = (mode: string): AreaDesign => ({
     text: '',
     font: fonts[0] ?? 'Arial',
     color: colors[0] ?? '#111111',
@@ -181,21 +181,21 @@ export function ProductPersonalizer({ config, variantId, variantLabel, productMe
     textFrame: mode === 'photo_text' ? { x: 10, y: 58, width: 80, height: 40 } : { x: 15, y: 35, width: 70, height: 30 },
     photoFrame: mode === 'photo_text' ? { x: 5, y: 5, width: 90, height: 50 } : { x: 15, y: 15, width: 70, height: 70 },
   })
-  const [designs, setDesigns] = useState<Record<string, AreaDesign>>(() => Object.fromEntries(views.flatMap((view) => view.printAreas.map((area) => [designKey(view.id, area.id), newDesign(view.mode)]))))
+  const [designs, setDesigns] = useState<Record<string, AreaDesign>>(() => Object.fromEntries(views.flatMap((view) => view.printAreas.map((area) => [designKey(view.id, area.id), newDesign(area.mode)]))))
   const [activeViewId, setActiveViewId] = useState(views[0].id)
   const activeView = views.find(({ id }) => id === activeViewId) ?? views[0]
-  const wantsPhoto = activeView.mode === 'photo' || activeView.mode === 'photo_text'
-  const wantsText = activeView.mode === 'text' || activeView.mode === 'photo_text'
   const printAreas = activeView.printAreas
   const [activeAreaId, setActiveAreaId] = useState(printAreas[0].id)
+  const activePrintArea = printAreas.find(({ id }) => id === activeAreaId) ?? printAreas[0]
+  const wantsPhoto = activePrintArea.mode === 'photo' || activePrintArea.mode === 'photo_text'
+  const wantsText = activePrintArea.mode === 'text' || activePrintArea.mode === 'photo_text'
   const [selected, setSelected] = useState<'photo' | 'text'>(wantsPhoto ? 'photo' : 'text')
   const [uploadingAreas, setUploadingAreas] = useState<Record<string, boolean>>({})
   const [previewViewId, setPreviewViewId] = useState(views[0].id)
   const objectUrls = useRef(new Set<string>())
   const confirmationCanvases = useRef(new Map<string, HTMLDivElement>())
   const activeDesignKey = designKey(activeView.id, activeAreaId)
-  const activeDesign = designs[activeDesignKey] ?? newDesign()
-  const activePrintArea = printAreas.find(({ id }) => id === activeAreaId) ?? printAreas[0]
+  const activeDesign = designs[activeDesignKey] ?? newDesign(activePrintArea.mode)
   const activeProductImage = productMedia.find(({ id }) => id === activeView.mediaId)?.url ?? (views.length === 1 ? productMedia[0]?.url : undefined)
   const previewView = views.find(({ id }) => id === previewViewId) ?? views[0]
   const previewProductImage = productMedia.find(({ id }) => id === previewView.mediaId)?.url ?? (views.length === 1 ? productMedia[0]?.url : undefined)
@@ -211,7 +211,7 @@ export function ProductPersonalizer({ config, variantId, variantLabel, productMe
 
   function updateDesign(key: string, update: Partial<AreaDesign> | ((current: AreaDesign) => AreaDesign)) {
     setDesigns((current) => {
-      const areaDesign = current[key] ?? newDesign()
+      const areaDesign = current[key] ?? newDesign(activePrintArea.mode)
       return { ...current, [key]: typeof update === 'function' ? update(areaDesign) : { ...areaDesign, ...update } }
     })
   }
@@ -219,7 +219,12 @@ export function ProductPersonalizer({ config, variantId, variantLabel, productMe
   function selectView(view: PrintView) {
     setActiveViewId(view.id)
     setActiveAreaId(view.printAreas[0].id)
-    setSelected(view.mode === 'photo' || view.mode === 'photo_text' ? 'photo' : 'text')
+    setSelected(view.printAreas[0].mode === 'photo' || view.printAreas[0].mode === 'photo_text' ? 'photo' : 'text')
+  }
+
+  function selectArea(area: PrintArea) {
+    setActiveAreaId(area.id)
+    setSelected(area.mode === 'photo' || area.mode === 'photo_text' ? 'photo' : 'text')
   }
 
   const customization = useMemo<CustomerCustomization>(() => ({
@@ -227,8 +232,8 @@ export function ProductPersonalizer({ config, variantId, variantLabel, productMe
     areas: views.flatMap((view) => view.printAreas.flatMap((area) => {
       const design = designs[designKey(view.id, area.id)]
       if (!design) return []
-      const photo = (view.mode === 'photo' || view.mode === 'photo_text') && design.mediaId ? { media_id: design.mediaId, ...normalizedFrame(design.photoFrame), crop_x: 50, crop_y: 50, scale: 1 } : undefined
-      const text = (view.mode === 'text' || view.mode === 'photo_text') && design.text.trim() ? { content: design.text.trim(), font: design.font, color: design.color, size: design.size, ...normalizedFrame(design.textFrame) } : undefined
+      const photo = (area.mode === 'photo' || area.mode === 'photo_text') && design.mediaId ? { media_id: design.mediaId, ...normalizedFrame(design.photoFrame), crop_x: 50, crop_y: 50, scale: 1 } : undefined
+      const text = (area.mode === 'text' || area.mode === 'photo_text') && design.text.trim() ? { content: design.text.trim(), font: design.font, color: design.color, size: design.size, ...normalizedFrame(design.textFrame) } : undefined
       const reference = articleReferenceSnapshot(view, area)
       return photo || text ? [{ view_id: view.id, view_label: view.label, area_id: area.id, area_label: area.label, print_width_cm: area.physicalWidthCm, print_height_cm: area.physicalHeightCm, ...(reference ? { article_reference: reference } : {}), ...(photo ? { photo } : {}), ...(text ? { text } : {}) }] : []
     })),
@@ -237,8 +242,8 @@ export function ProductPersonalizer({ config, variantId, variantLabel, productMe
   const missing = useMemo(() => views.flatMap((view) => view.printAreas.flatMap((area) => {
     const design = designs[designKey(view.id, area.id)]
     return [
-      (view.mode === 'photo' || view.mode === 'photo_text') && !design?.mediaId ? t('personalization.missingPhoto', { view: view.label, area: area.label }) : '',
-      (view.mode === 'text' || view.mode === 'photo_text') && !design?.text.trim() ? t('personalization.missingText', { view: view.label, area: area.label }) : '',
+      (area.mode === 'photo' || area.mode === 'photo_text') && !design?.mediaId ? t('personalization.missingPhoto', { view: view.label, area: area.label }) : '',
+      (area.mode === 'text' || area.mode === 'photo_text') && !design?.text.trim() ? t('personalization.missingText', { view: view.label, area: area.label }) : '',
     ].filter(Boolean)
   })), [designs, t, views])
   const ready = missing.length === 0
@@ -265,7 +270,7 @@ export function ProductPersonalizer({ config, variantId, variantLabel, productMe
   }), [customization, mediaIds, missing, onChange, ready])
   useEffect(() => () => { objectUrls.current.forEach((url) => URL.revokeObjectURL(url)); objectUrls.current.clear() }, [])
   useEffect(() => {
-    setDesigns((current) => Object.fromEntries(views.flatMap((view) => view.printAreas.map((area) => { const key = designKey(view.id, area.id); return [key, current[key] ?? newDesign(view.mode)] }))))
+    setDesigns((current) => Object.fromEntries(views.flatMap((view) => view.printAreas.map((area) => { const key = designKey(view.id, area.id); return [key, current[key] ?? newDesign(area.mode)] }))))
     if (!views.some(({ id }) => id === activeViewId)) setActiveViewId(views[0].id)
     if (!printAreas.some(({ id }) => id === activeAreaId)) setActiveAreaId(printAreas[0].id)
   }, [views, activeViewId, printAreas, activeAreaId])
@@ -305,12 +310,14 @@ export function ProductPersonalizer({ config, variantId, variantLabel, productMe
     return <div className="personalization-final-preview-canvas" ref={capture ? (node) => { if (node) confirmationCanvases.current.set(view.id, node); else confirmationCanvases.current.delete(view.id) } : undefined}>
             <img src={imageUrl} alt={t('personalization.customizedResultAlt', { view: view.label })} />
             {view.printAreas.map((area) => {
-              const design = designs[designKey(view.id, area.id)] ?? newDesign()
-              if (!design.photoUrl && !design.text.trim()) return null
+              const design = designs[designKey(view.id, area.id)] ?? newDesign(area.mode)
+              const photoVisible = ['photo', 'photo_text'].includes(area.mode) && design.photoUrl
+              const textVisible = ['text', 'photo_text'].includes(area.mode) && design.text.trim()
+              if (!photoVisible && !textVisible) return null
               const frame = area.previewFrame ?? area
               return <div key={area.id} className="personalization-final-area" style={{ left: `${frame.x}%`, top: `${frame.y}%`, width: `${frame.width}%`, height: `${frame.height}%` }}>
-                {design.photoUrl && <div className="personalization-final-element" style={{ left: `${design.photoFrame.x}%`, top: `${design.photoFrame.y}%`, width: `${design.photoFrame.width}%`, height: `${design.photoFrame.height}%` }}><img className="personalization-final-photo" src={design.photoUrl} alt={t('personalization.customPhotoAlt')} /></div>}
-                {design.text.trim() && <div className="personalization-final-element personalization-final-element--text" style={{ left: `${design.textFrame.x}%`, top: `${design.textFrame.y}%`, width: `${design.textFrame.width}%`, height: `${design.textFrame.height}%` }}><span style={{ color: design.color, fontFamily: design.font, fontSize: `${design.size}px` }}>{design.text}</span></div>}
+                {photoVisible && <div className="personalization-final-element" style={{ left: `${design.photoFrame.x}%`, top: `${design.photoFrame.y}%`, width: `${design.photoFrame.width}%`, height: `${design.photoFrame.height}%` }}><img className="personalization-final-photo" src={design.photoUrl} alt={t('personalization.customPhotoAlt')} /></div>}
+                {textVisible && <div className="personalization-final-element personalization-final-element--text" style={{ left: `${design.textFrame.x}%`, top: `${design.textFrame.y}%`, width: `${design.textFrame.width}%`, height: `${design.textFrame.height}%` }}><span style={{ color: design.color, fontFamily: design.font, fontSize: `${design.size}px` }}>{design.text}</span></div>}
               </div>
             })}
           </div>
@@ -324,7 +331,7 @@ export function ProductPersonalizer({ config, variantId, variantLabel, productMe
           <header className="personalizer-sidebar-heading"><span className="personalizer-step">1</span><div><strong>{t('personalization.chooseWhere')}</strong><small>{activeView.label} · {activePrintArea.label}</small></div></header>
           <div className="personalizer-sidebar-label"><span>{t('personalization.productSide')}</span><small>{views.length} {t(views.length === 1 ? 'personalization.availableSingular' : 'personalization.availablePlural')}</small></div>
           {views.length > 1 ? <div className="personalizer-view-switcher" role="tablist" aria-label={t('personalization.chooseProductSide')}>{views.map((view, index) => <button key={view.id} type="button" role="tab" aria-selected={view.id === activeView.id} className={view.id === activeView.id ? 'selected' : ''} onClick={() => selectView(view)}><b>{index + 1}</b><span>{view.label}</span></button>)}</div> : <div className="personalizer-single-choice"><b>1</b><span>{activeView.label}</span></div>}
-          <div className="personalizer-area-switcher" role="group" aria-label={t('personalization.choosePrintArea')}><div className="personalizer-sidebar-label"><span>{t('personalization.printArea')}</span></div><div>{printAreas.map((area, index) => <button key={area.id} type="button" className={activeAreaId === area.id ? 'selected' : ''} aria-pressed={activeAreaId === area.id} onClick={() => setActiveAreaId(area.id)}><b>{index + 1}</b>{area.label}</button>)}</div></div>
+          <div className="personalizer-area-switcher" role="group" aria-label={t('personalization.choosePrintArea')}><div className="personalizer-sidebar-label"><span>{t('personalization.printArea')}</span></div><div>{printAreas.map((area, index) => <button key={area.id} type="button" className={activeAreaId === area.id ? 'selected' : ''} aria-pressed={activeAreaId === area.id} onClick={() => selectArea(area)}><b>{index + 1}</b>{area.label}</button>)}</div></div>
         </section>
         {wantsPhoto && <div className={`personalizer-tool${selected === 'photo' ? ' personalizer-tool--selected' : ''}`} onClick={() => setSelected('photo')}>
           <header className="personalizer-sidebar-heading"><span className="personalizer-step">2</span><div><strong><ImagePlus /> {t('personalization.photo')} · {activePrintArea.label}</strong><small>{t('personalization.optional')}</small></div></header>
@@ -347,10 +354,12 @@ export function ProductPersonalizer({ config, variantId, variantLabel, productMe
         {activeProductImage ? <div className="personalizer-canvas"><img className="personalizer-product" src={activeProductImage} alt={t('personalization.productPreviewAlt', { view: activeView.label })} />
           {printAreas.map((area) => {
             const key = designKey(activeView.id, area.id)
-            const design = designs[key] ?? newDesign()
+            const design = designs[key] ?? newDesign(area.mode)
+            const wantsPhoto = area.mode === 'photo' || area.mode === 'photo_text'
+            const wantsText = area.mode === 'text' || area.mode === 'photo_text'
             const active = activeAreaId === area.id
             const frame = area.previewFrame ?? area
-            return <div key={area.id} className={`personalizer-print-area${active ? ' personalizer-print-area--active' : ''}`} aria-label={area.label} style={{ left: `${frame.x}%`, top: `${frame.y}%`, width: `${frame.width}%`, height: `${frame.height}%` }} onClick={() => setActiveAreaId(area.id)}>
+            return <div key={area.id} className={`personalizer-print-area${active ? ' personalizer-print-area--active' : ''}`} aria-label={area.label} style={{ left: `${frame.x}%`, top: `${frame.y}%`, width: `${frame.width}%`, height: `${frame.height}%` }} onClick={() => selectArea(area)}>
               <span className="personalizer-print-area-label">{area.label}</span>
               {wantsPhoto && (active || design.mediaId) && <DesignElement frame={design.photoFrame} kind="photo" label={t('personalization.photoElement', { view: activeView.label, area: area.label })} selected={active && selected === 'photo'} onSelect={() => { setActiveAreaId(area.id); setSelected('photo') }} onChange={(photoFrame) => updateDesign(key, { photoFrame })}>{design.photoUrl ? <img className="personalizer-photo" src={design.photoUrl} alt={t('personalization.uploadedPhotoAlt')} draggable={false} /> : <span className="personalizer-placeholder"><ImagePlus /> {t('personalization.photo')}</span>}</DesignElement>}
               {wantsText && (active || design.text.trim()) && <DesignElement frame={design.textFrame} kind="text" label={t('personalization.textElement', { view: activeView.label, area: area.label })} selected={active && selected === 'text'} onSelect={() => { setActiveAreaId(area.id); setSelected('text') }} onChange={(textFrame) => updateDesign(key, { textFrame })}>{design.text.trim() ? <span className="personalizer-text" style={{ color: design.color, fontFamily: design.font, fontSize: `${design.size}px` }}>{design.text}</span> : <span className="personalizer-placeholder"><Type /> {t('personalization.text')}</span>}</DesignElement>}

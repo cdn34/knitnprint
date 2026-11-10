@@ -11,7 +11,7 @@ import {
   ShieldCheck,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { announceCartUpdate, cartApi, cartMutationKey } from '../cart-api'
+import { redirectToProductsWithCart, cartApi, cartMutationKey } from '../cart-api'
 import { ContextualFaqs } from '../components/contextual-faqs'
 import { ProductFeedback } from '../components/product-feedback'
 import { customerAccess } from '../components/verified-customer-gate'
@@ -57,7 +57,7 @@ function ProductPage() {
   const stock = variant ? variantStock(variant) : null
   const localizedStock = stock ? stockText(stock) : null
   const [cartState, setCartState] = useState<
-    'idle' | 'adding' | 'added' | 'error'
+    'idle' | 'adding' | 'error'
   >('idle')
   const [hydrated, setHydrated] = useState(false)
   const [selectedMediaIndex, setSelectedMediaIndex] = useState(0)
@@ -94,8 +94,7 @@ function ProductPage() {
         { variant_id: variant.id, quantity: 1 },
         cartMutationKey(),
       )
-      announceCartUpdate(cart)
-      setCartState('added')
+      redirectToProductsWithCart(cart)
     } catch {
       setCartState('error')
     }
@@ -107,9 +106,7 @@ function ProductPage() {
       ? t('product.preparingCart')
       : cartState === 'adding'
         ? t('product.adding')
-        : cartState === 'added'
-          ? t('product.added')
-          : t('product.addToCart')
+        : t('product.addToCart')
   const addToCartButton = <button
     className={`button ${personalizable ? 'button--secondary' : 'button--primary'}`}
     type="button"
@@ -224,7 +221,6 @@ function ProductPage() {
             {addToCartButton}
           </div> : addToCartButton}
           <div className="cart-action-status" aria-live="polite">
-            {cartState === 'added' && <a href="/cart">{t('product.viewCart')}</a>}
             {cartState === 'error' && (
               <span>{t('product.cartError')}</span>
             )}

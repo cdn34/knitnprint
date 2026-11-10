@@ -3,7 +3,7 @@ import { ApiError } from '@knitnprint/api-client'
 import { createFileRoute, notFound, redirect } from '@tanstack/react-router'
 import { ArrowLeft, Eye, ShoppingBag } from 'lucide-react'
 import { useMemo, useState } from 'react'
-import { announceCartUpdate, cartApi, cartMutationKey } from '../cart-api'
+import { redirectToProductsWithCart, cartApi, cartMutationKey } from '../cart-api'
 import { mediaUrl, preferredVariant, publishedProduct, variantStock } from '../catalog-api'
 import { ProductPersonalizer, type CustomerCustomization } from '../components/product-personalizer'
 import { VerifiedCustomerGate } from '../components/verified-customer-gate'
@@ -45,7 +45,7 @@ function PersonalizeProductContent() {
     return Array.isArray(references) && references.some((reference) => reference && typeof reference === 'object' && reference.variant_id === variant?.id && reference.configured === true)
   })
   const [design, setDesign] = useState<{ customization: CustomerCustomization | null; mediaIds: string[]; ready: boolean; missing: string[]; savePreviews?: () => Promise<NonNullable<CustomerCustomization['previews']>> }>({ customization: null, mediaIds: [], ready: false, missing: [] })
-  const [status, setStatus] = useState<'idle' | 'adding' | 'added' | 'error'>('idle')
+  const [status, setStatus] = useState<'idle' | 'adding' | 'error'>('idle')
   const [errorMessage, setErrorMessage] = useState('')
   const [confirmingIncomplete, setConfirmingIncomplete] = useState(false)
   const [previewOpen, setPreviewOpen] = useState(false)
@@ -62,8 +62,7 @@ function PersonalizeProductContent() {
       if (design.customization && !previews?.length) throw new Error('Personalized preview could not be saved')
       const customization = design.customization
       const cart = await cartApi.addCartItem({ variant_id: variant.id, quantity: 1, personalization_previews: previews ?? [], ...(customization ? { customization } : {}), ...(design.mediaIds.length ? { customization_media_asset_ids: design.mediaIds } : {}) }, cartMutationKey())
-      announceCartUpdate(cart)
-      setStatus('added')
+      redirectToProductsWithCart(cart)
     } catch (error) {
       setStatus('error')
       setErrorMessage(error instanceof ApiError && error.body.error.code === 'insufficient_stock'
@@ -81,7 +80,7 @@ function PersonalizeProductContent() {
     void addToCart()
   }
 
-  const addToCartLabel = soldOut ? t('personalization.soldOut') : status === 'adding' ? t('personalization.adding') : status === 'added' ? t('personalization.added') : t('personalization.addToCart')
+  const addToCartLabel = soldOut ? t('personalization.soldOut') : status === 'adding' ? t('personalization.adding') : t('personalization.addToCart')
   const creationTitle = t('personalization.creationTitle', { product: product.title })
   const extraMissing = design.missing.length > 3 ? t('personalization.moreOptions', { count: design.missing.length - 3 }) : ''
 
@@ -106,7 +105,6 @@ function PersonalizeProductContent() {
         <span>{!calibrationReady ? t('personalization.sizeCalibrationPending') : t(soldOut ? 'personalization.soldOutDetail' : design.ready ? 'personalization.ready' : 'personalization.optionalReady')}</span>
         <button className="button button--secondary personalization-preview-button" type="button" disabled={!calibrationReady || !personalizationViews.length} onClick={() => setPreviewOpen(true)}><Eye /> {t('personalization.previewResult')}</button>
         <button className="button button--primary" type="button" disabled={!variant || soldOut || !calibrationReady || status === 'adding'} onClick={requestAddToCart}><ShoppingBag />{addToCartLabel}</button>
-        {status === 'added' && <a className="text-link" href="/cart">{t('personalization.viewCart')}</a>}
         {status === 'error' && <strong role="alert">{errorMessage}</strong>}
       </div>
       {confirmingIncomplete && <div className="personalization-confirmation-backdrop" role="presentation" onKeyDown={(event) => { if (event.key === 'Escape') setConfirmingIncomplete(false) }}><section className="personalization-confirmation" role="alertdialog" aria-modal="true" aria-labelledby="incomplete-personalization-title" aria-describedby="incomplete-personalization-description"><span>{t('personalization.confirmation')}</span><h2 id="incomplete-personalization-title">{t('personalization.incompleteTitle')}</h2><p id="incomplete-personalization-description">{t('personalization.incompleteDescription', { items: design.missing.slice(0, 3).join(', '), extra: extraMissing })}</p><div><button className="button button--secondary" type="button" autoFocus onClick={() => setConfirmingIncomplete(false)}>{t('personalization.continueEditing')}</button><button className="button button--primary" type="button" onClick={() => void addToCart()}>{t('personalization.confirmAdd')}</button></div></section></div>}

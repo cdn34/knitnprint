@@ -59,3 +59,20 @@ test('existing photo configurations inherit the product mode until individually 
   const legacy = { ...config, mode: 'text', views: [{ id: 'front', print_areas: [area('chest')] }] }
   assert.equal(parse(legacy)[0].mode, 'text')
 })
+
+test('areas on the same photograph keep independent text and image permissions', () => {
+  const backpack = { ...config, views: [{ id: 'backpack', mode: 'photo_text', print_areas: [
+    { ...area('main'), mode: 'photo_text' },
+    { ...area('bottom'), mode: 'text' },
+    { ...area('top'), mode: 'text' },
+    { ...area('image-only'), mode: 'photo' },
+  ] }] }
+  assert.deepEqual(parse(backpack)[0].printAreas.map(({ id, mode }) => [id, mode]), [
+    ['main', 'photo_text'], ['bottom', 'text'], ['top', 'text'], ['image-only', 'photo'],
+  ])
+  assert.deepEqual(parse(config).map(view => view.printAreas[0].mode), ['text', 'photo'])
+  const legacy = { ...config, views: undefined, print_areas: [{ ...area('legacy'), mode: 'text' }] }
+  assert.equal(parse(legacy)[0].printAreas[0].mode, 'text')
+  const disabled = { ...backpack, views: [{ ...backpack.views[0], mode: 'none' }] }
+  assert.deepEqual(parse(disabled), [])
+})
