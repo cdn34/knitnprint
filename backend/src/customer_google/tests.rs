@@ -182,7 +182,104 @@ async fn account_linking_methods_recovery_and_erasure() {
         }),
     )
     .await;
-    assert_eq!(body(response).await["status"], "authenticated");
+    let session_cookie = response
+        .headers()
+        .get_all(axum::http::header::SET_COOKIE)
+        .iter()
+        .filter_map(|h| h.to_str().ok())
+        .find(|h| h.starts_with(account::CUSTOMER_SESSION_COOKIE))
+        .unwrap()
+        .split(';')
+        .next()
+        .unwrap()
+        .to_owned();
+    let session_jar = CookieJar::new().add(Cookie::parse(session_cookie).unwrap().into_owned());
+    let authenticated = body(response).await;
+    assert_eq!(authenticated["status"], "authenticated");
+    assert!(
+        authenticated["google_authenticated_until"]
+            .as_i64()
+            .unwrap()
+            > jsonwebtoken::get_current_timestamp() as i64
+    );
+    let api_identity = AuthenticatedCustomer {
+        id: Uuid::parse_str(authenticated["profile"]["id"].as_str().unwrap()).unwrap(),
+        email: "api@gmail.com".into(),
+        first_name: "API".into(),
+        last_name: "Customer".into(),
+        phone: "".into(),
+        email_verified: true,
+    };
+    let refreshed = body(
+        account::me(
+            State(state.clone()),
+            session_jar.clone(),
+            api_identity.clone(),
+        )
+        .await,
+    )
+    .await;
+    assert_eq!(
+        refreshed["google_authenticated_until"],
+        authenticated["google_authenticated_until"]
+    );
+    // Another session for the same account must not inherit the Google proof.
+    let other_token = new_session_token();
+    let mut tx = pool.begin().await.unwrap();
+    account::insert_session(
+        &mut tx,
+        Uuid::now_v7(),
+        api_identity.id,
+        &hash_token(&other_token),
+    )
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+    let other_jar = CookieJar::new().add(Cookie::new(
+        account::CUSTOMER_SESSION_COOKIE,
+        other_token.clone(),
+    ));
+    assert!(
+        body(
+            account::me(
+                State(state.clone()),
+                other_jar.clone(),
+                api_identity.clone()
+            )
+            .await
+        )
+        .await["google_authenticated_until"]
+            .is_null()
+    );
+    sqlx::query("UPDATE customer_sessions SET reauthenticated_at=now()-interval '6 minutes',reauthenticated_method='google' WHERE token_hash=$1").bind(hash_token(&other_token).as_slice()).execute(&pool).await.unwrap();
+    assert!(body(account::me(State(state.clone()),other_jar,api_identity.clone()).await).await["google_authenticated_until"].is_null());
+    assert_eq!(
+        password(
+            State(state.clone()),
+            session_jar,
+            api_identity,
+            Json(PasswordRequest {
+                password: "fresh-google-password".into()
+            })
+        )
+        .await
+        .status(),
+        StatusCode::OK
+    );
+    // Deferred completion must not turn a six-minute-old Google proof into fresh authentication.
+    let (old_challenge, old_jar) =
+        prepared(&pool, "delayed@gmail.com", "delayed-subject", true, None).await;
+    sqlx::query(
+        "UPDATE customer_google_challenges SET created_at=now()-interval '6 minutes' WHERE id=$1",
+    )
+    .bind(old_challenge)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let delayed = body(complete(state.clone(), old_jar, confirmation(old_challenge)).await).await;
+    assert_eq!(delayed["status"], "authenticated");
+    assert!(delayed["google_authenticated_until"].is_null());
+
     assert_ne!(
         authenticate(
             State(state.clone()),

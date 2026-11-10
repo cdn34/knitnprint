@@ -224,6 +224,7 @@ pub struct GoogleConfirmRequest {
 pub struct GoogleResult {
     pub status: String,
     pub profile: Option<account::CustomerAccountProfile>,
+    pub google_authenticated_until: Option<i64>,
 }
 #[derive(sqlx::FromRow)]
 struct Pending {
@@ -237,6 +238,7 @@ struct Pending {
     last_name: String,
     trusted_email: bool,
     confirmed: bool,
+    challenge_created_at: i64,
 }
 async fn pending(
     tx: &mut Transaction<'_, Postgres>,
@@ -246,7 +248,7 @@ async fn pending(
     let browser = jar
         .get(BROWSER)
         .ok_or_else(|| failure("google_challenge_expired"))?;
-    sqlx::query_as::<_,Pending>("SELECT purpose,customer_id,session_hash,nonce_hash,subject,email::text,first_name,last_name,trusted_email,confirmed_at IS NOT NULL AS confirmed FROM customer_google_challenges WHERE id=$1 AND browser_hash=$2 AND expires_at>now() FOR UPDATE").bind(id).bind(hash_token(browser.value()).as_slice()).fetch_optional(&mut **tx).await.map_err(|_|unavailable())?.ok_or_else(||failure("google_challenge_expired"))
+    sqlx::query_as::<_,Pending>("SELECT purpose,customer_id,session_hash,nonce_hash,subject,email::text,first_name,last_name,trusted_email,confirmed_at IS NOT NULL AS confirmed, floor(extract(epoch FROM created_at))::bigint AS challenge_created_at FROM customer_google_challenges WHERE id=$1 AND browser_hash=$2 AND expires_at>now() FOR UPDATE").bind(id).bind(hash_token(browser.value()).as_slice()).fetch_optional(&mut **tx).await.map_err(|_|unavailable())?.ok_or_else(||failure("google_challenge_expired"))
 }
 #[utoipa::path(post,path="/api/account/google",request_body=GoogleRequest,responses((status=200,body=GoogleResult)))]
 pub async fn authenticate(
@@ -332,6 +334,7 @@ fn result(status: &str) -> Response {
         Json(GoogleResult {
             status: status.into(),
             profile: None,
+            google_authenticated_until: None,
         })
         .into_response(),
     )
@@ -395,13 +398,30 @@ async fn complete(state: AppState, jar: CookieJar, input: GoogleConfirmRequest) 
         if linked.as_ref().map(|v| v.0) != p.customer_id {
             return failure("google_not_linked");
         }
-        if sqlx::query("UPDATE customer_sessions SET reauthenticated_at=now(),reauthenticated_method='google' WHERE token_hash=$1").bind(&p.session_hash).execute(&mut *tx).await.is_err(){return unavailable()}
+        let until = match mark_google_authenticated(
+            &mut tx,
+            p.session_hash.as_deref().unwrap(),
+            p.challenge_created_at,
+        )
+        .await
+        {
+            Ok(Some(until)) => until,
+            Ok(None) => return failure("reauthentication_required"),
+            Err(_) => return unavailable(),
+        };
         if finish_challenge(&mut tx, input.challenge_id).await.is_err()
             || tx.commit().await.is_err()
         {
             return unavailable();
         }
-        return result("reauthenticated");
+        return no_store(
+            Json(GoogleResult {
+                status: "reauthenticated".into(),
+                profile: None,
+                google_authenticated_until: Some(until),
+            })
+            .into_response(),
+        );
     }
     if p.purpose == "link"
         && let Err(r) =
@@ -533,8 +553,18 @@ async fn complete(state: AppState, jar: CookieJar, input: GoogleConfirmRequest) 
         )
         .await
         .is_err()
-        || tx.commit().await.is_err()
     {
+        return unavailable();
+    }
+    // The Google credential already proves ownership. Preserve its original challenge time
+    // so deferred email/profile completion cannot extend the five-minute security window.
+    let google_authenticated_until =
+        match mark_google_authenticated(&mut tx, &hash_token(&token), p.challenge_created_at).await
+        {
+            Ok(until) => until,
+            Err(_) => return unavailable(),
+        };
+    if tx.commit().await.is_err() {
         return unavailable();
     }
     if adding {
@@ -551,6 +581,7 @@ async fn complete(state: AppState, jar: CookieJar, input: GoogleConfirmRequest) 
                 Json(GoogleResult {
                     status: "authenticated".into(),
                     profile: Some(profile),
+                    google_authenticated_until,
                 }),
             )
                 .into_response(),
@@ -558,6 +589,30 @@ async fn complete(state: AppState, jar: CookieJar, input: GoogleConfirmRequest) 
         Err(_) => unavailable(),
     }
 }
+/// Return only the active caller session's current confirmation window.
+pub(crate) async fn recent_google_authentication(
+    pool: &PgPool,
+    jar: &CookieJar,
+    customer_id: Uuid,
+) -> Result<Option<i64>, sqlx::Error> {
+    let Some(cookie) = jar.get(account::CUSTOMER_SESSION_COOKIE) else {
+        return Ok(None);
+    };
+    sqlx::query_scalar(
+        "SELECT floor(extract(epoch FROM least(reauthenticated_at+interval '5 minutes',expires_at)))::bigint FROM customer_sessions WHERE customer_id=$1 AND token_hash=$2 AND revoked_at IS NULL AND expires_at>now() AND reauthenticated_method='google' AND reauthenticated_at>now()-interval '5 minutes'"
+    ).bind(customer_id).bind(hash_token(cookie.value()).as_slice()).fetch_optional(pool).await
+}
+
+async fn mark_google_authenticated(
+    tx: &mut Transaction<'_, Postgres>,
+    session_hash: &[u8],
+    authenticated_at: i64,
+) -> Result<Option<i64>, sqlx::Error> {
+    sqlx::query_scalar(
+        "UPDATE customer_sessions SET reauthenticated_at=to_timestamp($2::bigint::double precision), reauthenticated_method='google' WHERE token_hash=$1 AND revoked_at IS NULL AND expires_at>now() AND to_timestamp($2::bigint::double precision)>now()-interval '5 minutes' RETURNING floor(extract(epoch FROM reauthenticated_at+interval '5 minutes'))::bigint"
+    ).bind(session_hash).bind(authenticated_at).fetch_optional(&mut **tx).await
+}
+
 async fn finish_challenge(tx: &mut Transaction<'_, Postgres>, id: Uuid) -> Result<(), sqlx::Error> {
     sqlx::query("DELETE FROM customer_google_challenges WHERE id=$1")
         .bind(id)

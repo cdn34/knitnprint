@@ -326,6 +326,7 @@ export interface CustomerAccountProfile {
   "email": string
   "email_verified": boolean
   "first_name": string
+  "google_authenticated_until"?: number | null
   "id": string
   "last_name": string
   "phone": string
@@ -580,6 +581,7 @@ export interface GoogleRequest {
 }
 
 export interface GoogleResult {
+  "google_authenticated_until"?: number | null
   "profile"?: null | CustomerAccountProfile
   "status": string
 }

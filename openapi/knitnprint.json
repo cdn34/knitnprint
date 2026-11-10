@@ -8285,6 +8285,13 @@
           "first_name": {
             "type": "string"
           },
+          "google_authenticated_until": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
           "id": {
             "type": "string",
             "format": "uuid"
@@ -9250,6 +9257,13 @@
           "status"
         ],
         "properties": {
+          "google_authenticated_until": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
           "profile": {
             "oneOf": [
               {

@@ -105,6 +105,7 @@ pub struct CustomerAccountProfile {
     pub email_verified: bool,
     pub addresses: Vec<CustomerAddress>,
     pub auth_methods: crate::customer_google::AuthMethods,
+    pub google_authenticated_until: Option<i64>,
 }
 
 #[derive(Clone, FromRow)]
@@ -273,6 +274,7 @@ pub async fn register(
                 phone: input.phone.trim().into(),
                 email_verified: false,
                 addresses: Vec::new(),
+                google_authenticated_until: None,
                 auth_methods: crate::customer_google::AuthMethods {
                     password: true,
                     google_email: None,
@@ -412,6 +414,7 @@ pub async fn login(
                 phone: credentials.phone,
                 email_verified: credentials.email_verified,
                 addresses,
+                google_authenticated_until: None,
                 auth_methods: match crate::customer_google::methods(&pool, credentials.id).await {
                     Ok(methods) => methods,
                     Err(_) => return unavailable(),
@@ -476,14 +479,30 @@ pub async fn logout(State(state): State<AppState>, jar: CookieJar) -> Response {
         (status = 503, body = ErrorBody)
     )
 )]
-pub async fn me(State(state): State<AppState>, customer: AuthenticatedCustomer) -> Response {
+pub async fn me(
+    State(state): State<AppState>,
+    jar: CookieJar,
+    customer: AuthenticatedCustomer,
+) -> Response {
     let Some(pool) = state.database else {
         return unavailable();
     };
-    match profile_for(&pool, customer).await {
-        Ok(profile) => no_store(Json(profile).into_response()),
-        Err(_) => unavailable(),
-    }
+    let customer_id = customer.id;
+    let mut profile = match profile_for(&pool, customer).await {
+        Ok(profile) => profile,
+        Err(_) => return unavailable(),
+    };
+    profile.google_authenticated_until = match crate::customer_google::recent_google_authentication(
+        &pool,
+        &jar,
+        customer_id,
+    )
+    .await
+    {
+        Ok(until) => until,
+        Err(_) => return unavailable(),
+    };
+    no_store(Json(profile).into_response())
 }
 
 #[utoipa::path(
@@ -1388,6 +1407,7 @@ pub(crate) async fn profile_for(
 ) -> Result<CustomerAccountProfile, sqlx::Error> {
     Ok(CustomerAccountProfile {
         addresses: addresses_for(pool, customer.id).await?,
+        google_authenticated_until: None,
         auth_methods: crate::customer_google::methods(pool, customer.id).await?,
         id: customer.id,
         email: customer.email,
