@@ -39,7 +39,7 @@ async function fixture(page: Page) {
     const path = new URL(route.request().url()).pathname
     const unavailable = () => route.fulfill({ status: 503, json: { error: { code: 'cart_unavailable', message: 'Unavailable.' } } })
     const unauthorized = () => route.fulfill({ status: 401, json: { error: { code: 'authentication_required', message: 'Sign in required.' } } })
-    if (path === '/api/account/me') return state.signedIn ? route.fulfill({ json: { id: 'drawer-customer', email: 'drawer@example.test', first_name: 'Ana', last_name: 'Silva', phone: '', email_verified: true, addresses: [] } }) : unauthorized()
+    if (path === '/api/account/me') return state.signedIn ? route.fulfill({ json: { id: 'drawer-customer', email: 'drawer@example.test', first_name: 'Ana', last_name: 'Silva', phone: '', email_verified: true, auth_methods: { password: true, google_email: null }, addresses: [] } }) : unauthorized()
     if (path === '/api/cart') return !state.signedIn ? unauthorized() : state.failLoad ? unavailable() : route.fulfill({ json: state.cart })
     if (path === '/api/payments/options') return route.fulfill({ json: { stripe: false, manual: true, checkout_suspended: false } })
     if (path === '/api/personalization/uploads') {
