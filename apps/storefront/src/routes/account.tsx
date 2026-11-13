@@ -131,6 +131,15 @@ function AccountPage() {
     };
   }, []);
 
+  async function completeSignIn(account: CustomerAccountProfile) {
+    setProfile(account);
+    setFavoriteLoginRequested(false);
+    setError("");
+    await favorites.refresh();
+    const result = await favorites.completePending();
+    setNotice(t(result ? result === "saved" ? "favorites.loginSaved" : "favorites.saveError" : "account.welcomeBack"));
+  }
+
   async function authenticate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
@@ -163,14 +172,8 @@ function AccountPage() {
         setMode("verify");
       } else {
         setGoogleAuthenticatedUntil(null);
-        setProfile(account);
-        setFavoriteLoginRequested(false);
-        await favorites.refresh();
-        const result = await favorites.completePending();
-        if (result) {
-          setNotice(t(result === "saved" ? "favorites.loginSaved" : "favorites.saveError"));
-          return;
-        }
+        await completeSignIn(account);
+        return;
       }
       setNotice(
         mode === "register"
@@ -408,7 +411,7 @@ function AccountPage() {
           ) : (
             <>
             <GuestAccount
-              onGoogleProfile={setProfile}
+              onGoogleProfile={completeSignIn}
               onGoogleReauthenticated={setGoogleAuthenticatedUntil}
               mode={mode}
               pending={pending}

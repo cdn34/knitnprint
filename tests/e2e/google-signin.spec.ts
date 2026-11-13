@@ -358,3 +358,48 @@ test("connecting Google updates the confirmation state of method controls", asyn
     }),
   ).toBeEnabled();
 });
+
+test("Google sign-in refreshes favorites and completes a pending save", async ({ page }) => {
+  await googleScript(page);
+  const productId = "00000000-0000-0000-0000-000000000002";
+  let signedIn = false;
+  let saved = false;
+  let favoritesRefreshed = false;
+  await page.addInitScript((id) => {
+    sessionStorage.setItem("knitnprint-pending-favorite", id);
+  }, productId);
+  await page.route("**/api/account/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith("/google/config"))
+      return route.fulfill({ json: { client_id: "test.apps.googleusercontent.com" } });
+    if (path.endsWith("/google/challenge"))
+      return route.fulfill({ json: { id: "challenge", nonce: "nonce" } });
+    if (path.endsWith("/google")) {
+      signedIn = true;
+      return route.fulfill({ json: { status: "authenticated", profile } });
+    }
+    if (path.endsWith(`/favorites/${productId}`)) {
+      expect(route.request().method()).toBe("PUT");
+      expect(signedIn).toBe(true);
+      saved = true;
+      return route.fulfill({ status: 204 });
+    }
+    if (path.endsWith("/favorites") && signedIn) {
+      favoritesRefreshed = true;
+      return route.fulfill({ json: [] });
+    }
+    if (path.endsWith("/orders"))
+      return route.fulfill({ json: { orders: [], total: 0, page: 1 } });
+    return route.fulfill({
+      status: 401,
+      json: { error: { code: "customer_authentication_required", message: "Sign in" } },
+    });
+  });
+  await page.goto("/account#favorites");
+  await page.getByRole("button", { name: "Continue with Google" }).click();
+  await expect(page.getByRole("heading", { name: "Sign-in methods" })).toBeVisible();
+  await expect.poll(() => saved).toBe(true);
+  expect(favoritesRefreshed).toBe(true);
+  await expect.poll(() => page.evaluate(() => sessionStorage.getItem("knitnprint-pending-favorite"))).toBeNull();
+  await expect(page.locator(".account-favorites .favorites-empty .button")).toHaveAttribute("href", "/products");
+});
