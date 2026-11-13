@@ -1,3 +1,6 @@
+import { productSlugBase, productSlugUrl } from './product-slug'
+import { VariantTemplatesManagement } from './variant-templates'
+import { VariantMatrix } from './variant-matrix'
 import {
   StrictMode,
   type FormEvent,
@@ -69,6 +72,7 @@ import {
   type StaffRecord,
 } from '@knitnprint/api-client'
 import { printAreaOffsets } from './personalization-measurements'
+import { OrderLineImages, savedOrderImages } from './order-line-images'
 import { uploadImagesWithProgress, productPhotosInOrder, savedProductPhotoOrder } from './product-image-uploads'
 import { B2bManagement } from './b2b'
 import { DeliveryRatesManagement } from './delivery-rates'
@@ -228,6 +232,7 @@ function AdminShell({ profile }: Readonly<{ profile: StaffProfile }>) {
     ...(profile.capabilities.includes('catalog.read')
       ? [
           { id: 'products', label: 'Products', icon: Package },
+          { id: 'variant-templates', label: 'Variant templates', icon: SlidersHorizontal },
           { id: 'feedback', label: 'Feedback validation', icon: MessageSquareText },
         ]
       : []),
@@ -328,6 +333,8 @@ function AdminShell({ profile }: Readonly<{ profile: StaffProfile }>) {
                   ? 'Order operations.'
                 : page === 'b2b'
                   ? 'Business enquiries.'
+                : page === 'variant-templates'
+                  ? 'Variant templates.'
                 : page === 'products'
                   ? 'Product catalog.'
                   : page === 'feedback'
@@ -368,6 +375,7 @@ function AdminShell({ profile }: Readonly<{ profile: StaffProfile }>) {
             initialOrderId={target.entityId}
           />
         )}
+        {page === 'variant-templates' && profile.capabilities.includes('catalog.read') && <VariantTemplatesManagement canWrite={profile.capabilities.includes('catalog.write')} />}
         {page === 'products' &&
           profile.capabilities.includes('catalog.read') && (
           <CatalogManagement
@@ -718,12 +726,14 @@ function OrderDetail({
         {order.lines.map((line) => {
           const mediaIds = line.customization_media_asset_ids?.length ? line.customization_media_asset_ids : line.customization_media_asset_id ? [line.customization_media_asset_id] : []
           const productionSpecs = customizationProductionSpecs(line.customization)
+          const images = savedOrderImages(line)
           return <article className="order-item-card" key={line.id}>
             <header className="order-item-card-heading">
               <span><strong>{line.product_title}</strong><small>{line.variant_title} · {line.sku} · Qty {line.quantity} · Shipped {line.fulfilled_quantity}</small>{Boolean(line.customization) && <small className="order-customization-summary">Personalização: {customizationLabel(line.customization)}</small>}</span>
               <b>{formatMoney(line.line_total_minor, line.currency)}</b>
             </header>
-            {Boolean(line.customization) && <OrderPersonalizationProof line={line} />}
+            {(images.length > 0 || !line.customization) && <OrderLineImages images={images} product={line.product_title} orderNumber={order.order_number} />}
+            {Boolean(line.customization) && images.length === 0 && <OrderPersonalizationProof line={line} />}
             {productionSpecs.length > 0 && <div className="order-customization-specs">{productionSpecs.map((spec) => <span className="order-customization-spec" key={spec.key}><strong>{spec.title}</strong>{spec.photo && <small>{spec.photo}</small>}{spec.text && <small>{spec.text}</small>}</span>)}</div>}
             {mediaIds.length > 0 && <div className="order-originals"><span>Ficheiros originais</span><div>{mediaIds.map((mediaId, index) => <a key={mediaId} href={`/api/admin/personalization/media/${mediaId}/original`}><img src={`/api/admin/personalization/media/${mediaId}/thumbnail`} alt="" />Descarregar original {index + 1}</a>)}</div></div>}
           </article>
@@ -1988,7 +1998,7 @@ const PERSONALIZATION_COLOR_OPTIONS = [
 ] as const
 
 type PrintArea = { x: number; y: number; width: number; height: number }
-type NamedPrintArea = PrintArea & { id: string; label: string; physicalWidthCm: number; physicalHeightCm: number }
+type NamedPrintArea = PrintArea & { id: string; label: string; mode?: Exclude<PersonalizationMode, 'none'>; physicalWidthCm: number; physicalHeightCm: number }
 type ArticleReference = PrintArea & { physicalWidthCm: number; physicalHeightCm: number; configured: boolean }
 type VariantReference = { physicalWidthCm: number; physicalHeightCm: number; configured: boolean }
 type PersonalizationMode = 'none' | 'photo' | 'text' | 'photo_text'
@@ -2013,7 +2023,8 @@ function namedPrintAreas(value: unknown, fallback: NamedPrintArea): NamedPrintAr
     const label = typeof candidate.label === 'string' && candidate.label.trim() ? candidate.label.trim() : `Área ${index + 1}`
     const physicalWidthCm = typeof candidate.physical_width_cm === 'number' && Number.isFinite(candidate.physical_width_cm) ? candidate.physical_width_cm : fallback.physicalWidthCm
     const physicalHeightCm = typeof candidate.physical_height_cm === 'number' && Number.isFinite(candidate.physical_height_cm) ? candidate.physical_height_cm : fallback.physicalHeightCm
-    return [{ id, label, physicalWidthCm, physicalHeightCm, ...area }]
+    const mode = ['photo', 'text', 'photo_text'].includes(String(candidate.mode)) ? candidate.mode as Exclude<PersonalizationMode, 'none'> : undefined
+    return [{ id, label, mode, physicalWidthCm, physicalHeightCm, ...area }]
   })
   return areas.slice(0, 8)
 }
@@ -2038,7 +2049,8 @@ function effectivePrintAreaDimensions(view: PersonalizationView, area: NamedPrin
 
 function serializedPrintArea(view: PersonalizationView, area: NamedPrintArea) {
   const physical = effectivePrintAreaDimensions(view, area)
-  return { id: area.id, label: area.label.trim(), x: Math.round(area.x * 100), y: Math.round(area.y * 100), width: Math.round(area.width * 100), height: Math.round(area.height * 100), physical_width_cm: physical.width, physical_height_cm: physical.height }
+  const mode = area.mode ?? (view.mode === 'none' ? undefined : view.mode)
+  return { id: area.id, label: area.label.trim(), ...(mode ? { mode } : {}), x: Math.round(area.x * 100), y: Math.round(area.y * 100), width: Math.round(area.width * 100), height: Math.round(area.height * 100), physical_width_cm: physical.width, physical_height_cm: physical.height }
 }
 
 function serializedArticleReference(reference: ArticleReference | undefined) {
@@ -2430,8 +2442,8 @@ function CatalogManagement({
   const completedProductImages = useRef(new Map<string, string>())
   const primaryPersonalizationView = personalizationViews[0] ?? DEFAULT_PERSONALIZATION_VIEW
   const primaryPrintArea = primaryPersonalizationView.printAreas[0] ?? DEFAULT_PRINT_AREA
-  const photoEnabled = personalizationViews.some((view) => view.printAreas.length > 0 && (view.mode === 'photo' || view.mode === 'photo_text'))
-  const textEnabled = personalizationViews.some((view) => view.printAreas.length > 0 && (view.mode === 'text' || view.mode === 'photo_text'))
+  const photoEnabled = personalizationViews.some((view) => view.mode !== 'none' && view.printAreas.some((area) => ['photo', 'photo_text'].includes(area.mode ?? view.mode)))
+  const textEnabled = personalizationViews.some((view) => view.mode !== 'none' && view.printAreas.some((area) => ['text', 'photo_text'].includes(area.mode ?? view.mode)))
   const personalizationMode: PersonalizationMode = photoEnabled && textEnabled ? 'photo_text' : photoEnabled ? 'photo' : textEnabled ? 'text' : 'none'
   const personalization = {
     mode: personalizationMode,
@@ -2471,10 +2483,10 @@ function CatalogManagement({
     if (!preview) {
       return Boolean(productTitle || productSlug || productDescription || productKeywords || productSku || productPrice || productQuantity !== '0' || pendingProductImages.length)
     }
-    const base = preview.variants[0]
+    const base = preview.variants.find(v => !v.retired) ?? preview.variants[0]
     return variantCalibrationDirty
       || productTitle !== preview.title
-      || productSlug !== preview.slug
+      || productSlug !== productSlugBase(preview.slug, preview.sku)
       || productDescription !== preview.description
       || productKeywords !== preview.search_keywords
       || productSku !== (base?.sku ?? '')
@@ -2663,33 +2675,6 @@ function CatalogManagement({
     }) => api.changeProductStatus(id, { status }),
     onSuccess: (product) => {
       client.invalidateQueries({ queryKey: productsKey })
-      setPreview(product)
-    },
-  })
-  const addVariant = useMutation({
-    mutationFn: ({
-      productId,
-      price,
-      sku,
-      title,
-      currency,
-    }: {
-      productId: string
-      price: number
-      sku: string
-      title: string
-      currency: string
-    }) =>
-      api.addProductVariant(productId, {
-        title,
-        sku,
-        price_minor: Math.round(price * 100),
-        currency,
-        option_values: {},
-      }),
-    onSuccess: (product) => {
-      client.invalidateQueries({ queryKey: productsKey })
-      client.invalidateQueries({ queryKey: inventoryKey })
       setPreview(product)
     },
   })
@@ -2982,11 +2967,11 @@ function CatalogManagement({
 
   function loadProduct(product: Product, preferredViewId?: string, preferredPrintAreaId?: string, preserveViews = false) {
     setVariantCalibrationDirty(false)
-    const base = product.variants[0]
+    const base = product.variants.find(v => !v.retired) ?? product.variants[0]
     setPreview(product)
     if (!preserveViews) setProductPhotoOrder(product.media.map(({ id }) => id))
     setProductTitle(product.title)
-    setProductSlug(product.slug)
+    setProductSlug(productSlugBase(product.slug, product.sku))
     setProductSlugEdited(true)
     setProductDescription(product.description)
     setProductKeywords(product.search_keywords)
@@ -3042,23 +3027,6 @@ function CatalogManagement({
     setTextMaxSize(72)
     setAllowedFonts('Roboto, Montserrat, Playfair Display, Dancing Script, Pacifico')
     setAllowedColors('#111111, #ffffff, #9c5263, #1f4f78, #b3232f')
-  }
-
-  function submitVariant(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    if (!preview) return
-    const formElement = event.currentTarget
-    const form = new FormData(formElement)
-    addVariant.mutate(
-      {
-        productId: preview.id,
-        title: String(form.get('new-variant-title') ?? ''),
-        sku: String(form.get('new-variant-sku') ?? ''),
-        price: Number(form.get('new-variant-price')),
-        currency: 'EUR',
-      },
-      { onSuccess: () => formElement.reset() },
-    )
   }
 
   function submitCategory(event: FormEvent<HTMLFormElement>) {
@@ -3239,7 +3207,7 @@ function CatalogManagement({
               onChange={(event) => {
                 const title = event.target.value
                 setProductTitle(title)
-                if (!productSlugEdited) setProductSlug(slugify(title))
+                if (!productSlugEdited) setProductSlug(slugify(title).slice(0, 200 - (preview?.sku.length ?? 9) - 1).replace(/-+$/, ''))
               }}
               required
             />
@@ -3249,6 +3217,7 @@ function CatalogManagement({
               name="product-slug"
               pattern="[a-z0-9]+(?:-[a-z0-9]+)*"
               placeholder="woven-planter"
+              maxLength={200 - (preview?.sku.length ?? 9) - 1}
               value={productSlug}
               onChange={(event) => {
                 setProductSlug(event.target.value)
@@ -3258,9 +3227,9 @@ function CatalogManagement({
               required
             />
             <small className="field-help" id="product-slug-help">
-              Generated from the title. You can edit it before saving.
+              Generated from the title. You can edit the name; the permanent product SKU is added automatically.
             </small>
-            {productSlug && <small className="url-preview">/products/{productSlug}</small>}
+            {productSlug && <small className="url-preview">/products/{productSlugUrl(productSlug, preview?.sku)}</small>}
             <label htmlFor="product-description">Description</label>
             <textarea
               id="product-description"
@@ -3333,7 +3302,7 @@ function CatalogManagement({
             <small className="field-help">Only administrators can see these keywords. They also support storefront search.</small>
             <small className="field-count">{productKeywords.length.toLocaleString()} / 2,000</small>
             <label htmlFor="product-sku">SKU</label>
-            <input id="product-sku" name="product-sku" maxLength={120} value={productSku} onChange={(event) => setProductSku(event.target.value)} required />
+            <input id="product-sku" name="product-sku" value={preview?.sku ?? 'Generated on save'} readOnly />
             <div className="price-fields">
               <div>
                 <label htmlFor="product-price">Price</label>
@@ -3344,13 +3313,14 @@ function CatalogManagement({
                   min="0"
                   step="0.01"
                   value={productPrice}
+                  disabled={Boolean(preview && preview.variants.filter(v => !v.retired).length > 1)}
                   onChange={(event) => setProductPrice(event.target.value)}
                   required
                 />
               </div>
               <div>
                 <label htmlFor="product-quantity">Stock real</label>
-                <input id="product-quantity" name="product-quantity" type="number" step="1" value={productQuantity} onChange={(event) => setProductQuantity(event.target.value)} aria-describedby="product-quantity-help" required />
+                <input id="product-quantity" name="product-quantity" type="number" step="1" disabled={Boolean(preview && preview.variants.filter(v => !v.retired).length > 1)} value={productQuantity} onChange={(event) => setProductQuantity(event.target.value)} aria-describedby="product-quantity-help" required />
                 <small className="field-help" id="product-quantity-help">A negative value represents sold units that need to be restocked.</small>
               </div>
             </div>
@@ -3420,7 +3390,9 @@ function CatalogManagement({
                 <div className="personalization-photo-tabs" role="tablist" aria-label="Fotografias do produto">
                   {personalizationMediaChoices.map((media, index) => {
                     const view = personalizationViews.find((candidate) => candidate.mediaId === media.id)
-                    const mode = view?.mode ?? 'none'
+                    const photo = view && view.mode !== 'none' && view.printAreas.some((area) => ['photo', 'photo_text'].includes(area.mode ?? view.mode))
+                    const text = view && view.mode !== 'none' && view.printAreas.some((area) => ['text', 'photo_text'].includes(area.mode ?? view.mode))
+                    const mode = photo && text ? 'photo_text' : photo ? 'photo' : text ? 'text' : 'none'
                     const modeLabel = { none: 'Sem personalização', photo: 'Só fotografia', text: 'Só texto', photo_text: 'Fotografia e texto' }[mode]
                     return <button key={media.id} type="button" role="tab" aria-selected={media.id === personalizationPreviewMedia?.id} className={media.id === personalizationPreviewMedia?.id ? 'active' : ''} onClick={() => selectPersonalizationPhoto(media, index)}>
                       <img src={media.thumbnailUrl} alt={media.altText} />
@@ -3435,7 +3407,7 @@ function CatalogManagement({
                       <option value="none">Sem personalização</option><option value="photo">Só fotografia</option><option value="text">Só texto</option><option value="photo_text">Fotografia e texto</option>
                     </select></div>
                   </div>
-                  {activePersonalizationMode === 'none' && <p className="personalization-photo-note">Esta fotografia é apresentada na loja sem opções de personalização.</p>}
+                  {activePersonalizationMode === 'none' ? <p className="personalization-photo-note">Esta fotografia é apresentada na loja sem opções de personalização.</p> : <p className="field-help">Este é o tipo inicial de personalização. Podes escolher um tipo diferente em cada área abaixo.</p>}
                 </>}
               </> : <p className="field-help">Adiciona fotografias ao produto para configurares a personalização de cada uma.</p>}
               {personalizationPreviewMedia && activePersonalizationMode !== 'none' && (
@@ -3467,7 +3439,7 @@ function CatalogManagement({
                       {!activePersonalizationView.articleReference.configured && <p className="article-reference-warning"><TriangleAlert aria-hidden="true" />Confirma a referência antes de definir as medidas de cada tamanho. Estas medidas são apenas para produção.</p>}
                       {activePersonalizationView.articleReference.configured && <div className="variant-calibration" aria-label="Medidas por tamanho">
                         <div className="variant-calibration-intro"><strong>Medidas por tamanho · {activePersonalizationView.label || 'este lado'}</strong><small>Usa a mesma fotografia deste lado em todos os tamanhos. Mede a largura e a altura entre os limites marcados para cada tamanho; numa camisola, mede da gola deste lado à bainha. Os valores da frente e das costas podem ser diferentes. A impressão mantém o tamanho máximo quando couber e fica centrada; em tamanhos menores é reduzida. Confirma todas as linhas após medir.</small></div>
-                        {preview?.variants.map((variant) => {
+                        {preview?.variants.filter(v => !v.retired).map((variant) => {
                           const reference = activePersonalizationView.variantReferences?.[variant.id] ?? { physicalWidthCm: activePersonalizationView.articleReference!.physicalWidthCm, physicalHeightCm: activePersonalizationView.articleReference!.physicalHeightCm, configured: false }
                           const offsets = printAreaOffsets(activePersonalizationView.articleReference!, activePrintArea, reference)
                           return <div className="variant-calibration-row" key={variant.id}>
@@ -3493,6 +3465,13 @@ function CatalogManagement({
                       <label htmlFor="print-area-name">Nome da área<input id="print-area-name" required maxLength={80} value={activePrintArea.label} onChange={(event) => updatePrintArea(activePrintArea.id, { label: event.target.value })} placeholder="Ex.: Bolso frontal" /></label>
                       <button type="button" className="print-area-remove" onClick={removeActivePrintArea}>Remover área</button>
                     </div>
+                    <div className="print-area-content-settings">
+                      <label htmlFor="print-area-mode">Personalização permitida nesta área</label>
+                      <select id="print-area-mode" aria-describedby="print-area-mode-help" value={activePrintArea.mode ?? activePersonalizationMode} onChange={(event) => updatePrintArea(activePrintArea.id, { mode: event.target.value as Exclude<PersonalizationMode, 'none'> })}>
+                        <option value="text">Só texto</option><option value="photo">Só imagem</option><option value="photo_text">Texto e imagem</option>
+                      </select>
+                      <small id="print-area-mode-help">A escolha aplica-se apenas a {activePrintArea.label || 'esta área'}. O cliente só poderá adicionar o conteúdo permitido.</small>
+                    </div>
                     <div className="print-area-coordinate-grid" aria-label="Ajuste fino da área selecionada">
                       <label>Horizontal (%)<input type="number" min="0" max={100 - activePrintArea.width} step="1" value={Math.round(activePrintArea.x)} onChange={(event) => updatePrintArea(activePrintArea.id, { x: Math.max(0, Math.min(100 - activePrintArea.width, Number(event.target.value))) })} /></label>
                       <label>Vertical (%)<input type="number" min="0" max={100 - activePrintArea.height} step="1" value={Math.round(activePrintArea.y)} onChange={(event) => updatePrintArea(activePrintArea.id, { y: Math.max(0, Math.min(100 - activePrintArea.height, Number(event.target.value))) })} /></label>
@@ -3517,7 +3496,7 @@ function CatalogManagement({
                   </div>
                 </>
               )}
-              {personalizationPreviewMedia && (activePersonalizationMode === 'text' || activePersonalizationMode === 'photo_text') && (
+              {personalizationPreviewMedia && activePersonalizationMode !== 'none' && printAreas.some((area) => ['text', 'photo_text'].includes(area.mode ?? activePersonalizationMode)) && (
                 <div className="text-personalization-settings">
                   <label>Limite de caracteres<input type="number" min="1" max="500" value={textMaxCharacters} onChange={(event) => setTextMaxCharacters(Number(event.target.value))} /></label>
                   <div className="print-area-fields">
@@ -3579,43 +3558,9 @@ function CatalogManagement({
           </div>
         </article>
       )}
+      {preview && canWrite && <VariantMatrix key={`${preview.id}-${preview.variant_revision}`} product={preview} disabled={editorDirty} onSaved={async () => { const product = await api.adminProduct(preview.id); loadProduct(product); await Promise.all([client.invalidateQueries({ queryKey: productsKey }), client.invalidateQueries({ queryKey: inventoryKey })]) }} />}
       {preview && canWrite && (
         <div className="catalog-editor" aria-label={`Edit ${preview.title}`}>
-          <section>
-            <div className="panel-title">
-              <Plus size={17} />
-              <div>
-                <strong>Variants</strong>
-                <span>{preview.variants.length} configured for this product.</span>
-              </div>
-            </div>
-            <ul className="variant-list">
-              {preview.variants.map((variant) => (
-                <li key={variant.id}>
-                  <span><strong>{variant.title}</strong><small>{variant.sku}</small></span>
-                  <b>{formatMoney(variant.price_minor, variant.currency)}</b>
-                </li>
-              ))}
-            </ul>
-            <form className="compact-form" onSubmit={submitVariant}>
-              <label htmlFor="new-variant-title">Variant title</label>
-              <input id="new-variant-title" name="new-variant-title" required />
-              <label htmlFor="new-variant-sku">SKU</label>
-              <input id="new-variant-sku" name="new-variant-sku" required />
-              <div className="price-fields">
-                <div>
-                  <label htmlFor="new-variant-price">Price</label>
-                  <input id="new-variant-price" name="new-variant-price" type="number" min="0" step="0.01" required />
-                </div>
-                <div>
-                  <label htmlFor="new-variant-currency">Currency</label>
-                  <input id="new-variant-currency" name="new-variant-currency" value="EUR" readOnly />
-                </div>
-              </div>
-              {addVariant.isError && <p className="panel-error" role="alert">{addVariant.error.message}</p>}
-              <button className="primary-button" disabled={addVariant.isPending}>Add variant</button>
-            </form>
-          </section>
           <section>
             <div className="panel-title">
               <Package size={17} />

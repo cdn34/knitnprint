@@ -26,6 +26,22 @@ enum EmailDeliveryMode {
 }
 
 impl AccountEmailKind {
+    pub(crate) fn from_notification_kind(kind: &str) -> Option<Self> {
+        match kind {
+            "email_verification" => Some(Self::Verification),
+            "password_reset" => Some(Self::PasswordReset),
+            "email_change" => Some(Self::EmailChange),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn expiry_interval(self) -> &'static str {
+        match self {
+            Self::PasswordReset => "1 hour",
+            Self::Verification | Self::EmailChange => "24 hours",
+        }
+    }
+
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Verification => "email_verification",
@@ -249,8 +265,9 @@ impl EmailService {
         storage: Option<&crate::object_storage::ObjectStorage>,
     ) -> Result<(), String> {
         self.ensure_recipient_allowed(&order.customer.email)?;
-        let rendered = crate::order_email::render(order, locale, &self.storefront_base_url);
         let images = crate::order_email::load_images(pool, storage, order).await?;
+        let rendered =
+            crate::order_email::render(order, locale, &self.storefront_base_url, &images);
         match &self.delivery {
             Delivery::Development(mailbox) => {
                 mailbox.write().await.push(DevelopmentEmail {

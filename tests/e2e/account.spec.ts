@@ -70,7 +70,7 @@ test("customer account persists addresses and supports returning sign in", async
   const updatedEmail = `updated-${email}`;
   await page.getByLabel("New email address").fill(updatedEmail);
   await page.getByRole("button", { name: "Send confirmation link" }).click();
-  await expect(page.getByRole("status")).toHaveText(
+  await expect(page.locator(".account-workspace > .account-message[role=status]")).toHaveText(
     `Check ${updatedEmail} for a confirmation link. Your current email remains active until you use it.`,
   );
   await expect(page.getByText(`Current email: ${email}`)).toBeVisible();

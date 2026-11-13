@@ -30,6 +30,8 @@ const PERSONALIZATION_FONTS: &[&str] = &[
 
 #[derive(Clone, Serialize, ToSchema, FromRow)]
 pub struct Variant {
+    pub selections: Option<Value>,
+    pub retired: bool,
     pub id: Uuid,
     pub title: String,
     pub sku: String,
@@ -43,6 +45,9 @@ pub struct Variant {
 
 #[derive(Serialize, ToSchema)]
 pub struct Product {
+    pub sku: String,
+    pub variant_config: crate::variant_options::VariantConfig,
+    pub variant_revision: i64,
     pub id: Uuid,
     pub title: String,
     pub slug: String,
@@ -53,6 +58,8 @@ pub struct Product {
     pub media: Vec<ProductMedia>,
     pub categories: Vec<Category>,
     pub personalization: PersonalizationConfig,
+    /// Fixed EUR surcharge per filled print area, per product unit.
+    pub personalization_area_price_minor: i64,
 }
 
 #[derive(Clone, Serialize, Deserialize, ToSchema, FromRow)]
@@ -172,6 +179,7 @@ struct ProductRow {
 #[derive(Deserialize, ToSchema)]
 pub struct CreateProductRequest {
     pub title: String,
+    /// Editable URL name; the server appends the permanent parent SKU. Returned product slugs are canonical.
     pub slug: String,
     #[serde(default)]
     pub description: String,
@@ -185,6 +193,7 @@ pub struct CreateProductRequest {
 #[derive(Deserialize, ToSchema)]
 pub struct CreateVariantRequest {
     pub title: String,
+    #[serde(default)]
     pub sku: String,
     pub price_minor: i64,
     pub currency: String,
@@ -197,11 +206,13 @@ pub struct CreateVariantRequest {
 #[derive(Deserialize, ToSchema)]
 pub struct UpdateProductRequest {
     pub title: String,
+    /// Editable URL name; the server appends the permanent parent SKU. Returned product slugs are canonical.
     pub slug: String,
     #[serde(default)]
     pub description: String,
     #[serde(default)]
     pub search_keywords: String,
+    #[serde(default)]
     pub sku: String,
     pub price_minor: i64,
     pub currency: String,
@@ -370,7 +381,7 @@ pub async fn create(
         .bind(variant_id)
         .bind(product_id)
         .bind(variant.title.trim())
-        .bind(variant.sku.trim())
+        .bind("")
         .bind(variant.price_minor)
         .bind(variant.currency.trim())
         .bind(&variant.option_values)
@@ -462,16 +473,39 @@ pub async fn update(
         Ok(tx) => tx,
         Err(_) => return unavailable(),
     };
-    let base = sqlx::query_as::<_, (Uuid, i64)>("SELECT variant.id, inventory.available_quantity FROM product_variants variant JOIN inventory_items inventory ON inventory.variant_id=variant.id WHERE variant.product_id=$1 ORDER BY variant.position, variant.id LIMIT 1 FOR UPDATE OF inventory")
+    if sqlx::query("SELECT id FROM products WHERE id=$1 FOR UPDATE")
+        .bind(product_id)
+        .execute(&mut *tx)
+        .await
+        .is_err()
+    {
+        return unavailable();
+    }
+    let base = sqlx::query_as::<_, (Uuid, i64, String, i64)>("SELECT variant.id, inventory.available_quantity, variant.sku, (SELECT count(*) FROM product_variants WHERE product_id=$1 AND NOT retired) FROM product_variants variant JOIN inventory_items inventory ON inventory.variant_id=variant.id WHERE variant.product_id=$1 ORDER BY variant.retired, variant.position, variant.id LIMIT 1 FOR UPDATE OF inventory")
         .bind(product_id).fetch_optional(&mut *tx).await;
-    let Some((variant_id, old_quantity)) = (match base {
+    let Some((variant_id, old_quantity, existing_sku, active_count)) = (match base {
         Ok(value) => value,
         Err(_) => return unavailable(),
     }) else {
         return not_found();
     };
+    let parent_sku: String = match sqlx::query_scalar("SELECT sku FROM products WHERE id=$1")
+        .bind(product_id)
+        .fetch_one(&mut *tx)
+        .await
+    {
+        Ok(sku) => sku,
+        Err(_) => return unavailable(),
+    };
+    if !input.sku.is_empty() && input.sku != existing_sku && input.sku != parent_sku {
+        return (
+            StatusCode::CONFLICT,
+            Json(ErrorBody::new("immutable_sku", "SKU cannot be changed.")),
+        )
+            .into_response();
+    }
     if let Err(error) = sqlx::query(
-        r#"UPDATE products SET title=$2, slug=$3, description=$4, search_keywords=$5, updated_at=now()
+        r#"UPDATE products SET title=$2, slug=$3, description=$4, search_keywords=$5, updated_at=now(), variant_revision=variant_revision+1
         WHERE id=$1"#,
     )
     .bind(product_id)
@@ -484,9 +518,9 @@ pub async fn update(
     {
         return database_write_error(error);
     }
-    if let Err(error) = sqlx::query("UPDATE product_variants SET sku=$2, price_minor=$3, currency=$4, updated_at=now() WHERE id=$1")
-        .bind(variant_id).bind(input.sku.trim()).bind(input.price_minor).bind(input.currency.trim()).execute(&mut *tx).await { return database_write_error(error); }
-    if old_quantity != input.available_quantity {
+    if active_count == 1 && let Err(error) = sqlx::query("UPDATE product_variants SET price_minor=$3, currency=$4, updated_at=now() WHERE id=$1 AND ($2='' OR sku=$2)")
+        .bind(variant_id).bind(&existing_sku).bind(input.price_minor).bind(input.currency.trim()).execute(&mut *tx).await { return database_write_error(error); }
+    if active_count == 1 && old_quantity != input.available_quantity {
         let Some(delta) = input.available_quantity.checked_sub(old_quantity) else {
             return invalid_input();
         };
@@ -839,6 +873,34 @@ pub async fn delete_media(
     {
         return unavailable();
     }
+    let config: Result<serde_json::Value, _> =
+        sqlx::query_scalar("SELECT variant_config FROM products WHERE id=$1 FOR UPDATE")
+            .bind(product_id)
+            .fetch_one(&mut *tx)
+            .await;
+    let Ok(config) = config else {
+        return unavailable();
+    };
+    let Ok(mut config) = serde_json::from_value::<crate::variant_options::VariantConfig>(config)
+    else {
+        return unavailable();
+    };
+    for option in &mut config.options {
+        for value in &mut option.values {
+            value.media_ids.retain(|id| *id != media_id);
+        }
+    }
+    if sqlx::query(
+        "UPDATE products SET variant_config=$2,variant_revision=variant_revision+1 WHERE id=$1",
+    )
+    .bind(product_id)
+    .bind(serde_json::json!(config))
+    .execute(&mut *tx)
+    .await
+    .is_err()
+    {
+        return unavailable();
+    }
     // Keep the asset and its storage keys until cleanup succeeds. All image reads
     // require status='ready', so marking it hides the photo immediately.
     if sqlx::query("UPDATE media_assets SET status = 'pending_deletion' WHERE id = $1")
@@ -1102,6 +1164,18 @@ pub async fn add_variant(
         Ok(transaction) => transaction,
         Err(_) => return unavailable(),
     };
+    let eligible = sqlx::query_scalar::<_,bool>("SELECT jsonb_array_length(variant_config->'options')=0 AND (SELECT count(*) FROM product_variants WHERE product_id=$1 AND NOT retired)<100 FROM products WHERE id=$1 FOR UPDATE").bind(product_id).fetch_optional(&mut *transaction).await;
+    if !matches!(eligible, Ok(Some(true))) {
+        return invalid_input();
+    }
+    if sqlx::query("UPDATE products SET variant_revision=variant_revision+1 WHERE id=$1")
+        .bind(product_id)
+        .execute(&mut *transaction)
+        .await
+        .is_err()
+    {
+        return unavailable();
+    }
     let position: Option<i32> = match sqlx::query_scalar(
         r#"
         SELECT COALESCE(max(variant.position) + 1, 0)
@@ -1130,7 +1204,7 @@ pub async fn add_variant(
     .bind(Uuid::now_v7())
     .bind(product_id)
     .bind(input.title.trim())
-    .bind(input.sku.trim())
+    .bind("")
     .bind(input.price_minor)
     .bind(input.currency.trim())
     .bind(input.option_values)
@@ -1401,7 +1475,7 @@ pub async fn public_detail(State(state): State<AppState>, Path(slug): Path<Strin
         r#"
         SELECT id, title, slug, description, status, search_keywords
         FROM products
-        WHERE slug = $1 AND status = 'active'
+        WHERE id = (SELECT product_id FROM product_slug_history WHERE slug=$1) AND status = 'active'
         "#,
     )
     .bind(slug)
@@ -1476,6 +1550,28 @@ async fn products_response(pool: &PgPool, rows: Vec<ProductRow>) -> Response {
     Json(products).into_response()
 }
 
+pub(crate) async fn public_products_by_ids(
+    pool: &PgPool,
+    ids: &[Uuid],
+) -> Result<Vec<Product>, sqlx::Error> {
+    let rows = sqlx::query_as::<_, ProductRow>(
+        r#"SELECT id, title, slug, description, status, search_keywords
+        FROM products WHERE id = ANY($1) AND status = 'active'
+        ORDER BY array_position($1::uuid[], id)"#,
+    )
+    .bind(ids)
+    .fetch_all(pool)
+    .await?;
+    let mut products = Vec::with_capacity(rows.len());
+    for row in rows {
+        let mut product = hydrate_product(pool, row).await?;
+        product.search_keywords.clear();
+        hide_inventory(&mut product);
+        products.push(product);
+    }
+    Ok(products)
+}
+
 async fn public_products_response(pool: &PgPool, rows: Vec<ProductRow>) -> Response {
     let mut products = Vec::with_capacity(rows.len());
     for row in rows {
@@ -1503,6 +1599,7 @@ async fn public_product_response(pool: &PgPool, row: ProductRow) -> Response {
 }
 
 fn hide_inventory(product: &mut Product) {
+    product.variants.retain(|v| !v.retired);
     for variant in &mut product.variants {
         variant.available_quantity = 100;
         variant.low_stock = false;
@@ -1549,6 +1646,7 @@ async fn hydrate_product(pool: &PgPool, row: ProductRow) -> Result<Product, sqlx
         r#"
         SELECT
             variant.id,
+            variant.selections, variant.retired,
             variant.title,
             variant.sku,
             variant.price_minor,
@@ -1614,7 +1712,17 @@ async fn hydrate_product(pool: &PgPool, row: ProductRow) -> Result<Product, sqlx
     .fetch_optional(pool)
     .await?
     .unwrap_or_default();
+    let (sku, variant_config, variant_revision) = sqlx::query_as::<_, (String, Value, i64)>(
+        "SELECT sku,variant_config,variant_revision FROM products WHERE id=$1",
+    )
+    .bind(row.id)
+    .fetch_one(pool)
+    .await?;
     Ok(Product {
+        sku,
+        variant_config: serde_json::from_value(variant_config)
+            .map_err(|e| sqlx::Error::Decode(Box::new(e)))?,
+        variant_revision,
         id: row.id,
         title: row.title,
         slug: row.slug,
@@ -1625,6 +1733,7 @@ async fn hydrate_product(pool: &PgPool, row: ProductRow) -> Result<Product, sqlx
         media,
         categories,
         personalization,
+        personalization_area_price_minor: crate::personalization_pricing::AREA_PRICE_MINOR,
     })
 }
 
@@ -1646,7 +1755,7 @@ fn valid_product(input: &CreateProductRequest) -> bool {
         && input.description.len() <= 50_000
         && input.search_keywords.len() <= 2_000
         && currency_and_variants_valid
-        && unique_skus
+        && (unique_skus || input.variants.iter().all(|v| v.sku.is_empty()))
         && valid_personalization(&input.personalization)
 }
 
@@ -1736,7 +1845,7 @@ fn valid_variant_references(references: Option<&Value>, article_reference: Optio
     let Some(references) = references.as_array() else {
         return false;
     };
-    if references.len() > 100
+    if references.len() > 1000
         || (!references.is_empty()
             && !article_reference.is_some_and(|reference| {
                 reference.get("configured").and_then(Value::as_bool) == Some(true)
@@ -1871,21 +1980,25 @@ fn combined_personalization_mode(views: &Value) -> &'static str {
     let mut photo = false;
     let mut text = false;
     for view in views.as_array().into_iter().flatten() {
-        if view
-            .get("print_areas")
-            .and_then(Value::as_array)
-            .is_none_or(|areas| areas.is_empty())
-        {
+        let mode = view.get("mode").and_then(Value::as_str).unwrap_or("none");
+        if mode == "none" {
             continue;
         }
-        match view.get("mode").and_then(Value::as_str) {
-            Some("photo") => photo = true,
-            Some("text") => text = true,
-            Some("photo_text") => {
-                photo = true;
-                text = true;
+        for area in view
+            .get("print_areas")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+        {
+            match area.get("mode").and_then(Value::as_str).unwrap_or(mode) {
+                "photo" => photo = true,
+                "text" => text = true,
+                "photo_text" => {
+                    photo = true;
+                    text = true;
+                }
+                _ => {}
             }
-            _ => {}
         }
     }
     match (photo, text) {
@@ -1938,6 +2051,10 @@ fn valid_print_areas(value: &Value) -> bool {
             && y + height <= 10_000
             && physical_dimension("physical_width_cm")
             && physical_dimension("physical_height_cm")
+            && area.get("mode").is_none_or(|mode| {
+                mode.as_str()
+                    .is_some_and(|mode| matches!(mode, "photo" | "text" | "photo_text"))
+            })
     })
 }
 
@@ -2025,7 +2142,6 @@ fn valid_variant(variant: &CreateVariantRequest) -> bool {
 fn valid_variant_details(variant: &CreateVariantRequest) -> bool {
     !variant.title.trim().is_empty()
         && variant.title.trim().len() <= 200
-        && !variant.sku.trim().is_empty()
         && variant.sku.trim().len() <= 120
         && variant.price_minor >= 0
         && variant.currency.trim() == crate::CURRENCY
@@ -2137,6 +2253,38 @@ fn unavailable() -> Response {
 #[cfg(test)]
 mod personalization_calibration_tests {
     use super::valid_personalization_views;
+
+    #[test]
+    fn print_areas_validate_independent_modes_and_keep_legacy_inheritance() {
+        let original = super::default_print_areas()[0].clone();
+        let areas: Vec<_> = ["photo_text", "text", "photo"]
+            .into_iter()
+            .enumerate()
+            .map(|(index, mode)| {
+                let mut area = original.clone();
+                area["id"] = serde_json::json!(format!("area-{index}"));
+                area["mode"] = serde_json::json!(mode);
+                area
+            })
+            .collect();
+        let mut views = serde_json::json!([{"id":"backpack", "label":"Mochila", "mode":"text", "print_areas": areas}]);
+        assert!(valid_personalization_views(&views));
+        assert_eq!(super::combined_personalization_mode(&views), "photo_text");
+        views[0]["print_areas"][0]["mode"] = serde_json::json!("text");
+        views[0]["print_areas"][2]["mode"] = serde_json::json!("text");
+        assert_eq!(super::combined_personalization_mode(&views), "text");
+        views[0]["mode"] = serde_json::json!("none");
+        assert_eq!(super::combined_personalization_mode(&views), "none");
+        for invalid in [
+            serde_json::json!("none"),
+            serde_json::json!("video"),
+            serde_json::json!(null),
+        ] {
+            views[0]["print_areas"][0]["mode"] = invalid;
+            assert!(!valid_personalization_views(&views));
+        }
+        assert!(super::valid_print_areas(&super::default_print_areas()));
+    }
 
     #[test]
     fn photographs_keep_independent_modes_and_can_have_no_print_areas() {

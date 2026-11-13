@@ -2,6 +2,8 @@ import AxeBuilder from '@axe-core/playwright'
 import { expect, test } from '@playwright/test'
 import { signInVerifiedCustomer } from '../helpers/customer'
 
+const apiUrl = process.env.E2E_API_URL ?? 'http://127.0.0.1:8080'
+
 const ownerEmail = process.env.E2E_OWNER_EMAIL ?? 'owner@knitnprint.local'
 const ownerPassword =
   process.env.E2E_OWNER_PASSWORD ?? 'local-development-passphrase'
@@ -23,7 +25,7 @@ test('lets authorized staff search and inspect a guest customer', async ({
   )
 
   const fixture = await page.request.post(
-    'http://127.0.0.1:8080/api/customers/guest',
+    `${apiUrl}/api/customers/guest`,
     {
       headers: { 'idempotency-key': `customer-browser-${unique}` },
       data: {
@@ -99,7 +101,7 @@ test('lets an owner delete and recreate a registered test account', async ({ pag
     first_name: 'Reset',
     last_name: 'Tester',
   }
-  const created = await page.request.post('http://127.0.0.1:8080/api/account/register', {
+  const created = await page.request.post(`${apiUrl}/api/account/register`, {
     data: registration,
   })
   expect(created.status()).toBe(201)
@@ -118,7 +120,7 @@ test('lets an owner delete and recreate a registered test account', async ({ pag
   )
 
   const recreated = await page.request.post(
-    'http://127.0.0.1:8080/api/account/register',
+    `${apiUrl}/api/account/register`,
     { data: registration },
   )
   expect(recreated.status()).toBe(201)

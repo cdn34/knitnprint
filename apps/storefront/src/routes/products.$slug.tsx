@@ -1,4 +1,7 @@
-import { createFileRoute, notFound } from '@tanstack/react-router'
+import { activePersonalizationViews } from '../personalization-views'
+import { VariantPicker, configuration, variantPhotos, variantPersonalization } from '../components/variant-picker'
+import { createFileRoute, notFound, redirect } from '@tanstack/react-router'
+import { FavoriteButton } from '../components/favorite-button'
 import {
   ArrowLeft,
   ChevronLeft,
@@ -9,7 +12,7 @@ import {
   ShieldCheck,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { announceCartUpdate, cartApi, cartMutationKey } from '../cart-api'
+import { redirectToProductsWithCart, cartApi, cartMutationKey } from '../cart-api'
 import { ContextualFaqs } from '../components/contextual-faqs'
 import { ProductFeedback } from '../components/product-feedback'
 import { customerAccess } from '../components/verified-customer-gate'
@@ -25,9 +28,10 @@ import { useI18n } from '../i18n'
 import { useLocalizedCatalog } from '../i18n/catalog'
 
 export const Route = createFileRoute('/products/$slug')({
-  loader: async ({ params }) => {
+  loader: async ({ params, location }) => {
     const product = await publishedProduct(params.slug)
     if (!product) throw notFound()
+    if (params.slug !== product.slug) throw redirect({ href: `/products/${product.slug}${location.searchStr}`, statusCode: 301 })
     const feedback = await publishedProductFeedback(params.slug)
     return { product, feedback }
   },
@@ -54,22 +58,26 @@ function ProductPage() {
   const stock = variant ? variantStock(variant) : null
   const localizedStock = stock ? stockText(stock) : null
   const [cartState, setCartState] = useState<
-    'idle' | 'adding' | 'added' | 'error'
+    'idle' | 'adding' | 'error'
   >('idle')
   const [hydrated, setHydrated] = useState(false)
   const [selectedMediaIndex, setSelectedMediaIndex] = useState(0)
-  const selectedMedia = product.media[selectedMediaIndex] ?? product.media[0]
-  const personalizable = product.personalization.mode !== 'none'
+  const photos = variantPhotos(product, variant)
+  const selectedMedia = photos[selectedMediaIndex] ?? photos[0]
+  const selectedPersonalization = variantPersonalization(product, variant)
+  const options = configuration(product).options
+  const selectionSummary = [...options].sort((a, b) => Number(b.control === 'swatch') - Number(a.control === 'swatch')).map(option => option.values.find(value => value.code === (variant?.selections as Record<string, string> | undefined)?.[option.code])?.label).filter(Boolean).join(' · ')
+  const personalizable = selectedPersonalization.mode !== 'none' && (!Array.isArray(selectedPersonalization.views) || activePersonalizationViews(selectedPersonalization).length > 0)
 
   function showPreviousPhoto() {
     setSelectedMediaIndex((current) =>
-      current === 0 ? product.media.length - 1 : current - 1,
+      current === 0 ? photos.length - 1 : current - 1,
     )
   }
 
   function showNextPhoto() {
     setSelectedMediaIndex((current) =>
-      current === product.media.length - 1 ? 0 : current + 1,
+      current === photos.length - 1 ? 0 : current + 1,
     )
   }
 
@@ -87,8 +95,7 @@ function ProductPage() {
         { variant_id: variant.id, quantity: 1 },
         cartMutationKey(),
       )
-      announceCartUpdate(cart)
-      setCartState('added')
+      redirectToProductsWithCart(cart)
     } catch {
       setCartState('error')
     }
@@ -100,9 +107,7 @@ function ProductPage() {
       ? t('product.preparingCart')
       : cartState === 'adding'
         ? t('product.adding')
-        : cartState === 'added'
-          ? t('product.added')
-          : t('product.addToCart')
+        : t('product.addToCart')
   const addToCartButton = <button
     className={`button ${personalizable ? 'button--secondary' : 'button--primary'}`}
     type="button"
@@ -118,8 +123,10 @@ function ProductPage() {
       <StorefrontHeader />
       <main className="product-page" id="main-content" tabIndex={-1}>
         <a className="text-link page-back-link" href="/#shop"><ArrowLeft size={17} /> {t('product.backToShop')}</a>
+        <div className="product-presentation">
         <div className="product-gallery">
           <div className={`product-detail-art${selectedMedia ? ' product-detail-art--photo' : ''}`}>
+            <FavoriteButton productId={product.id} title={product.title} />
             {selectedMedia ? (
               <img
                 className="product-detail-photo"
@@ -133,17 +140,17 @@ function ProductPage() {
                 aria-label={t('product.illustration', { name: product.title })}
               />
             )}
-            {product.media.length > 1 && (
+            {photos.length > 1 && (
               <div className="product-gallery-controls">
                 <button type="button" onClick={showPreviousPhoto} aria-label="Previous product photo"><ChevronLeft aria-hidden="true" /></button>
-                <span aria-live="polite">{selectedMediaIndex + 1} / {product.media.length}</span>
+                <span aria-live="polite">{selectedMediaIndex + 1} / {photos.length}</span>
                 <button type="button" onClick={showNextPhoto} aria-label="Next product photo"><ChevronRight aria-hidden="true" /></button>
               </div>
             )}
           </div>
-          {product.media.length > 1 && (
+          {photos.length > 1 && (
             <div className="product-gallery-thumbnails" aria-label="Product photos">
-              {product.media.map((media, index) => (
+              {photos.map((media, index) => (
                 <button
                   type="button"
                   key={media.id}
@@ -159,13 +166,15 @@ function ProductPage() {
           )}
         </div>
         <section className="product-detail-copy">
-          <p className="eyebrow">{t('product.collection')}</p>
+          {!options.length && <p className="eyebrow">{t('product.collection')}</p>}
           <h1>{product.title}</h1>
           <p className="product-detail-price">
             {priceForVariant(variant)}
           </p>
-          <p className="product-detail-description">{product.description}</p>
-          {product.variants.length > 0 && (
+          {personalizable && <p className="product-personalization-hint">{t('product.personalizationAvailable')}</p>}
+          {product.description && <p className="product-detail-description">{product.description}</p>}
+          <VariantPicker product={product} variant={variant} onChange={id => { setSelectedVariantId(id); setSelectedMediaIndex(0) }} />
+          {!configuration(product).options.length && product.variants.length > 0 && (
             <fieldset className="variant-picker">
               <legend>{t('product.chooseOption')}</legend>
               <div className="variant-options">
@@ -205,24 +214,26 @@ function ProductPage() {
             >
               {stock.state === 'available' && <CircleCheck aria-hidden="true" />}
               {stock.state === 'sold-out' && <PackageX aria-hidden="true" />}
-              <span><strong>{localizedStock?.label}</strong></span>
+              <span><strong>{options.length && stock.state === 'available' ? t('product.variantAvailable') : localizedStock?.label}</strong></span>
             </div>
           )}
+          {selectionSummary && <p className="product-selection-summary">{selectionSummary}</p>}
           {personalizable && stock?.state !== 'sold-out' ? <div className="product-purchase-actions">
             <a className="button button--primary personalization-start-button" href={`/products/${product.slug}/personalize${variant ? `?variant=${encodeURIComponent(variant.id)}` : ''}`}>{t('personalization.start')}</a>
             {addToCartButton}
           </div> : addToCartButton}
           <div className="cart-action-status" aria-live="polite">
-            {cartState === 'added' && <a href="/cart">{t('product.viewCart')}</a>}
             {cartState === 'error' && (
               <span>{t('product.cartError')}</span>
             )}
           </div>
+          {options.length > 0 && variant && <details className="product-variant-reference"><summary>{t('product.variantDetails')}</summary><small>{t('product.sku')} {variant.sku}</small></details>}
           <div className="product-promises">
             <span><PackageCheck /> {t('product.smallBatches')}</span>
             <span><ShieldCheck /> {t('product.secureCheckout')}</span>
           </div>
         </section>
+        </div>
         <ProductFeedback productSlug={product.slug} productTitle={product.title} summary={feedback} />
         <ContextualFaqs
           id="product-faqs"

@@ -257,7 +257,8 @@ async fn cart_prices_stock_delivery_and_retries_are_server_controlled() {
         "delivery retries must not duplicate private data"
     );
 
-    sqlx::query("UPDATE products SET status = 'archived' WHERE slug = 'cart-vase'")
+    sqlx::query("UPDATE products SET status = 'archived' WHERE id=(SELECT product_id FROM product_variants WHERE id=$1)")
+        .bind(variant_id)
         .execute(&pool)
         .await
         .unwrap();

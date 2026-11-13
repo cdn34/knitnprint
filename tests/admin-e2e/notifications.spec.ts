@@ -85,3 +85,31 @@ test('read-only staff can inspect notifications without a send action', async ({
   await expect(page.getByText('customer@example.com', { exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: /Send/ })).toHaveCount(0)
 })
+
+test('finds a failed account verification and retries it without an order', async ({ page }) => {
+  await profile(page)
+  const verification = { ...job, order_id: null, order_number: null, kind: 'email_verification',
+    recipient_email: 'activation@example.test', last_error: 'AWS session expired or invalid. Sign in to AWS and retry this notification.' }
+  let sent = false
+  await page.route('**/api/admin/notifications**', async route => {
+    if (route.request().method() === 'POST') {
+      expect(route.request().postDataJSON()).toEqual({ reason: 'Retry after renewing AWS session' })
+      sent = true
+      await route.fulfill({ json: { ...verification, status: 'sent', attempt_count: 2, can_send: false, last_error: null, sent_at: job.next_attempt_at } })
+    } else {
+      await route.fulfill({ json: { items: sent ? [] : [verification], total: sent ? 0 : 1, page: 1, page_size: 25 } })
+    }
+  })
+  await page.goto('/#notifications')
+  await page.getByLabel('Search', { exact: true }).fill(verification.recipient_email)
+  await page.getByLabel('Notification type', { exact: true }).fill('email_verification')
+  await page.getByRole('button', { name: 'Search notifications' }).click()
+  await expect(page.getByText(verification.last_error, { exact: true })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'KP-1042' })).toHaveCount(0)
+  await page.getByRole('button', { name: 'Send email verification to activation@example.test' }).click()
+  await expect(page.getByText(/A new link will be generated/)).toBeVisible()
+  await page.getByLabel('Reason for sending').fill('Retry after renewing AWS session')
+  await page.getByRole('button', { name: 'Send email now' }).click()
+  await expect(page.getByRole('status').filter({ hasText: 'Email sent to activation@example.test.' })).toBeVisible()
+  expect(sent).toBe(true)
+})

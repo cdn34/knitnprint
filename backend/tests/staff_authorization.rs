@@ -229,7 +229,7 @@ async fn staff_authorization_and_audit_lifecycle() {
             "slug": "woven-planter",
             "description": "A tactile home for printed forms.",
             "search_keywords": "stitch private-keyword",
-            "sku": "PLANTER-001",
+            "sku": product_body["variants"][0]["sku"],
             "price_minor": 4200,
             "currency": "EUR",
             "available_quantity": 8
@@ -347,7 +347,7 @@ async fn staff_authorization_and_audit_lifecycle() {
 
     let search = request(&router, "GET", "/api/products?q=stitch", None, None).await;
     let search_body = response_json(search).await;
-    assert_eq!(search_body[0]["slug"], "woven-planter");
+    assert_eq!(search_body[0]["slug"], product_body["slug"]);
 
     let categories = request(&router, "GET", "/api/categories", None, None).await;
     let categories_body = response_json(categories).await;
@@ -363,7 +363,7 @@ async fn staff_authorization_and_audit_lifecycle() {
     .await;
     assert_eq!(
         response_json(category_products).await[0]["slug"],
-        "woven-planter"
+        product_body["slug"]
     );
 
     let empty_category =

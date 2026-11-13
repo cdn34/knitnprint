@@ -1,4 +1,12 @@
 export const commercialPt = {
+  'product.variantColor': 'Cor',
+  'product.variantSize': 'Tamanho',
+  'product.variantSizeMonths': 'Tamanho (meses)',
+  'product.variantSizeYears': 'Tamanho (anos)',
+  'product.variantDetails': 'Detalhes da variante',
+  'product.variantAvailable': 'Disponível',
+  'product.personalizationAvailable': 'Personalização disponível',
+  'product.variantArtworkChange': 'Mudar a cor vai limpar a personalização nas fotografias diferentes. Continuar?',
   'b2b.title': 'Soluções à medida da sua empresa',
   'b2b.intro': 'Faça da sua identidade uma imagem de marca. Na KnitNPrint personalizamos vestuário e brindes corporativos que reforçam o espírito de equipa, valorizam eventos e marcam a diferença junto de clientes e parceiros.',
   'b2b.minimum': '*Projetos corporativos sujeitos a quantidades mínimas. Contacta-nos para mais informações.',

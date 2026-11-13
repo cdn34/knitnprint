@@ -9,6 +9,7 @@ import {
 import { createServerFn } from '@tanstack/react-start'
 import '../styles.css'
 import { useI18n } from '../i18n'
+import { FavoritesProvider } from '../favorites'
 import type { TranslationKey } from '../i18n/locales/en'
 
 const getDeploymentMetadata = createServerFn({ method: 'GET' }).handler(() => ({
@@ -51,7 +52,7 @@ function LocalizedDocument() {
   return (
     <Document locale={locale} skipLinkLabel={t('common.skipToContent')}>
       <LocalizedMetadata />
-      <Outlet />
+      <FavoritesProvider><Outlet /></FavoritesProvider>
     </Document>
   )
 }

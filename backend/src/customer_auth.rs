@@ -17,11 +17,12 @@ use crate::{
     AppState,
     auth::{hash_password, verify_password},
     customers::{CustomerAddress, valid_email},
-    email::{AccountEmailKind, log_delivery_failure},
+    email::AccountEmailKind,
     error::ErrorBody,
     login_rate_limit::{
         AccountLoginGuard, AuthScope, ClientIp, LoginLimitError, consume_account_action,
     },
+    notifications::{deliver_account_action, enqueue_account_action},
 };
 
 pub const CUSTOMER_SESSION_COOKIE: &str = "knitnprint_customer";
@@ -237,6 +238,14 @@ pub async fn register(
         )
         .await
         .is_err()
+        || enqueue_account_action(
+            &mut transaction,
+            email_token_id,
+            AccountEmailKind::Verification,
+            &email,
+        )
+        .await
+        .is_err()
         || audit(
             &mut transaction,
             customer_id,
@@ -250,18 +259,7 @@ pub async fn register(
     {
         return unavailable();
     }
-    if let Err(error) = state
-        .email
-        .send_account_action(
-            &email,
-            input.first_name.trim(),
-            AccountEmailKind::Verification,
-            &email_token,
-        )
-        .await
-    {
-        log_delivery_failure(&error, AccountEmailKind::Verification);
-    }
+    deliver_account_action(&pool, &state.email, email_token_id).await;
     no_store(
         (
             StatusCode::CREATED,
@@ -596,6 +594,7 @@ pub async fn request_email_change(
     }
     let token = new_session_token();
     let token_hash = hash_token(&token);
+    let token_id = Uuid::now_v7();
     let mut transaction = match pool.begin().await {
         Ok(transaction) => transaction,
         Err(_) => return unavailable(),
@@ -603,23 +602,13 @@ pub async fn request_email_change(
     if lock_active_account(&mut transaction, customer.id).await.is_err()
         || use_account_tokens(&mut transaction, customer.id, AccountEmailKind::EmailChange).await.is_err()
         || sqlx::query("INSERT INTO customer_account_tokens (id, customer_id, token_kind, token_hash, target_email, expires_at) VALUES ($1, $2, 'email_change', $3, $4, now() + interval '24 hours')")
-            .bind(Uuid::now_v7()).bind(customer.id).bind(token_hash.as_slice()).bind(&email)
+            .bind(token_id).bind(customer.id).bind(token_hash.as_slice()).bind(&email)
             .execute(&mut *transaction).await.is_err()
+        || enqueue_account_action(&mut transaction, token_id, AccountEmailKind::EmailChange, &email).await.is_err()
         || audit(&mut transaction, customer.id, "customer.email_change_requested", "customer", customer.id).await.is_err()
         || transaction.commit().await.is_err()
     { return unavailable() }
-    if let Err(error) = state
-        .email
-        .send_account_action(
-            &email,
-            &customer.first_name,
-            AccountEmailKind::EmailChange,
-            &token,
-        )
-        .await
-    {
-        log_delivery_failure(&error, AccountEmailKind::EmailChange);
-    }
+    deliver_account_action(&pool, &state.email, token_id).await;
     no_store(StatusCode::NO_CONTENT.into_response())
 }
 
@@ -954,6 +943,14 @@ pub async fn request_verification(
     )
     .await
     .is_err()
+        || enqueue_account_action(
+            &mut transaction,
+            token_id,
+            AccountEmailKind::Verification,
+            &email,
+        )
+        .await
+        .is_err()
         || audit(
             &mut transaction,
             customer.0,
@@ -967,13 +964,7 @@ pub async fn request_verification(
     {
         return unavailable();
     }
-    if let Err(error) = state
-        .email
-        .send_account_action(&email, &customer.1, AccountEmailKind::Verification, &token)
-        .await
-    {
-        log_delivery_failure(&error, AccountEmailKind::Verification);
-    }
+    deliver_account_action(&pool, &state.email, token_id).await;
     no_store(StatusCode::NO_CONTENT.into_response())
 }
 
@@ -1092,7 +1083,7 @@ pub async fn forgot_password(
     } else {
         Ok(None)
     };
-    let Some((customer_id, first_name)) = (match account {
+    let Some((customer_id, _first_name)) = (match account {
         Ok(account) => account,
         Err(_) => return unavailable(),
     }) else {
@@ -1128,6 +1119,14 @@ pub async fn forgot_password(
     )
     .await
     .is_err()
+        || enqueue_account_action(
+            &mut transaction,
+            token_id,
+            AccountEmailKind::PasswordReset,
+            &email,
+        )
+        .await
+        .is_err()
         || audit_system(
             &mut transaction,
             "customer.password_reset_requested",
@@ -1140,13 +1139,7 @@ pub async fn forgot_password(
     {
         return unavailable();
     }
-    if let Err(error) = state
-        .email
-        .send_account_action(&email, &first_name, AccountEmailKind::PasswordReset, &token)
-        .await
-    {
-        log_delivery_failure(&error, AccountEmailKind::PasswordReset);
-    }
+    deliver_account_action(&pool, &state.email, token_id).await;
     no_store(StatusCode::NO_CONTENT.into_response())
 }
 
@@ -1320,11 +1313,7 @@ async fn insert_account_token(
     kind: AccountEmailKind,
     token_hash: &[u8; 32],
 ) -> Result<(), sqlx::Error> {
-    let expires_at = match kind {
-        AccountEmailKind::Verification => "24 hours",
-        AccountEmailKind::PasswordReset => "1 hour",
-        AccountEmailKind::EmailChange => "24 hours",
-    };
+    let expires_at = kind.expiry_interval();
     sqlx::query(
         r#"
         INSERT INTO customer_account_tokens (
@@ -1721,7 +1710,7 @@ fn no_store(mut response: Response) -> Response {
     response
 }
 
-fn new_session_token() -> String {
+pub(crate) fn new_session_token() -> String {
     format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple())
 }
 

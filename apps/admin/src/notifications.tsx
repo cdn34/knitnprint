@@ -59,7 +59,7 @@ export function NotificationManagement({ canSend, canReadOrders }: Readonly<{
         <button type="button" disabled={notifications.isFetching}
           onClick={() => client.invalidateQueries({ queryKey: ['notifications'] })}>Refresh</button>
       </div>
-      <p>Find outstanding emails by order number, recipient, notification type, or job ID. Failed deliveries are retried by the hourly worker.</p>
+      <p>Find account verification, password reset, email change, and order confirmation emails by recipient, type, order number, or job ID. Failed deliveries remain available for manual sending and are retried by the hourly worker.</p>
       <form className="notification-filters" onSubmit={search}>
         <label>Search<input name="q" type="search" maxLength={320} placeholder="Order number or recipient email" /></label>
         <label>Status<select name="status" defaultValue="outstanding">
@@ -71,13 +71,16 @@ export function NotificationManagement({ canSend, canReadOrders }: Readonly<{
           <option value="suppressed">Suppressed</option>
           <option value="all">All statuses</option>
         </select></label>
-        <label>Notification type<input name="kind" maxLength={100} placeholder="Any type" /></label>
+        <label>Notification type<input name="kind" maxLength={100} placeholder="Any type" list="notification-types" /></label>
+        <datalist id="notification-types"><option value="email_verification">Email verification</option><option value="password_reset">Password reset</option><option value="email_change">Email change</option><option value="order_confirmation">Order confirmation</option></datalist>
         <button type="submit">Search notifications</button>
       </form>
       {delivery.isSuccess && <p role="status" className={delivery.data.status === 'sent' ? 'panel-message' : 'panel-message error'}>
         {delivery.data.status === 'sent'
           ? `Email sent to ${delivery.data.recipient_email}.`
-          : `Email could not be sent to ${delivery.data.recipient_email}. ${delivery.data.status === 'failed' ? 'Automatic retries are exhausted; another manual attempt is available.' : 'It remains pending for the worker to retry.'}`}
+          : delivery.data.status === 'suppressed'
+            ? 'Email was not sent because this request is no longer current or needed.'
+            : `Email could not be sent to ${delivery.data.recipient_email}. ${delivery.data.status === 'failed' ? 'Automatic retries are exhausted; another manual attempt is available.' : 'It remains pending for the worker to retry.'}`}
         {delivery.data.last_error && <span className="notification-error">{delivery.data.last_error}</span>}
       </p>}
       {delivery.isError && <p role="alert" className="panel-message error">
@@ -86,6 +89,7 @@ export function NotificationManagement({ canSend, canReadOrders }: Readonly<{
       {selected && canSend && <form className="notification-send" onSubmit={send}>
         <h3>Send email to {selected.recipient_email}</h3>
         <p>{selected.kind}{selected.order_number ? ` · ${selected.order_number}` : ''}. This attempts delivery immediately.</p>
+        {['email_verification', 'password_reset', 'email_change'].includes(selected.kind) && <p>A new link will be generated and the previous link will stop working. Completed or replaced account requests are not sent.</p>}
         <label>Reason for sending<input name="reason" required minLength={3} maxLength={500} placeholder="Customer reported a missing confirmation" disabled={delivery.isPending} /></label>
         <button type="submit" disabled={delivery.isPending}>{delivery.isPending ? 'Sending…' : 'Send email now'}</button>
         <button type="button" disabled={delivery.isPending} onClick={() => setSelected(null)}>Cancel</button>
@@ -95,7 +99,7 @@ export function NotificationManagement({ canSend, canReadOrders }: Readonly<{
       {notifications.data && <>
         <p role="status">{notifications.data.total} notification{notifications.data.total === 1 ? '' : 's'} found</p>
         {notifications.data.items.length === 0 ? <p className="panel-message">No notifications match these filters.</p> :
-          <div className="notification-table-wrap"><table className="notification-table">
+          <div className="notification-table-wrap" role="region" aria-label="Email notification results" tabIndex={0}><table className="notification-table">
             <thead><tr><th>Recipient / order</th><th>Type</th><th>Status</th><th>Attempts</th><th>Delivery details</th>{canSend && <th>Action</th>}</tr></thead>
             <tbody>{notifications.data.items.map((job) => <tr key={job.id}>
               <td><strong>{job.recipient_email}</strong>

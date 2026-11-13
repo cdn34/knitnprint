@@ -1,6 +1,8 @@
 import { expect, test } from '@playwright/test'
 import { signInVerifiedCustomer } from '../helpers/customer'
 
+const storefrontUrl = process.env.E2E_STOREFRONT_URL ?? 'http://127.0.0.1:3000'
+
 const ownerEmail = process.env.E2E_OWNER_EMAIL ?? 'owner@knitnprint.local'
 const ownerPassword =
   process.env.E2E_OWNER_PASSWORD ?? 'local-development-passphrase'
@@ -11,9 +13,9 @@ test('lets an owner manage the catalog and complete an order with configured del
   const unique = `${Date.now()}-${test.info().retry}`
   const title = `Woven Planter ${unique}`
   const slug = `woven-planter-${unique}`
-  const sku = `PLANTER-${unique}`
-  const plumSku = `PLANTER-PLUM-${unique}`
-  const oatSku = `PLANTER-OAT-${unique}`
+  let sku = ''
+  let plumSku = ''
+  let oatSku = ''
   const discountCode = `BROWSER-${unique}`.toUpperCase()
   const orderEmail = `order-${unique}@example.com`
 
@@ -111,9 +113,9 @@ test('lets an owner manage the catalog and complete an order with configured del
     .getByLabel('Description')
     .fill('A tactile home for printed forms and soft stitches.')
   await catalog.getByLabel('Search keywords').fill(`browsercatalog ${unique}`)
-  await catalog.locator('#product-sku').fill(sku)
-  await catalog.getByLabel('Price').fill('42.00')
-  await catalog.getByLabel('Stock').fill('5')
+  await expect(catalog.locator('#product-sku')).toHaveAttribute('readonly', '')
+  await catalog.locator('#product-price').fill('42.00')
+  await catalog.locator('#product-quantity').fill('5')
   await catalog.getByRole('checkbox', { name: categoryName }).check()
   await Promise.all([
     page.waitForResponse((response) =>
@@ -128,11 +130,12 @@ test('lets an owner manage the catalog and complete an order with configured del
   await expect(product).toContainText(title)
   await expect(product).toContainText('draft')
   await product.getByRole('button', { name: 'Edit' }).click()
-  await expect(catalog.locator('#product-sku')).toHaveValue(sku)
-  await expect(catalog.getByLabel('Stock')).toHaveValue('5')
+  await expect(catalog.locator('#product-sku')).toHaveValue(/^KP-/)
+  await expect(catalog.locator('#product-quantity')).toHaveValue('5')
   await catalog.getByRole('button', { name: 'Save product' }).click()
   const adminProducts = await page.request.get(`/api/admin/products?q=${slug}`)
   const [createdProduct] = await adminProducts.json()
+  sku = createdProduct.variants[0].sku
   expect(createdProduct.categories).toEqual(
     expect.arrayContaining([expect.objectContaining({ slug: categorySlug })]),
   )
@@ -140,9 +143,13 @@ test('lets an owner manage the catalog and complete an order with configured del
     { title: 'Plum', sku: plumSku, price_minor: 4600 },
     { title: 'Oat', sku: oatSku, price_minor: 4800 },
   ]) {
-    await page.request.post(`/api/admin/products/${createdProduct.id}/variants`, {
+    const response = await page.request.post(`/api/admin/products/${createdProduct.id}/variants`, {
       data: { ...variant, currency: 'EUR', option_values: {} },
     })
+    expect(response.ok()).toBe(true)
+    const saved = await response.json()
+    const assigned = saved.variants.find((v: {title: string}) => v.title === variant.title).sku
+    if (variant.title === 'Plum') plumSku = assigned; else oatSku = assigned
   }
 
   let uploadedPhoto = 0
@@ -179,7 +186,7 @@ test('lets an owner manage the catalog and complete an order with configured del
   const publicProduct = await publicResponse.json()
   expect(publicProduct).toMatchObject({
     title,
-    slug,
+    slug: createdProduct.slug,
     status: 'active',
     search_keywords: '',
     variants: [
@@ -240,7 +247,7 @@ test('lets an owner manage the catalog and complete an order with configured del
 
   const defaultInventoryRow = inventory
     .getByRole('button')
-    .filter({ hasText: sku })
+    .filter({ has: page.getByText(`Default · ${sku}`, { exact: true }) })
   await defaultInventoryRow.click()
   await inventory.getByLabel('Quantity change').fill('-5')
   await inventory.getByLabel('Reason').fill('Clear default variant stock')
@@ -313,7 +320,7 @@ test('lets an owner manage the catalog and complete an order with configured del
   await expect(persistedProduct.locator('.product-thumbnail img')).toBeVisible()
 
   await signInVerifiedCustomer(page.request, orderEmail, 'Order', 'Browser')
-  await page.goto(`http://127.0.0.1:3000/products/${slug}`)
+  await page.goto(`${storefrontUrl}/products/${slug}`)
   await page.waitForLoadState('networkidle')
   await expect(page.getByRole('heading', { level: 1 })).toHaveText(title)
   await expect(page.getByRole('button', { name: 'Show product photo 1' })).toHaveAttribute('aria-pressed', 'true')
@@ -351,7 +358,8 @@ test('lets an owner manage the catalog and complete an order with configured del
   await page.setViewportSize({ width: 1280, height: 900 })
   await page.locator('.variant-option').filter({ hasText: 'Oat' }).click()
   await page.getByRole('button', { name: 'Add to cart' }).click()
-  await page.getByRole('link', { name: 'View your cart' }).click()
+  await expect(page).toHaveURL(/\/products\/?$/)
+  await page.getByRole('dialog', { name: 'Cart', exact: true }).getByRole('link', { name: 'View cart and checkout' }).click()
   await page.getByLabel('Email').fill(orderEmail)
   await page.getByLabel('First name').fill('Order')
   await page.getByLabel('Last name').fill('Browser')
@@ -370,7 +378,7 @@ test('lets an owner manage the catalog and complete an order with configured del
   const orderNumber = (await page.locator('.order-confirmation .eyebrow').textContent())?.trim()
   expect(orderNumber).toMatch(/KP-\d{4}-\d{6}/)
 
-  await page.goto('http://127.0.0.1:3001/#customers')
+  await page.goto('/#customers')
   const customers = page.getByRole('region', { name: 'Customers' })
   await customers.getByLabel('Search customers').fill(orderEmail)
   const customerRow = customers.getByRole('button').filter({ hasText: orderEmail })

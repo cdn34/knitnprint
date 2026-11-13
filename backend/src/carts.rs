@@ -22,6 +22,7 @@ use crate::{
         find_by_code_in_transaction, normalize_code,
     },
     error::ErrorBody,
+    personalization_pricing,
     settings::TaxSelection,
 };
 
@@ -90,6 +91,8 @@ pub struct CartItem {
     pub sku: String,
     pub quantity: i32,
     pub unit_price_minor: i64,
+    pub base_unit_price_minor: i64,
+    pub personalization_unit_price_minor: i64,
     pub currency: String,
     pub line_total_minor: i64,
     pub available_quantity: i64,
@@ -149,6 +152,8 @@ struct CartLineRow {
     sku: String,
     quantity: i32,
     unit_price_minor: i64,
+    base_unit_price_minor: i64,
+    stored_currency: String,
     currency: String,
     image_url: Option<String>,
     customization: Option<Value>,
@@ -374,6 +379,12 @@ pub async fn add_item(
             EnsureCurrencyError::Mismatch => currency_mismatch(),
         };
     }
+    let Some(unit_price_minor) = personalization_pricing::unit_price_minor(
+        variant.price_minor,
+        input.customization.as_ref(),
+    ) else {
+        return unavailable();
+    };
     if sqlx::query(
         r##"
         INSERT INTO cart_lines (id, cart_id, variant_id, quantity, unit_price_minor, currency, customization, customization_media_asset_id, customization_media_asset_ids, personalization_previews)
@@ -389,7 +400,7 @@ pub async fn add_item(
     .bind(session.id)
     .bind(input.variant_id)
     .bind(resulting_quantity)
-    .bind(variant.price_minor)
+    .bind(unit_price_minor)
     .bind(&variant.currency)
     .bind(&input.customization)
     .bind(photo_ids.first().copied())
@@ -456,8 +467,8 @@ pub async fn update_item(
         Ok(MutationClaim::New) => {}
         Err(_) => return unavailable(),
     }
-    let variant_id: Uuid = match sqlx::query_scalar(
-        "SELECT variant_id FROM cart_lines WHERE id = $1 AND cart_id = $2 FOR UPDATE",
+    let (variant_id, customization): (Uuid, Option<Value>) = match sqlx::query_as(
+        "SELECT variant_id, customization FROM cart_lines WHERE id = $1 AND cart_id = $2 FOR UPDATE",
     )
     .bind(line_id)
     .bind(session.id)
@@ -473,6 +484,11 @@ pub async fn update_item(
         Ok(None) => return unavailable_item(),
         Err(_) => return unavailable(),
     };
+    let Some(unit_price_minor) =
+        personalization_pricing::unit_price_minor(variant.price_minor, customization.as_ref())
+    else {
+        return unavailable();
+    };
     if sqlx::query(
         r#"
         UPDATE cart_lines
@@ -483,7 +499,7 @@ pub async fn update_item(
     .bind(line_id)
     .bind(session.id)
     .bind(input.quantity)
-    .bind(variant.price_minor)
+    .bind(unit_price_minor)
     .bind(variant.currency)
     .execute(&mut *transaction)
     .await
@@ -875,33 +891,6 @@ async fn cart_response_with_status(
 }
 
 async fn load_cart(pool: &PgPool, cart_id: Uuid) -> Result<Cart, sqlx::Error> {
-    let repriced: Vec<Uuid> = sqlx::query_scalar(
-        r#"
-        SELECT line.id
-        FROM cart_lines line
-        JOIN product_variants variant ON variant.id = line.variant_id
-        WHERE line.cart_id = $1
-          AND (line.unit_price_minor <> variant.price_minor OR line.currency <> variant.currency)
-        "#,
-    )
-    .bind(cart_id)
-    .fetch_all(pool)
-    .await?;
-    sqlx::query(
-        r#"
-        UPDATE cart_lines line
-        SET unit_price_minor = variant.price_minor,
-            currency = variant.currency,
-            updated_at = CASE
-                WHEN line.unit_price_minor <> variant.price_minor OR line.currency <> variant.currency
-                THEN now() ELSE line.updated_at END
-        FROM product_variants variant
-        WHERE line.cart_id = $1 AND variant.id = line.variant_id
-        "#,
-    )
-    .bind(cart_id)
-    .execute(pool)
-    .await?;
     let cart = sqlx::query_as::<_, CartRow>(
         r#"
         SELECT currency::text AS currency, customer_id, discount_id,
@@ -915,14 +904,15 @@ async fn load_cart(pool: &PgPool, cart_id: Uuid) -> Result<Cart, sqlx::Error> {
     let rows = sqlx::query_as::<_, CartLineRow>(
         r#"
         SELECT line.id, line.variant_id, product.slug AS product_slug,
-               product.title AS product_title, product.status AS product_status,
+               product.title AS product_title, CASE WHEN variant.retired THEN 'archived' ELSE product.status END AS product_status,
                variant.title AS variant_title, variant.sku, line.quantity,
-               line.unit_price_minor, line.currency::text AS currency,
+               line.unit_price_minor, variant.price_minor AS base_unit_price_minor,
+               line.currency::text AS stored_currency, variant.currency::text AS currency,
                (
                    SELECT '/api/media/' || media.id || '/thumbnail'
                    FROM product_media relation
                    JOIN media_assets media ON media.id = relation.media_asset_id
-                   WHERE relation.product_id = product.id AND media.status = 'ready'
+                   WHERE relation.product_id = product.id AND media.status = 'ready' AND (NOT EXISTS(SELECT 1 FROM variant_photo_ids(product.variant_config,variant.selections)) OR relation.media_asset_id::text IN (SELECT variant_photo_ids(product.variant_config,variant.selections)))
                    ORDER BY relation.position, media.id LIMIT 1
                ) AS image_url, line.customization, line.customization_media_asset_id,
                line.customization_media_asset_ids
@@ -941,7 +931,15 @@ async fn load_cart(pool: &PgPool, cart_id: Uuid) -> Result<Cart, sqlx::Error> {
     let mut items = Vec::with_capacity(rows.len());
     let mut item_count = 0_i64;
     let mut subtotal_minor = 0_i64;
+    let mut repriced_ids = Vec::new();
+    let mut repriced_prices = Vec::new();
+    let mut repriced_currencies = Vec::new();
     for row in rows {
+        let unit_price_minor = personalization_pricing::unit_price_minor(
+            row.base_unit_price_minor,
+            row.customization.as_ref(),
+        )
+        .ok_or_else(|| sqlx::Error::Protocol("personalized unit price overflow".into()))?;
         let published = row.product_status == "active";
         if !published {
             issues.push(CartIssue {
@@ -950,7 +948,10 @@ async fn load_cart(pool: &PgPool, cart_id: Uuid) -> Result<Cart, sqlx::Error> {
                 message: format!("{} is no longer available.", row.product_title),
             });
         }
-        if repriced.contains(&row.id) {
+        if row.unit_price_minor != unit_price_minor || row.stored_currency != row.currency {
+            repriced_ids.push(row.id);
+            repriced_prices.push(unit_price_minor);
+            repriced_currencies.push(row.currency.clone());
             issues.push(CartIssue {
                 code: "price_changed".into(),
                 line_id: Some(row.id),
@@ -967,7 +968,7 @@ async fn load_cart(pool: &PgPool, cart_id: Uuid) -> Result<Cart, sqlx::Error> {
                 ),
             });
         }
-        let line_total_minor = row.unit_price_minor.saturating_mul(i64::from(row.quantity));
+        let line_total_minor = unit_price_minor.saturating_mul(i64::from(row.quantity));
         item_count = item_count.saturating_add(i64::from(row.quantity));
         subtotal_minor = subtotal_minor.saturating_add(line_total_minor);
         items.push(CartItem {
@@ -978,7 +979,9 @@ async fn load_cart(pool: &PgPool, cart_id: Uuid) -> Result<Cart, sqlx::Error> {
             variant_title: row.variant_title,
             sku: row.sku,
             quantity: row.quantity,
-            unit_price_minor: row.unit_price_minor,
+            unit_price_minor,
+            base_unit_price_minor: row.base_unit_price_minor,
+            personalization_unit_price_minor: unit_price_minor - row.base_unit_price_minor,
             currency: row.currency,
             line_total_minor,
             available_quantity: 100,
@@ -988,6 +991,24 @@ async fn load_cart(pool: &PgPool, cart_id: Uuid) -> Result<Cart, sqlx::Error> {
             customization_media_asset_id: row.customization_media_asset_id,
             customization_media_asset_ids: row.customization_media_asset_ids,
         });
+    }
+    if !repriced_ids.is_empty() {
+        sqlx::query(
+            r#"
+            UPDATE cart_lines line
+            SET unit_price_minor = price.unit_price_minor, currency = price.currency,
+                updated_at = now()
+            FROM unnest($1::uuid[], $2::bigint[], $3::text[])
+                AS price(id, unit_price_minor, currency)
+            WHERE line.cart_id = $4 AND line.id = price.id
+            "#,
+        )
+        .bind(&repriced_ids)
+        .bind(&repriced_prices)
+        .bind(&repriced_currencies)
+        .bind(cart_id)
+        .execute(pool)
+        .await?;
     }
     let mut discount = None;
     let mut discount_minor = 0;
@@ -1213,7 +1234,26 @@ fn customization_allowed(
         && variant
             .personalization_views
             .as_array()
-            .is_some_and(|views| views.iter().any(|view| view.get("mode").is_some()))
+            .is_some_and(|views| {
+                views.iter().any(|view| {
+                    view.get("mode").is_some()
+                        || view
+                            .get("print_areas")
+                            .and_then(Value::as_array)
+                            .is_some_and(|areas| {
+                                areas.iter().any(|area| area.get("mode").is_some())
+                            })
+                })
+            })
+    {
+        return false;
+    }
+    if customization.is_some()
+        && version < 4
+        && variant
+            .print_areas
+            .as_array()
+            .is_some_and(|areas| areas.iter().any(|area| area.get("mode").is_some()))
     {
         return false;
     }
@@ -1386,10 +1426,17 @@ fn view_customization_allowed(
         seen_assignments.push((view_id, area_id));
         let photo = area.get("photo");
         let text = area.get("text");
-        let mode = configured_view
+        let view_mode = configured_view
             .get("mode")
             .and_then(Value::as_str)
             .unwrap_or(&variant.personalization_mode);
+        if view_mode == "none" {
+            return false;
+        }
+        let mode = configured_area
+            .get("mode")
+            .and_then(Value::as_str)
+            .unwrap_or(view_mode);
         let shape_valid = match mode {
             "photo" => photo.is_some() && text.is_none(),
             "text" => text.is_some() && photo.is_none(),
@@ -1620,17 +1667,23 @@ fn area_customization_allowed(
         let Some(area_id) = area.get("area_id").and_then(Value::as_str) else {
             return false;
         };
-        if seen_area_ids.contains(&area_id)
-            || !configured_areas
-                .iter()
-                .any(|configured| configured.get("id").and_then(Value::as_str) == Some(area_id))
-        {
+        if seen_area_ids.contains(&area_id) {
             return false;
         }
+        let Some(configured_area) = configured_areas
+            .iter()
+            .find(|configured| configured.get("id").and_then(Value::as_str) == Some(area_id))
+        else {
+            return false;
+        };
         seen_area_ids.push(area_id);
         let photo = area.get("photo");
         let text = area.get("text");
-        let shape_valid = match variant.personalization_mode.as_str() {
+        let mode = configured_area
+            .get("mode")
+            .and_then(Value::as_str)
+            .unwrap_or(&variant.personalization_mode);
+        let shape_valid = match mode {
             "photo" => photo.is_some() && text.is_none(),
             "text" => text.is_some() && photo.is_none(),
             "photo_text" => photo.is_some() || text.is_some(),
@@ -1657,6 +1710,17 @@ fn area_customization_allowed(
     referenced_media_ids == supplied_media_ids
 }
 
+pub(crate) async fn customization_current(
+    tx: &mut Transaction<'_, Postgres>,
+    id: Uuid,
+    customization: Option<&Value>,
+    media_ids: &[Uuid],
+) -> Result<bool, sqlx::Error> {
+    Ok(active_variant(tx, id)
+        .await?
+        .is_some_and(|v| customization_allowed(&v, customization, media_ids)))
+}
+
 async fn active_variant(
     transaction: &mut Transaction<'_, Postgres>,
     variant_id: Uuid,
@@ -1666,7 +1730,7 @@ async fn active_variant(
         SELECT variant.id, variant.price_minor, variant.currency::text AS currency,
                COALESCE(personalization.mode, 'none') AS personalization_mode,
                COALESCE(personalization.print_areas, '[{"id":"area-1"}]'::jsonb) AS print_areas,
-               COALESCE(personalization.views, '[{"id":"view-front","print_areas":[{"id":"area-1"}]}]'::jsonb) AS personalization_views,
+               variant_views(product.variant_config,variant.selections,COALESCE(personalization.views, '[{"id":"view-front","print_areas":[{"id":"area-1"}]}]'::jsonb)) AS personalization_views,
                COALESCE(personalization.text_max_characters, 35) AS text_max_characters,
                COALESCE(personalization.text_min_size, 12) AS text_min_size,
                COALESCE(personalization.text_max_size, 72) AS text_max_size,
@@ -1675,7 +1739,7 @@ async fn active_variant(
         FROM product_variants variant
         JOIN products product ON product.id = variant.product_id
         LEFT JOIN product_personalization personalization ON personalization.product_id = product.id
-        WHERE variant.id = $1 AND product.status = 'active'
+        WHERE variant.id = $1 AND product.status = 'active' AND NOT variant.retired
         FOR UPDATE OF variant
         "##,
     )
@@ -2324,6 +2388,88 @@ mod personalization_tests {
         let legacy = serde_json::json!({"version":4,"areas":[{"area_id":"area-1", "text":text}]});
         assert!(!customization_allowed(&product, Some(&legacy), &[]));
         assert!(customization_allowed(&product, None, &[]));
+    }
+
+    #[test]
+    fn area_permissions_reject_disallowed_content_and_downgraded_payloads() {
+        let mut product = variant("photo_text");
+        product.personalization_views = serde_json::json!([{
+            "id":"backpack", "mode":"photo_text", "print_areas":[
+                {"id":"main", "mode":"photo_text"},
+                {"id":"bottom", "mode":"text"},
+                {"id":"top", "mode":"photo"}
+            ]
+        }]);
+        let media_id = Uuid::new_v4();
+        let text = serde_json::json!({"content":"Nome", "font":"Roboto", "color":"#111111", "size":24, "x":10, "y":20, "width":80, "height":40});
+        let photo = serde_json::json!({"media_id":media_id, "x":5, "y":5, "width":90, "height":50, "crop_x":50, "crop_y":50, "scale":1});
+        let valid = serde_json::json!({"version":5, "areas":[
+            {"view_id":"backpack", "area_id":"main", "photo":photo, "text":text},
+            {"view_id":"backpack", "area_id":"bottom", "text":text},
+            {"view_id":"backpack", "area_id":"top", "photo":photo}
+        ]});
+        assert!(customization_allowed(&product, Some(&valid), &[media_id]));
+        for element in ["photo", "text"] {
+            let mut optional = valid.clone();
+            optional["areas"][0]
+                .as_object_mut()
+                .unwrap()
+                .remove(element);
+            assert!(customization_allowed(
+                &product,
+                Some(&optional),
+                &[media_id]
+            ));
+        }
+        let mut wrong_image = valid.clone();
+        wrong_image["areas"][1]["photo"] = photo.clone();
+        wrong_image["areas"][1]["mode"] = serde_json::json!("photo_text");
+        assert!(!customization_allowed(
+            &product,
+            Some(&wrong_image),
+            &[media_id]
+        ));
+        let mut wrong_text = valid.clone();
+        wrong_text["areas"][2]["text"] = text.clone();
+        assert!(!customization_allowed(
+            &product,
+            Some(&wrong_text),
+            &[media_id]
+        ));
+        let mut legacy = valid.clone();
+        legacy["version"] = serde_json::json!(4);
+        assert!(!customization_allowed(&product, Some(&legacy), &[media_id]));
+        product.personalization_views[0]
+            .as_object_mut()
+            .unwrap()
+            .remove("mode");
+        assert!(!customization_allowed(&product, Some(&legacy), &[media_id]));
+        product.personalization_views[0]["mode"] = serde_json::json!("none");
+        assert!(!customization_allowed(&product, Some(&valid), &[media_id]));
+        assert!(customization_allowed(&product, None, &[]));
+
+        let mut legacy_product = variant("photo_text");
+        legacy_product.print_areas[0]["mode"] = serde_json::json!("text");
+        let legacy_text =
+            serde_json::json!({"version":4, "areas":[{"area_id":"area-1", "text":text}]});
+        assert!(customization_allowed(
+            &legacy_product,
+            Some(&legacy_text),
+            &[]
+        ));
+        let legacy_photo =
+            serde_json::json!({"version":4, "areas":[{"area_id":"area-1", "photo":photo}]});
+        assert!(!customization_allowed(
+            &legacy_product,
+            Some(&legacy_photo),
+            &[media_id]
+        ));
+        let unassigned = serde_json::json!({"version":3, "text":text});
+        assert!(!customization_allowed(
+            &legacy_product,
+            Some(&unassigned),
+            &[]
+        ));
     }
 
     #[test]

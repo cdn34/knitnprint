@@ -306,6 +306,145 @@
         }
       }
     },
+    "/api/account/favorites": {
+      "get": {
+        "tags": [
+          "customer account"
+        ],
+        "operationId": "list",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Product"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/account/favorites/{product_id}": {
+      "put": {
+        "tags": [
+          "customer account"
+        ],
+        "operationId": "save",
+        "parameters": [
+          {
+            "name": "product_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Product saved, including an already saved product"
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "customer account"
+        ],
+        "operationId": "remove",
+        "parameters": [
+          {
+            "name": "product_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Product removed, including an already removed product"
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/account/login": {
       "post": {
         "tags": [
@@ -4077,6 +4216,81 @@
         }
       }
     },
+    "/api/admin/products/{id}/variant-matrix": {
+      "put": {
+        "tags": [
+          "admin catalog"
+        ],
+        "operationId": "save_matrix",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveMatrix"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/admin/products/{id}/variant-matrix/preview": {
+      "post": {
+        "tags": [
+          "admin catalog"
+        ],
+        "operationId": "preview_matrix",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveMatrix"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MatrixPreview"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/admin/products/{product_id}": {
       "get": {
         "tags": [
@@ -5003,6 +5217,98 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/admin/variant-templates": {
+      "get": {
+        "tags": [
+          "admin catalog"
+        ],
+        "operationId": "templates",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/VariantTemplate"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/variant-templates/{id}": {
+      "put": {
+        "tags": [
+          "admin catalog"
+        ],
+        "operationId": "save_template",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VariantTemplate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "admin catalog"
+        ],
+        "operationId": "delete_template",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeleteTemplateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "409": {
+            "description": ""
           }
         }
       }
@@ -6005,6 +6311,69 @@
             }
           },
           "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/orders/{order_id}/personalization/{media_id}": {
+      "get": {
+        "tags": [
+          "customer orders"
+        ],
+        "operationId": "customer_order_personalization_asset",
+        "parameters": [
+          {
+            "name": "order_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "media_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Personalization image belonging to the customer's order"
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
             "description": "",
             "content": {
               "application/json": {
@@ -7058,6 +7427,8 @@
           "sku",
           "quantity",
           "unit_price_minor",
+          "base_unit_price_minor",
+          "personalization_unit_price_minor",
           "currency",
           "line_total_minor",
           "available_quantity",
@@ -7069,6 +7440,10 @@
             "type": "boolean"
           },
           "available_quantity": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "base_unit_price_minor": {
             "type": "integer",
             "format": "int64"
           },
@@ -7101,6 +7476,10 @@
             ]
           },
           "line_total_minor": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "personalization_unit_price_minor": {
             "type": "integer",
             "format": "int64"
           },
@@ -7526,7 +7905,8 @@
             "type": "string"
           },
           "slug": {
-            "type": "string"
+            "type": "string",
+            "description": "Editable URL name; the server appends the permanent parent SKU. Returned product slugs are canonical."
           },
           "title": {
             "type": "string"
@@ -7613,7 +7993,6 @@
         "type": "object",
         "required": [
           "title",
-          "sku",
           "price_minor",
           "currency"
         ],
@@ -8211,6 +8590,18 @@
           }
         }
       },
+      "DeleteTemplateRequest": {
+        "type": "object",
+        "required": [
+          "revision"
+        ],
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
       "DeliveryQuote": {
         "type": "object",
         "required": [
@@ -8800,6 +9191,68 @@
           }
         }
       },
+      "MatrixPreview": {
+        "type": "object",
+        "required": [
+          "active_count",
+          "combination_count"
+        ],
+        "properties": {
+          "active_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "combination_count": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "MatrixVariant": {
+        "type": "object",
+        "required": [
+          "selections",
+          "price_minor",
+          "available_quantity",
+          "retired"
+        ],
+        "properties": {
+          "available_quantity": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "expected_quantity": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "price_minor": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "retired": {
+            "type": "boolean"
+          },
+          "selections": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          }
+        }
+      },
       "MediaRecord": {
         "type": "object",
         "required": [
@@ -8994,6 +9447,34 @@
           },
           "timezone": {
             "type": "string"
+          }
+        }
+      },
+      "OptionValue": {
+        "type": "object",
+        "required": [
+          "code",
+          "label"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "color": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "label": {
+            "type": "string"
+          },
+          "media_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
           }
         }
       },
@@ -9788,6 +10269,9 @@
       "Product": {
         "type": "object",
         "required": [
+          "sku",
+          "variant_config",
+          "variant_revision",
           "id",
           "title",
           "slug",
@@ -9797,7 +10281,8 @@
           "variants",
           "media",
           "categories",
-          "personalization"
+          "personalization",
+          "personalization_area_price_minor"
         ],
         "properties": {
           "categories": {
@@ -9822,7 +10307,15 @@
           "personalization": {
             "$ref": "#/components/schemas/PersonalizationConfig"
           },
+          "personalization_area_price_minor": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Fixed EUR surcharge per filled print area, per product unit."
+          },
           "search_keywords": {
+            "type": "string"
+          },
+          "sku": {
             "type": "string"
           },
           "slug": {
@@ -9833,6 +10326,13 @@
           },
           "title": {
             "type": "string"
+          },
+          "variant_config": {
+            "$ref": "#/components/schemas/VariantConfig"
+          },
+          "variant_revision": {
+            "type": "integer",
+            "format": "int64"
           },
           "variants": {
             "type": "array",
@@ -9962,6 +10462,32 @@
           },
           "url": {
             "type": "string"
+          }
+        }
+      },
+      "ProductOption": {
+        "type": "object",
+        "required": [
+          "code",
+          "label",
+          "control",
+          "values"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "control": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "values": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OptionValue"
+            }
           }
         }
       },
@@ -10169,6 +10695,29 @@
           },
           "token": {
             "type": "string"
+          }
+        }
+      },
+      "SaveMatrix": {
+        "type": "object",
+        "required": [
+          "revision",
+          "config",
+          "variants"
+        ],
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/VariantConfig"
+          },
+          "revision": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "variants": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MatrixVariant"
+            }
           }
         }
       },
@@ -10560,7 +11109,6 @@
         "required": [
           "title",
           "slug",
-          "sku",
           "price_minor",
           "currency",
           "available_quantity"
@@ -10590,7 +11138,8 @@
             "type": "string"
           },
           "slug": {
-            "type": "string"
+            "type": "string",
+            "description": "Editable URL name; the server appends the permanent parent SKU. Returned product slugs are canonical."
           },
           "title": {
             "type": "string"
@@ -10600,6 +11149,7 @@
       "Variant": {
         "type": "object",
         "required": [
+          "retired",
           "id",
           "title",
           "sku",
@@ -10634,11 +11184,54 @@
             "type": "integer",
             "format": "int64"
           },
+          "retired": {
+            "type": "boolean"
+          },
+          "selections": {},
           "sku": {
             "type": "string"
           },
           "title": {
             "type": "string"
+          }
+        }
+      },
+      "VariantConfig": {
+        "type": "object",
+        "required": [
+          "options",
+          "color_photos"
+        ],
+        "properties": {
+          "color_photos": {
+            "type": "boolean"
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProductOption"
+            }
+          }
+        }
+      },
+      "VariantTemplate": {
+        "type": "object",
+        "required": [
+          "id",
+          "definition",
+          "revision"
+        ],
+        "properties": {
+          "definition": {
+            "$ref": "#/components/schemas/ProductOption"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "revision": {
+            "type": "integer",
+            "format": "int64"
           }
         }
       },

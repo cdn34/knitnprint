@@ -2,8 +2,8 @@ use utoipa::{OpenApi, openapi::OpenApi as OpenApiDocument};
 
 use crate::{
     admin_notifications, auth, b2b, cancellations, carts, catalog, customer_auth, customers,
-    dashboard, delivery_rates, discounts, error, feedback, fulfillment, health, inventory, media,
-    notifications, orders, payments, settings, staff,
+    dashboard, delivery_rates, discounts, error, favorites, feedback, fulfillment, health,
+    inventory, media, notifications, orders, payments, settings, staff,
 };
 
 #[derive(OpenApi)]
@@ -14,6 +14,11 @@ use crate::{
         description = "Authoritative API for the KnitNPrint storefront and admin."
     ),
     paths(
+        crate::variant_options::templates,
+        crate::variant_options::save_template,
+        crate::variant_options::delete_template,
+        crate::variant_options::save_matrix,
+        crate::variant_options::preview_matrix,
         b2b::create,
         b2b::list,
         b2b::detail,
@@ -29,6 +34,9 @@ use crate::{
         customer_auth::login,
         customer_auth::logout,
         customer_auth::me,
+        favorites::list,
+        favorites::save,
+        favorites::remove,
         customer_auth::update_profile,
         customer_auth::request_email_change,
         customer_auth::confirm_email_change,
@@ -101,6 +109,7 @@ use crate::{
         media::initiate_personalization,
         media::complete_personalization,
         media::admin_personalization_asset,
+        media::customer_order_personalization_asset,
         media::admin_order_product_asset,
         inventory::list,
         inventory::movements,

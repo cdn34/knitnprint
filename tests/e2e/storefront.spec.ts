@@ -84,7 +84,7 @@ test('opens a published product detail page when available', async ({ page }) =>
   await expect(card.locator('.product-stock')).toBeVisible()
   await card.getByRole('link', { name: `View ${title}` }).click()
   await expect(page.getByRole('heading', { level: 1 })).toHaveText(title ?? '')
-  await expect(page.getByRole('radio').first()).toBeVisible()
+  await expect(page.locator('.variant-picker, .structured-variant-picker').first()).toBeVisible()
   await expect(page.getByRole('status')).toContainText(
     /In stock|Only \d+ left|Sold out/,
   )
@@ -202,7 +202,8 @@ test('adds an available product, captures delivery, and creates an order', async
   const addButton = page.getByRole('button', { name: 'Add to cart' })
   await expect(addButton).toBeEnabled()
   await addButton.click()
-  await page.getByRole('link', { name: 'View your cart' }).click()
+  await expect(page).toHaveURL(/\/products\/?$/)
+  await page.getByRole('dialog', { name: 'Cart', exact: true }).getByRole('link', { name: 'View cart and checkout' }).click()
 
   await expect(page.locator('.cart-item')).toHaveCount(1)
   await page.getByLabel('Email').fill(email)

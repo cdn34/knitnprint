@@ -138,6 +138,38 @@ page shows paginated in-progress orders separately from completed or cancelled
 orders. Customer order lists and details are restricted to the signed-in
 account, even if a cart cookie belongs to someone else.
 
+Customers can save products using the heart on the home page, catalog,
+collections and product details. Favorites are stored per customer account and
+listed under **My favorites** on the account page, where the same heart removes
+them. Guests are prompted to sign in and their chosen product is saved after
+login. Favorites show current public prices and hide unpublished products.
+Migration 0059 creates `customer_favorites`; removing an account or product also
+removes its favorites. Run `npm run test:e2e:favorites` for the isolated desktop
+and mobile browser checks.
+
+Personalization adds EUR 1 per filled print area, per product unit. Text and
+photo in the same area share one charge; empty areas are free. The personalizer
+previews the base price, surcharge and unit total. The API calculates that price
+again for cart changes and checkout, and orders retain the final unit price.
+
+Adding an ordinary or personalized product returns the customer to the product
+catalog with the cart open in a panel on the right. The panel shows items,
+quantities, personalization charges and the subtotal, with actions to continue
+shopping or open the full cart for checkout. The header bag also opens this
+panel. Run `npm run test:e2e:cart-drawer` for the isolated desktop and mobile tests.
+
+Order confirmations and account order details identify personalized lines and
+show their saved text, font, color, print areas and result images. They use the
+order snapshot, so later catalog edits do not change the displayed design.
+Personalization images are served through an authenticated, order-owned route
+with private/no-store caching. Older orders retain readable details even when
+an image is unavailable. The cart browser tests also cover this confirmation.
+Admin order details show the same captured personalized results and the retained
+product photo for plain items, with enlarge and download actions. Production
+measurements and customer originals remain available alongside these images.
+Earlier personalized orders keep their saved composition proof when no captured
+result exists. Image access requires the existing `orders.read` staff permission.
+
 For a production storefront build, set `API_BASE_URL` at runtime to the API's
 internal origin, including its scheme and port but no `/api` suffix. It is used
 only by server-side rendering; browser requests and media URLs remain
@@ -434,10 +466,14 @@ always uses the configured SES sender.
 
 Confirmations use the approved branded design with English, Portuguese, or Spanish
 copy selected at checkout. They include saved order details, variant options,
-personalization descriptions, delivery, payment confirmation, and totals. The logo
-and each captured personalized face are embedded as inline PNGs; the worker needs
-S3 read access to saved previews. Earlier orders without flattened previews show
-an explicit note, not a generic product image. Development mailbox entries include
+personalization descriptions, delivery, payment confirmation, and totals. The logo,
+product photos, and each captured personalized face are embedded as inline PNGs;
+the worker needs S3 read access to product images and saved previews. Plain items
+prefer the photo recorded at checkout, with variant or catalog photos available
+as a fallback for earlier orders. Personalized items use their saved composites;
+earlier designs without those previews show a product photo and an explicit
+missing-preview note, without presenting the catalog photo as the final design.
+Development mailbox entries include
 rendered `html` and `text` for inspection. Apply `npm run db:migrate` before using
 the updated worker. Previously sent jobs are not resent automatically.
 

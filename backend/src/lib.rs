@@ -1,3 +1,4 @@
+mod account_notifications;
 pub mod admin_notifications;
 pub mod auth;
 pub mod b2b;
@@ -14,6 +15,7 @@ pub mod delivery_rates;
 pub mod discounts;
 pub mod email;
 pub mod error;
+pub mod favorites;
 pub mod feedback;
 pub mod fulfillment;
 pub mod health;
@@ -28,9 +30,11 @@ pub mod openapi;
 pub mod order_email;
 pub mod orders;
 pub mod payments;
+pub mod personalization_pricing;
 pub mod security;
 pub mod settings;
 pub mod staff;
+pub mod variant_options;
 
 pub const CURRENCY: &str = "EUR";
 
@@ -112,6 +116,11 @@ pub fn app(state: AppState) -> Router {
             get(customer_auth::me).put(customer_auth::update_profile),
         )
         .route("/api/account/orders", get(orders::customer_list))
+        .route("/api/account/favorites", get(favorites::list))
+        .route(
+            "/api/account/favorites/{product_id}",
+            axum::routing::put(favorites::save).delete(favorites::remove),
+        )
         .route(
             "/api/account/email/change",
             axum::routing::post(customer_auth::request_email_change),
@@ -169,6 +178,23 @@ pub fn app(state: AppState) -> Router {
         .route(
             "/api/admin/products/{product_id}/media/{media_id}",
             axum::routing::delete(catalog::delete_media),
+        )
+        .route(
+            "/api/admin/variant-templates",
+            get(variant_options::templates),
+        )
+        .route(
+            "/api/admin/variant-templates/{id}",
+            axum::routing::put(variant_options::save_template)
+                .delete(variant_options::delete_template),
+        )
+        .route(
+            "/api/admin/products/{id}/variant-matrix/preview",
+            axum::routing::post(variant_options::preview_matrix),
+        )
+        .route(
+            "/api/admin/products/{id}/variant-matrix",
+            axum::routing::put(variant_options::save_matrix),
         )
         .route(
             "/api/admin/products/{product_id}/variants",
@@ -314,6 +340,10 @@ pub fn app(state: AppState) -> Router {
         )
         .route("/api/orders", axum::routing::post(orders::create))
         .route("/api/orders/{order_id}", get(orders::customer_detail))
+        .route(
+            "/api/orders/{order_id}/personalization/{media_id}",
+            get(media::customer_order_personalization_asset),
+        )
         .route(
             "/api/orders/{order_id}/payment",
             axum::routing::post(payments::start_checkout),
