@@ -85,7 +85,7 @@ pub async fn challenge(
     let customer = if input.purpose != "sign_in" {
         match session_customer(pool, session.as_ref()).await {
             Ok(id) => Some(id),
-            Err(r) => return r,
+            Err(r) => return *r,
         }
     } else {
         None
@@ -244,11 +244,11 @@ async fn pending(
     tx: &mut Transaction<'_, Postgres>,
     id: Uuid,
     jar: &CookieJar,
-) -> Result<Pending, Response> {
+) -> Result<Pending, Box<Response>> {
     let browser = jar
         .get(BROWSER)
-        .ok_or_else(|| failure("google_challenge_expired"))?;
-    sqlx::query_as::<_,Pending>("SELECT purpose,customer_id,session_hash,nonce_hash,subject,email::text,first_name,last_name,trusted_email,confirmed_at IS NOT NULL AS confirmed, floor(extract(epoch FROM created_at))::bigint AS challenge_created_at FROM customer_google_challenges WHERE id=$1 AND browser_hash=$2 AND expires_at>now() FOR UPDATE").bind(id).bind(hash_token(browser.value()).as_slice()).fetch_optional(&mut **tx).await.map_err(|_|unavailable())?.ok_or_else(||failure("google_challenge_expired"))
+        .ok_or_else(|| Box::new(failure("google_challenge_expired")))?;
+    sqlx::query_as::<_,Pending>("SELECT purpose,customer_id,session_hash,nonce_hash,subject,email::text,first_name,last_name,trusted_email,confirmed_at IS NOT NULL AS confirmed, floor(extract(epoch FROM created_at))::bigint AS challenge_created_at FROM customer_google_challenges WHERE id=$1 AND browser_hash=$2 AND expires_at>now() FOR UPDATE").bind(id).bind(hash_token(browser.value()).as_slice()).fetch_optional(&mut **tx).await.map_err(|_|Box::new(unavailable()))?.ok_or_else(||Box::new(failure("google_challenge_expired")))
 }
 #[utoipa::path(post,path="/api/account/google",request_body=GoogleRequest,responses((status=200,body=GoogleResult)))]
 pub async fn authenticate(
@@ -280,7 +280,7 @@ pub async fn authenticate(
     };
     let p = match pending(&mut tx, input.challenge_id, &jar).await {
         Ok(p) => p,
-        Err(r) => return r,
+        Err(r) => return *r,
     };
     if p.subject.is_some() || p.nonce_hash != hash_token(&claims.nonce) {
         return failure("invalid_google_nonce");
@@ -349,7 +349,7 @@ async fn complete(state: AppState, jar: CookieJar, input: GoogleConfirmRequest) 
     };
     let mut p = match pending(&mut tx, input.challenge_id, &jar).await {
         Ok(p) => p,
-        Err(r) => return r,
+        Err(r) => return *r,
     };
     let (Some(subject), Some(email)) = (&p.subject, &p.email) else {
         return failure("invalid_google_challenge");
@@ -427,7 +427,7 @@ async fn complete(state: AppState, jar: CookieJar, input: GoogleConfirmRequest) 
         && let Err(r) =
             require_password_reauth_tx(&mut tx, &jar, p.customer_id.unwrap(), false).await
     {
-        return r;
+        return *r;
     }
     let needs_proof =
         linked.is_none() && (!p.trusted_email || existing.as_ref().is_some_and(|e| e.3));
@@ -641,9 +641,9 @@ async fn profile(pool: &PgPool, id: Uuid) -> Result<account::CustomerAccountProf
     )
     .await
 }
-async fn session_customer(pool: &PgPool, hash: Option<&[u8; 32]>) -> Result<Uuid, Response> {
-    let hash = hash.ok_or_else(|| failure("authentication_required"))?;
-    sqlx::query_scalar("SELECT c.id FROM customer_sessions s JOIN customer_accounts a ON a.customer_id=s.customer_id JOIN customers c ON c.id=a.customer_id WHERE s.token_hash=$1 AND s.revoked_at IS NULL AND s.expires_at>now() AND a.disabled_at IS NULL AND c.anonymized_at IS NULL AND c.retention_expires_at>now() AND a.email_verified_at IS NOT NULL").bind(hash.as_slice()).fetch_optional(pool).await.map_err(|_|unavailable())?.ok_or_else(||failure("authentication_required"))
+async fn session_customer(pool: &PgPool, hash: Option<&[u8; 32]>) -> Result<Uuid, Box<Response>> {
+    let hash = hash.ok_or_else(|| Box::new(failure("authentication_required")))?;
+    sqlx::query_scalar("SELECT c.id FROM customer_sessions s JOIN customer_accounts a ON a.customer_id=s.customer_id JOIN customers c ON c.id=a.customer_id WHERE s.token_hash=$1 AND s.revoked_at IS NULL AND s.expires_at>now() AND a.disabled_at IS NULL AND c.anonymized_at IS NULL AND c.retention_expires_at>now() AND a.email_verified_at IS NOT NULL").bind(hash.as_slice()).fetch_optional(pool).await.map_err(|_|Box::new(unavailable()))?.ok_or_else(||Box::new(failure("authentication_required")))
 }
 #[derive(Deserialize, ToSchema)]
 pub struct PasswordRequest {
@@ -690,8 +690,8 @@ pub(crate) async fn require_password_reauth(
     pool: &PgPool,
     jar: &CookieJar,
     id: Uuid,
-) -> Result<(), Response> {
-    let mut tx = pool.begin().await.map_err(|_| unavailable())?;
+) -> Result<(), Box<Response>> {
+    let mut tx = pool.begin().await.map_err(|_| Box::new(unavailable()))?;
     require_password_reauth_tx(&mut tx, jar, id, true).await
 }
 async fn require_password_reauth_tx(
@@ -699,7 +699,7 @@ async fn require_password_reauth_tx(
     jar: &CookieJar,
     id: Uuid,
     lock_email: bool,
-) -> Result<(), Response> {
+) -> Result<(), Box<Response>> {
     if lock_email
         && sqlx::query_scalar::<_, bool>(
             "SELECT EXISTS(SELECT 1 FROM customer_google_identities WHERE customer_id=$1)",
@@ -709,7 +709,7 @@ async fn require_password_reauth_tx(
         .await
         .unwrap_or(true)
     {
-        return Err(failure("google_email_locked"));
+        return Err(Box::new(failure("google_email_locked")));
     }
     require_reauth(tx, jar, id, "password").await
 }
@@ -718,13 +718,13 @@ async fn require_reauth(
     jar: &CookieJar,
     id: Uuid,
     method: &str,
-) -> Result<(), Response> {
+) -> Result<(), Box<Response>> {
     let cookie = jar
         .get(account::CUSTOMER_SESSION_COOKIE)
-        .ok_or_else(|| failure("authentication_required"))?;
-    let valid=sqlx::query_scalar::<_,bool>("SELECT EXISTS(SELECT 1 FROM customer_sessions WHERE customer_id=$1 AND token_hash=$2 AND revoked_at IS NULL AND expires_at>now() AND reauthenticated_at>now()-interval '5 minutes' AND reauthenticated_method=$3)").bind(id).bind(hash_token(cookie.value()).as_slice()).bind(method).fetch_one(&mut **tx).await.map_err(|_|unavailable())?;
+        .ok_or_else(|| Box::new(failure("authentication_required")))?;
+    let valid=sqlx::query_scalar::<_,bool>("SELECT EXISTS(SELECT 1 FROM customer_sessions WHERE customer_id=$1 AND token_hash=$2 AND revoked_at IS NULL AND expires_at>now() AND reauthenticated_at>now()-interval '5 minutes' AND reauthenticated_method=$3)").bind(id).bind(hash_token(cookie.value()).as_slice()).bind(method).fetch_one(&mut **tx).await.map_err(|_|Box::new(unavailable()))?;
     if !valid {
-        return Err(failure("reauthentication_required"));
+        return Err(Box::new(failure("reauthentication_required")));
     }
     Ok(())
 }
@@ -806,7 +806,7 @@ async fn mutate(
         "password"
     };
     if let Err(r) = require_reauth(&mut tx, &jar, customer.id, proof).await {
-        return r;
+        return *r;
     }
     let action = if let Some(password) = password {
         if !(12..=256).contains(&password.len()) {

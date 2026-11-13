@@ -618,7 +618,7 @@ pub async fn request_email_change(
     if let Err(response) =
         crate::customer_google::require_password_reauth(&pool, &jar, customer.id).await
     {
-        return response;
+        return *response;
     }
     let in_use = sqlx::query_scalar::<_, bool>("SELECT EXISTS (SELECT 1 FROM customers WHERE email = $1 AND customer_type = 'registered' AND anonymized_at IS NULL)")
         .bind(&email).fetch_one(&pool).await;
