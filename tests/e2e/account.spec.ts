@@ -68,6 +68,7 @@ test("customer account persists addresses and supports returning sign in", async
   await expect(page.getByLabel("Phone (optional)", { exact: true })).toHaveValue("+351 210 123 456");
 
   const updatedEmail = `updated-${email}`;
+  await page.locator(".account-email-form").getByLabel("Current password", { exact: true }).fill(password);
   await page.getByLabel("New email address").fill(updatedEmail);
   await page.getByRole("button", { name: "Send confirmation link" }).click();
   await expect(page.locator(".account-workspace > .account-message[role=status]")).toHaveText(

@@ -65,6 +65,11 @@ export interface AssignCategoriesRequest {
   "category_ids": Array<string>
 }
 
+export interface AuthMethods {
+  "google_email"?: string | null
+  "password": boolean
+}
+
 export interface B2bReceipt {
   "id": string
   "reference": string
@@ -170,6 +175,15 @@ export interface Category {
   "name": string
   "position": number
   "slug": string
+}
+
+export interface ChallengeRequest {
+  "purpose": string
+}
+
+export interface ChallengeResponse {
+  "id": string
+  "nonce": string
 }
 
 export interface ChangeDiscountStatusRequest {
@@ -308,9 +322,11 @@ export interface CreateVariantRequest {
 
 export interface CustomerAccountProfile {
   "addresses": Array<CustomerAddress>
+  "auth_methods": AuthMethods
   "email": string
   "email_verified": boolean
   "first_name": string
+  "google_authenticated_until"?: number | null
   "id": string
   "last_name": string
   "phone": string
@@ -545,6 +561,29 @@ export interface FulfillmentLine {
   "quantity": number
   "sku": string
   "variant_title": string
+}
+
+export interface GoogleConfig {
+  "client_id"?: string | null
+}
+
+export interface GoogleConfirmRequest {
+  "challenge_id": string
+  "first_name"?: string | null
+  "last_name"?: string | null
+  "password"?: string | null
+  "token"?: string | null
+}
+
+export interface GoogleRequest {
+  "challenge_id": string
+  "credential": string
+}
+
+export interface GoogleResult {
+  "google_authenticated_until"?: number | null
+  "profile"?: null | CustomerAccountProfile
+  "status": string
 }
 
 export interface GuestCustomerReceipt {
@@ -824,6 +863,10 @@ export interface OrderTax {
   "rate_basis_points": number
   "rule_name": string
   "taxable_amount_minor": number
+}
+
+export interface PasswordRequest {
+  "password": string
 }
 
 export interface PaymentAttempt {

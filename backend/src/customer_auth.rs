@@ -104,6 +104,8 @@ pub struct CustomerAccountProfile {
     pub phone: String,
     pub email_verified: bool,
     pub addresses: Vec<CustomerAddress>,
+    pub auth_methods: crate::customer_google::AuthMethods,
+    pub google_authenticated_until: Option<i64>,
 }
 
 #[derive(Clone, FromRow)]
@@ -124,7 +126,7 @@ struct AccountCredentials {
     last_name: String,
     phone: String,
     email_verified: bool,
-    password_hash: String,
+    password_hash: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -272,6 +274,11 @@ pub async fn register(
                 phone: input.phone.trim().into(),
                 email_verified: false,
                 addresses: Vec::new(),
+                google_authenticated_until: None,
+                auth_methods: crate::customer_google::AuthMethods {
+                    password: true,
+                    google_email: None,
+                },
             }),
         )
             .into_response(),
@@ -348,7 +355,14 @@ pub async fn login(
         }
         Err(_) => return unavailable(),
     };
-    if !verify_password(&input.password, &credentials.password_hash) {
+    if !credentials
+        .password_hash
+        .as_deref()
+        .is_some_and(|hash| verify_password(&input.password, hash))
+    {
+        if credentials.password_hash.is_none() {
+            let _ = hash_password(&input.password);
+        }
         if guard.record_failure().await.is_err() {
             return unavailable();
         }
@@ -400,6 +414,11 @@ pub async fn login(
                 phone: credentials.phone,
                 email_verified: credentials.email_verified,
                 addresses,
+                google_authenticated_until: None,
+                auth_methods: match crate::customer_google::methods(&pool, credentials.id).await {
+                    Ok(methods) => methods,
+                    Err(_) => return unavailable(),
+                },
             }),
         )
             .into_response(),
@@ -460,14 +479,30 @@ pub async fn logout(State(state): State<AppState>, jar: CookieJar) -> Response {
         (status = 503, body = ErrorBody)
     )
 )]
-pub async fn me(State(state): State<AppState>, customer: AuthenticatedCustomer) -> Response {
+pub async fn me(
+    State(state): State<AppState>,
+    jar: CookieJar,
+    customer: AuthenticatedCustomer,
+) -> Response {
     let Some(pool) = state.database else {
         return unavailable();
     };
-    match profile_for(&pool, customer).await {
-        Ok(profile) => no_store(Json(profile).into_response()),
-        Err(_) => unavailable(),
-    }
+    let customer_id = customer.id;
+    let mut profile = match profile_for(&pool, customer).await {
+        Ok(profile) => profile,
+        Err(_) => return unavailable(),
+    };
+    profile.google_authenticated_until = match crate::customer_google::recent_google_authentication(
+        &pool,
+        &jar,
+        customer_id,
+    )
+    .await
+    {
+        Ok(until) => until,
+        Err(_) => return unavailable(),
+    };
+    no_store(Json(profile).into_response())
 }
 
 #[utoipa::path(
@@ -549,6 +584,7 @@ pub async fn update_profile(
 )]
 pub async fn request_email_change(
     State(state): State<AppState>,
+    jar: CookieJar,
     ClientIp(client_ip): ClientIp,
     customer: AuthenticatedCustomer,
     Json(input): Json<RequestEmailChangeRequest>,
@@ -578,6 +614,11 @@ pub async fn request_email_change(
         consume_account_action(&pool, "email_change", &customer.email, client_ip).await
     {
         return account_action_limit_error(error);
+    }
+    if let Err(response) =
+        crate::customer_google::require_password_reauth(&pool, &jar, customer.id).await
+    {
+        return *response;
     }
     let in_use = sqlx::query_scalar::<_, bool>("SELECT EXISTS (SELECT 1 FROM customers WHERE email = $1 AND customer_type = 'registered' AND anonymized_at IS NULL)")
         .bind(&email).fetch_one(&pool).await;
@@ -659,6 +700,29 @@ pub async fn confirm_email_change(
         Ok(None) => return invalid_action_token(),
         Err(_) => return unavailable(),
     };
+    if sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM customer_google_identities WHERE customer_id=$1)",
+    )
+    .bind(customer_id)
+    .fetch_one(&mut *transaction)
+    .await
+    .unwrap_or(true)
+    {
+        return error_response(
+            StatusCode::CONFLICT,
+            "google_email_locked",
+            "Unlink Google before changing your email.",
+        );
+    }
+    let old_email =
+        match sqlx::query_scalar::<_, String>("SELECT email::text FROM customers WHERE id=$1")
+            .bind(customer_id)
+            .fetch_one(&mut *transaction)
+            .await
+        {
+            Ok(email) => email,
+            Err(_) => return unavailable(),
+        };
     let updated = sqlx::query("UPDATE customers SET email = $2, updated_at = now() WHERE id = $1")
         .bind(customer_id)
         .bind(&email)
@@ -670,6 +734,18 @@ pub async fn confirm_email_change(
     if use_account_tokens(&mut transaction, customer_id, AccountEmailKind::EmailChange)
         .await
         .is_err()
+        || use_account_tokens(
+            &mut transaction,
+            customer_id,
+            AccountEmailKind::PasswordReset,
+        )
+        .await
+        .is_err()
+        || sqlx::query("DELETE FROM customer_google_challenges WHERE customer_id=$1")
+            .bind(customer_id)
+            .execute(&mut *transaction)
+            .await
+            .is_err()
         || refresh_retention(&mut transaction, customer_id)
             .await
             .is_err()
@@ -686,6 +762,14 @@ pub async fn confirm_email_change(
     {
         return unavailable();
     }
+    let _ = state
+        .email
+        .send_security_notice(&old_email, "Email address changed")
+        .await;
+    let _ = state
+        .email
+        .send_security_notice(&email, "Email address changed")
+        .await;
     no_store(StatusCode::NO_CONTENT.into_response())
 }
 
@@ -1188,6 +1272,21 @@ pub async fn reset_password(
         Err(_) => return unavailable(),
     };
     if sqlx::query(
+        "UPDATE customer_account_tokens SET used_at=COALESCE(used_at,now()) WHERE customer_id=$1 AND token_kind != 'email_verification'",
+    )
+    .bind(customer_id)
+    .execute(&mut *transaction)
+    .await
+    .is_err()
+        || sqlx::query("DELETE FROM customer_google_challenges WHERE customer_id=$1")
+            .bind(customer_id)
+            .execute(&mut *transaction)
+            .await
+            .is_err()
+    {
+        return unavailable();
+    }
+    if sqlx::query(
         "UPDATE customer_accounts SET password_hash = $2, updated_at = now() WHERE customer_id = $1",
     )
     .bind(customer_id)
@@ -1223,6 +1322,17 @@ pub async fn reset_password(
         || transaction.commit().await.is_err()
     {
         return unavailable();
+    }
+    if let Ok(email) =
+        sqlx::query_scalar::<_, String>("SELECT email::text FROM customers WHERE id=$1")
+            .bind(customer_id)
+            .fetch_one(&pool)
+            .await
+    {
+        let _ = state
+            .email
+            .send_security_notice(&email, "Password reset")
+            .await;
     }
     no_store((jar.remove(removal_cookie()), StatusCode::NO_CONTENT).into_response())
 }
@@ -1291,12 +1401,14 @@ impl FromRequestParts<AppState> for AuthenticatedCustomer {
     }
 }
 
-async fn profile_for(
+pub(crate) async fn profile_for(
     pool: &PgPool,
     customer: AuthenticatedCustomer,
 ) -> Result<CustomerAccountProfile, sqlx::Error> {
     Ok(CustomerAccountProfile {
         addresses: addresses_for(pool, customer.id).await?,
+        google_authenticated_until: None,
+        auth_methods: crate::customer_google::methods(pool, customer.id).await?,
         id: customer.id,
         email: customer.email,
         first_name: customer.first_name,
@@ -1425,7 +1537,7 @@ async fn addresses_for(
     .await
 }
 
-async fn insert_session(
+pub(crate) async fn insert_session(
     transaction: &mut Transaction<'_, Postgres>,
     session_id: Uuid,
     customer_id: Uuid,
@@ -1445,7 +1557,7 @@ async fn insert_session(
     Ok(())
 }
 
-async fn refresh_retention(
+pub(crate) async fn refresh_retention(
     transaction: &mut Transaction<'_, Postgres>,
     customer_id: Uuid,
 ) -> Result<(), sqlx::Error> {
@@ -1465,7 +1577,7 @@ async fn refresh_retention(
     }
 }
 
-async fn lock_active_account(
+pub(crate) async fn lock_active_account(
     transaction: &mut Transaction<'_, Postgres>,
     customer_id: Uuid,
 ) -> Result<(), sqlx::Error> {
@@ -1488,7 +1600,7 @@ async fn lock_active_account(
     Ok(())
 }
 
-async fn audit(
+pub(crate) async fn audit(
     transaction: &mut Transaction<'_, Postgres>,
     actor: Uuid,
     action: &str,
@@ -1698,11 +1810,15 @@ fn unavailable() -> Response {
     )
 }
 
-fn error_response(status: StatusCode, code: &'static str, message: &'static str) -> Response {
+pub(crate) fn error_response(
+    status: StatusCode,
+    code: &'static str,
+    message: &'static str,
+) -> Response {
     (status, Json(ErrorBody::new(code, message))).into_response()
 }
 
-fn no_store(mut response: Response) -> Response {
+pub(crate) fn no_store(mut response: Response) -> Response {
     response.headers_mut().insert(
         header::CACHE_CONTROL,
         HeaderValue::from_static("no-store, private"),
@@ -1727,7 +1843,7 @@ fn valid_action_token(token: &str) -> Option<[u8; 32]> {
     }
 }
 
-fn session_cookie(token: String, secure: bool) -> Cookie<'static> {
+pub(crate) fn session_cookie(token: String, secure: bool) -> Cookie<'static> {
     Cookie::build((CUSTOMER_SESSION_COOKIE, token))
         .http_only(true)
         .secure(secure)

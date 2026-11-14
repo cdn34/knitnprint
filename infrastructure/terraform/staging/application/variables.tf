@@ -73,3 +73,14 @@ variable "application_desired_count" {
     error_message = "Lean staging supports either zero or one application task."
   }
 }
+
+variable "google_client_id" {
+  description = "Optional public Google OAuth web client ID for storefront sign-in. Empty disables Google sign-in."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.google_client_id == "" || can(regex("^[A-Za-z0-9_-]+\\.apps\\.googleusercontent\\.com$", var.google_client_id))
+    error_message = "google_client_id must be empty or a Google OAuth web client ID."
+  }
+}

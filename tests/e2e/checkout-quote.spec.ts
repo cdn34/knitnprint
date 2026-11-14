@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test'
 test('a changed checkout quote refreshes the displayed address and total before retrying', async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem('knitnprint-language', 'en'))
   const address = { recipient_name: 'Ada Loom', line1: '9 Thread Street', line2: '', city: 'Lisbon', region: '', postal_code: '1000-009', country_code: 'PT', phone: '' }
-  const profile = { id: 'customer-test', email: 'order@example.com', email_verified: true, first_name: 'Ada', last_name: 'Loom', phone: '', addresses: [] }
+  const profile = { id: 'customer-test', email: 'order@example.com', email_verified: true, auth_methods: {password:true,google_email:null}, first_name: 'Ada', last_name: 'Loom', phone: '', addresses: [] }
   const cart = {
     id: 'cart-test', currency: 'EUR', item_count: 1, checkout_ready: true,
     checkout_quote: 'reviewed-mainland-quote', subtotal_minor: 3200,

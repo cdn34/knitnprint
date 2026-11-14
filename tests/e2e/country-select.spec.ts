@@ -4,7 +4,7 @@ for (const [locale, spainName] of [['en', 'Spain'], ['pt', 'Espanha'], ['es', 'E
   test(`delivery and account country selectors show ${locale} names and submit ISO codes`, async ({ page }) => {
     await page.addInitScript(language => localStorage.setItem('knitnprint-language', language), locale)
     const address = { id: 'address-test', address_type: 'delivery', recipient_name: 'Test Customer', line1: 'Calle Mayor 1', line2: '', city: 'Madrid', region: '', postal_code: '28001', country_code: 'ES', phone: '' }
-    const profile = { id: 'customer-test', email: 'customer@example.test', email_verified: true, first_name: 'Test', last_name: 'Customer', phone: '', addresses: [address] }
+    const profile = { id: 'customer-test', email: 'customer@example.test', email_verified: true, auth_methods: {password:true,google_email:null}, first_name: 'Test', last_name: 'Customer', phone: '', addresses: [address] }
     const cart = { id: 'cart-test', currency: 'EUR', item_count: 1, checkout_ready: false, subtotal_minor: 2000, discount_minor: 0, tax_minor: 0, shipping_minor: 0, total_minor: 2000, issues: [], expires_at: '2030-01-01T00:00:00Z', delivery: { email: profile.email, first_name: profile.first_name, last_name: profile.last_name, phone: '', customer_id: profile.id, address_id: address.id, address }, items: [{ id: 'line-test', variant_id: 'variant-test', product_slug: 'test-shirt', product_title: 'Test shirt', variant_title: 'S', sku: 'TEST', quantity: 1, available: true, available_quantity: 10, currency: 'EUR', unit_price_minor: 2000, line_total_minor: 2000, customization_media_asset_ids: [] }] }
     let submittedCountry = ''
     await page.route('**/api/account/me', route => route.fulfill({ json: profile }))

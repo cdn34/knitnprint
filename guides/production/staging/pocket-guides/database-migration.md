@@ -323,6 +323,10 @@ terraform -chdir="${TF_ROOT}" plan
 
 ## Failure and rollback
 
+For version/checksum conflicts after branch merges or rebases, follow the
+[data-preserving migration-conflict runbook](../../migration-conflict-recovery.md).
+Diagnose the deployed history before changing SQL files or retrying the release.
+
 If the migration task exits nonzero:
 
 - Do not apply the full backend rollout.

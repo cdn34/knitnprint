@@ -5,7 +5,7 @@ import { createServer, type Server } from 'node:http'
 const orderId = '019a5000-0000-7000-8000-000000000001'
 const previewId = '019a5000-0000-7000-8000-000000000002'
 const photoId = '019a5000-0000-7000-8000-000000000003'
-const profile = { id: 'confirmation-customer', email: 'confirmation@example.test', first_name: 'Ana', last_name: 'Silva', phone: '', email_verified: true, addresses: [] }
+const profile = { id: 'confirmation-customer', email: 'confirmation@example.test', first_name: 'Ana', last_name: 'Silva', phone: '', email_verified: true, auth_methods: { password: true, google_email: null }, addresses: [] }
 const address = { recipient_name: 'Ana Silva', line1: 'Rua dos Presentes 1', line2: '', city: 'Lisboa', region: '', postal_code: '1000-001', country_code: 'PT', phone: '' }
 const plainLine = { id: 'plain-line', product_title: 'Sweat com capuz', variant_title: 'Rosa · M', sku: 'SWEAT-M', quantity: 1, fulfilled_quantity: 0, unit_price_minor: 4000, line_total_minor: 4000, currency: 'EUR', customization: null, customization_media_asset_id: null, customization_media_asset_ids: [], personalization_context: null, personalization_previews: [], variant_options: { Tamanho: 'M' } }
 const personalizedLine = { ...plainLine, id: 'personalized-line', unit_price_minor: 4100, line_total_minor: 4100, customization_media_asset_ids: [photoId], customization: { version: 7, areas: [{ view_id: 'back', view_label: 'Costas', area_id: 'one', area_label: 'Área 1', text: { content: 'Café é sempre uma boa ideia!', font: 'Montserrat', color: '#1f4f78', size: 25 }, photo: { media_id: photoId } }] }, personalization_previews: [{ view_id: 'back', view_label: 'Costas', media_id: previewId }] }

@@ -404,6 +404,18 @@ async fn account_email_failures_are_durable_searchable_and_safely_retryable() {
                 .then(|| value.split(';').next().unwrap().to_owned())
         })
         .unwrap();
+    assert_eq!(
+        request(
+            &healthy,
+            "POST",
+            "/api/account/reauthenticate",
+            Some(&customer_cookie),
+            Some(json!({"password":"account-notification-passphrase"}))
+        )
+        .await
+        .status(),
+        StatusCode::NO_CONTENT
+    );
     let target = "updated@example.test";
     assert_eq!(
         request(

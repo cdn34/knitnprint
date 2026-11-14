@@ -20,13 +20,15 @@ import {
   PackageCheck,
   PackageOpen,
 } from "lucide-react";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import {
   StorefrontAnnouncement,
   StorefrontFooter,
   StorefrontHeader,
 } from "../components/storefront-shell";
 import { useI18n } from "../i18n";
+import { PasswordRequirements } from "../components/password-requirements";
+import { SignInMethods, GoogleAccess } from "../components/sign-in-methods";
 import { CountrySelect } from "../components/country-select";
 import { AccountFavorites } from "../components/account-favorites";
 import { pendingFavorite, useFavorites } from "../favorites";
@@ -73,6 +75,7 @@ function AccountPage() {
   const favorites = useFavorites();
   const [profile, setProfile] = useState<CustomerAccountProfile | null>(null);
   const [checkingSession, setCheckingSession] = useState(true);
+  const [googleAuthenticatedUntil, setGoogleAuthenticatedUntil] = useState<number | null>(null);
   const [mode, setMode] = useState<Mode>("login");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
@@ -89,6 +92,8 @@ function AccountPage() {
       const verificationToken = search.get("verify");
       const emailChangeToken = search.get("confirm_email");
       const passwordToken = search.get("reset");
+      if (search.has("google_confirm") && search.has("google_challenge")) { setCheckingSession(false); return; }
+
       if (verificationToken || emailChangeToken || passwordToken) {
         window.history.replaceState({}, "", window.location.pathname);
       }
@@ -108,7 +113,10 @@ function AccountPage() {
           return;
         }
         const account = await api.customerAccount();
-        if (active) setProfile(account);
+        if (active) {
+          setProfile(account);
+          setGoogleAuthenticatedUntil(account.google_authenticated_until ?? null);
+        }
       } catch (cause) {
         if (active && !(cause instanceof ApiError && cause.status === 401)) {
           setError(messageFor(cause, t("account.genericError")));
@@ -122,6 +130,15 @@ function AccountPage() {
       active = false;
     };
   }, []);
+
+  async function completeSignIn(account: CustomerAccountProfile) {
+    setProfile(account);
+    setFavoriteLoginRequested(false);
+    setError("");
+    await favorites.refresh();
+    const result = await favorites.completePending();
+    setNotice(t(result ? result === "saved" ? "favorites.loginSaved" : "favorites.saveError" : "account.welcomeBack"));
+  }
 
   async function authenticate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -154,14 +171,9 @@ function AccountPage() {
         setVerificationEmail(account.email);
         setMode("verify");
       } else {
-        setProfile(account);
-        setFavoriteLoginRequested(false);
-        await favorites.refresh();
-        const result = await favorites.completePending();
-        if (result) {
-          setNotice(t(result === "saved" ? "favorites.loginSaved" : "favorites.saveError"));
-          return;
-        }
+        setGoogleAuthenticatedUntil(null);
+        await completeSignIn(account);
+        return;
       }
       setNotice(
         mode === "register"
@@ -299,7 +311,9 @@ function AccountPage() {
     setNotice("");
     setPending(true);
     const email = String(new FormData(form).get("new_email") ?? "").trim();
+    const currentPassword = String(new FormData(form).get("current_password") ?? "");
     try {
+      await api.reauthenticateCustomer(currentPassword);
       await api.requestCustomerEmailChange({ email });
       setNotice(t("account.emailChangeSent", { email }));
       form.reset();
@@ -318,7 +332,9 @@ function AccountPage() {
       await api.logoutCustomer();
       favorites.clear();
       setFavoriteLoginRequested(false);
+      window.google?.accounts.id.disableAutoSelect();
       setProfile(null);
+      setGoogleAuthenticatedUntil(null);
       setMode("login");
       setNotice(t("account.signedOut"));
     } catch (cause) {
@@ -378,6 +394,7 @@ function AccountPage() {
               <p>{t("account.finding")}</p>
             </section>
           ) : profile ? (
+            <>
             <AuthenticatedAccount
               profile={profile}
               pending={pending}
@@ -387,9 +404,15 @@ function AccountPage() {
               onRequestEmailChange={requestEmailChange}
               onLogout={logout}
               onRequestVerification={requestVerification}
-            />
+            >
+              <SignInMethods profile={profile} onProfile={setProfile} googleAuthenticatedUntil={googleAuthenticatedUntil} />
+            </AuthenticatedAccount>
+            </>
           ) : (
+            <>
             <GuestAccount
+              onGoogleProfile={completeSignIn}
+              onGoogleReauthenticated={setGoogleAuthenticatedUntil}
               mode={mode}
               pending={pending}
               verificationEmail={verificationEmail}
@@ -404,6 +427,7 @@ function AccountPage() {
               onResetPassword={resetPassword}
               onRequestVerification={requestVerification}
             />
+            </>
           )}
         </div>
       </main>
@@ -413,6 +437,8 @@ function AccountPage() {
 }
 
 function GuestAccount({
+  onGoogleProfile,
+  onGoogleReauthenticated,
   mode,
   pending,
   verificationEmail,
@@ -422,6 +448,8 @@ function GuestAccount({
   onResetPassword,
   onRequestVerification,
 }: Readonly<{
+  onGoogleProfile: (profile: CustomerAccountProfile) => void;
+  onGoogleReauthenticated: (until: number) => void;
   mode: Mode;
   pending: boolean;
   verificationEmail: string;
@@ -509,7 +537,7 @@ function GuestAccount({
   }
 
   return (
-    <section className="account-panel" aria-labelledby="access-title">
+    <section className="account-panel account-access-panel" aria-labelledby="access-title">
       <div className="account-tabs" role="group" aria-label={t("account.accessLabel")}>
         <button
           type="button"
@@ -534,6 +562,7 @@ function GuestAccount({
           {t(mode === "login" ? "account.signInTitle" : "account.createTitle")}
         </h2>
       </div>
+      <GoogleAccess onProfile={onGoogleProfile} onReauthenticated={onGoogleReauthenticated} />
       <form className="account-form" onSubmit={onSubmit}>
         {mode === "register" && (
           <div className="account-form-row">
@@ -605,6 +634,7 @@ function GuestAccount({
 }
 
 function AuthenticatedAccount({
+  children,
   profile,
   pending,
   onAddAddress,
@@ -614,6 +644,7 @@ function AuthenticatedAccount({
   onLogout,
   onRequestVerification,
 }: Readonly<{
+  children: ReactNode;
   profile: CustomerAccountProfile;
   pending: boolean;
   onAddAddress: (event: FormEvent<HTMLFormElement>) => void;
@@ -665,13 +696,14 @@ function AuthenticatedAccount({
             <button className="button button--primary account-profile-save" disabled={pending} type="submit">{t(pending ? "account.saving" : "account.saveProfile")}</button>
             {profileFeedback && <p className={`account-message account-profile-feedback account-message--${profileFeedback.kind}`} role={profileFeedback.kind === "error" ? "alert" : "status"}>{profileFeedback.message}</p>}
           </form>
-          <form className="account-form account-email-form" onSubmit={onRequestEmailChange}>
+          {!profile.auth_methods.google_email && <form className="account-form account-email-form" onSubmit={onRequestEmailChange}>
             <div><h3>{t("account.changeEmail")}</h3><p>{t("account.changeEmailHelp")}</p></div>
+            <PasswordField label={t("account.currentPassword")} name="current_password" autoComplete="current-password" minLength={12} />
             <div className="account-email-form-row">
               <label className="account-field"><span>{t("account.newEmail")}</span><input name="new_email" type="email" autoComplete="email" required /></label>
               <button className="account-email-submit" disabled={pending} type="submit">{t("account.sendConfirmation")}</button>
             </div>
-          </form>
+          </form>}
         </>}
         <div
           className={`account-verification ${profile.email_verified ? "account-verification--complete" : ""}`}
@@ -701,6 +733,8 @@ function AuthenticatedAccount({
           )}
         </div>
       </section>
+
+      {children}
 
       <AccountFavorites />
 
@@ -938,11 +972,13 @@ function PasswordField({
 }: Readonly<{ label: string; name: string; autoComplete: string; minLength: number }>) {
   const { t } = useI18n();
   const [visible, setVisible] = useState(false);
+  const showRequirements = autoComplete === "new-password" && name !== "confirm_password";
+  const requirementsId = `${name}-requirements`;
   return (
     <div className="account-field">
       <label htmlFor={name}>{label}</label>
       <div className="account-password-control">
-        <input id={name} name={name} type={visible ? "text" : "password"} autoComplete={autoComplete} minLength={minLength} required />
+        <input id={name} name={name} type={visible ? "text" : "password"} autoComplete={autoComplete} minLength={minLength} maxLength={256} aria-describedby={showRequirements ? requirementsId : undefined} required />
         <button
           type="button"
           aria-label={t(visible ? "account.hidePassword" : "account.showPassword", { field: label })}
@@ -952,6 +988,7 @@ function PasswordField({
           {visible ? <EyeOff size={18} aria-hidden="true" /> : <Eye size={18} aria-hidden="true" />}
         </button>
       </div>
+      {showRequirements && <PasswordRequirements id={requirementsId} />}
     </div>
   );
 }

@@ -10,7 +10,7 @@ const products = ['Caneca Aurora', 'Sweat com capuz'].map((title, index) => ({
   media: [{ id: `photo-${index}`, alt_text: title, position: 0, url: `/favorite-${index}.svg`, thumbnail_url: `/favorite-${index}.svg`, card_url: `/favorite-${index}.svg`, detail_url: `/favorite-${index}.svg` }],
   personalization: { mode: 'none', views: [], print_areas: [], text_max_characters: 35, text_min_size: 12, text_max_size: 72, allowed_fonts: ['Roboto'], allowed_colors: ['#111111'] },
 }))
-const profile = { id: 'favorite-customer', email: 'ana@example.test', first_name: 'Ana', last_name: 'Silva', phone: '', email_verified: true, addresses: [] }
+const profile = { id: 'favorite-customer', email: 'ana@example.test', first_name: 'Ana', last_name: 'Silva', phone: '', email_verified: true, auth_methods: { password: true, google_email: null }, addresses: [] }
 const feedback = { average_rating: null, total_reviews: 0, rating_counts: [], reviews: [] }
 
 function catalog(path: string) {

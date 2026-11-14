@@ -170,6 +170,36 @@
         }
       }
     },
+    "/api/account/auth-methods/{method}": {
+      "delete": {
+        "tags": [
+          "customer_google"
+        ],
+        "operationId": "unlink",
+        "parameters": [
+          {
+            "name": "method",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerAccountProfile"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/account/email/change": {
       "post": {
         "tags": [
@@ -438,6 +468,116 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/account/google": {
+      "post": {
+        "tags": [
+          "customer_google"
+        ],
+        "operationId": "authenticate",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GoogleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoogleResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/account/google/challenge": {
+      "post": {
+        "tags": [
+          "customer_google"
+        ],
+        "operationId": "challenge",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChallengeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChallengeResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/account/google/config": {
+      "get": {
+        "tags": [
+          "customer_google"
+        ],
+        "operationId": "config",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoogleConfig"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/account/google/confirm": {
+      "post": {
+        "tags": [
+          "customer_google"
+        ],
+        "operationId": "confirm",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GoogleConfirmRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoogleResult"
                 }
               }
             }
@@ -717,6 +857,36 @@
         }
       }
     },
+    "/api/account/password": {
+      "put": {
+        "tags": [
+          "customer_google"
+        ],
+        "operationId": "password",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerAccountProfile"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/account/password/forgot": {
       "post": {
         "tags": [
@@ -789,6 +959,29 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/account/reauthenticate": {
+      "post": {
+        "tags": [
+          "customer_google"
+        ],
+        "operationId": "reauthenticate",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
           }
         }
       }
@@ -7085,6 +7278,23 @@
           }
         }
       },
+      "AuthMethods": {
+        "type": "object",
+        "required": [
+          "password"
+        ],
+        "properties": {
+          "google_email": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "password": {
+            "type": "boolean"
+          }
+        }
+      },
       "B2bReceipt": {
         "type": "object",
         "required": [
@@ -7534,6 +7744,33 @@
             "format": "int32"
           },
           "slug": {
+            "type": "string"
+          }
+        }
+      },
+      "ChallengeRequest": {
+        "type": "object",
+        "required": [
+          "purpose"
+        ],
+        "properties": {
+          "purpose": {
+            "type": "string"
+          }
+        }
+      },
+      "ChallengeResponse": {
+        "type": "object",
+        "required": [
+          "id",
+          "nonce"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "nonce": {
             "type": "string"
           }
         }
@@ -8026,7 +8263,8 @@
           "last_name",
           "phone",
           "email_verified",
-          "addresses"
+          "addresses",
+          "auth_methods"
         ],
         "properties": {
           "addresses": {
@@ -8034,6 +8272,9 @@
             "items": {
               "$ref": "#/components/schemas/CustomerAddress"
             }
+          },
+          "auth_methods": {
+            "$ref": "#/components/schemas/AuthMethods"
           },
           "email": {
             "type": "string"
@@ -8043,6 +8284,13 @@
           },
           "first_name": {
             "type": "string"
+          },
+          "google_authenticated_until": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
           },
           "id": {
             "type": "string",
@@ -8936,6 +9184,97 @@
             "type": "string"
           },
           "variant_title": {
+            "type": "string"
+          }
+        }
+      },
+      "GoogleConfig": {
+        "type": "object",
+        "properties": {
+          "client_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "GoogleConfirmRequest": {
+        "type": "object",
+        "required": [
+          "challenge_id"
+        ],
+        "properties": {
+          "challenge_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "first_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "password": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "token": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "GoogleRequest": {
+        "type": "object",
+        "required": [
+          "challenge_id",
+          "credential"
+        ],
+        "properties": {
+          "challenge_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "credential": {
+            "type": "string"
+          }
+        }
+      },
+      "GoogleResult": {
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "google_authenticated_until": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "profile": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CustomerAccountProfile"
+              }
+            ]
+          },
+          "status": {
             "type": "string"
           }
         }
@@ -10028,6 +10367,17 @@
           "taxable_amount_minor": {
             "type": "integer",
             "format": "int64"
+          }
+        }
+      },
+      "PasswordRequest": {
+        "type": "object",
+        "required": [
+          "password"
+        ],
+        "properties": {
+          "password": {
+            "type": "string"
           }
         }
       },

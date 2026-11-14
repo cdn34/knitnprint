@@ -260,6 +260,13 @@ export function createApiClient(options: ApiClientOptions = {}) {
       method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(input),
     }),
     dashboard: () => send<OperationalDashboard>('/api/admin/dashboard'),
+    googleConfig: () => send<{client_id: string | null}>('/api/account/google/config'),
+    googleChallenge: (purpose: string) => send<{id: string; nonce: string}>('/api/account/google/challenge', {method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({purpose})}),
+    googleAuthenticate: (challenge_id: string, credential: string) => send<{status:string; profile:CustomerAccountProfile | null; google_authenticated_until?:number | null}>('/api/account/google', {method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({challenge_id,credential})}),
+    googleConfirm: (input: {challenge_id:string; token?:string; password?:string; first_name?:string; last_name?:string}) => send<{status:string; profile:CustomerAccountProfile | null; google_authenticated_until?:number | null}>('/api/account/google/confirm', {method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(input)}),
+    reauthenticateCustomer: (password: string) => send<void>('/api/account/reauthenticate', {method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({password})}),
+    setCustomerPassword: (password: string) => send<CustomerAccountProfile>('/api/account/password', {method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify({password})}),
+    removeCustomerMethod: (method: 'google'|'password') => send<CustomerAccountProfile>(`/api/account/auth-methods/${method}`, {method:'DELETE'}),
     customerAccount: () =>
       send<CustomerAccountProfile>('/api/account/me'),
     customerFavorites: () => send<Product[]>('/api/account/favorites'),

@@ -48,6 +48,13 @@ placing real credentials in committed files.
 - API health: http://localhost:8080/api/health
 - SeaweedFS admin UI: http://localhost:9101
 
+For a local migration-number conflict after a rebase, see the
+[local database recovery guide](guides/local-database-migration-recovery.md).
+It covers rebuilding the database and repairing its migration history while
+preserving existing data, with backup and restore commands.
+For deployed environments where data must be retained, follow the
+[staging/production migration-conflict runbook](guides/production/migration-conflict-recovery.md).
+
 For PR check status, CI logs, and isolated local test runs, see the
 [CI debugging guide](guides/ci-debugging.md).
 For the equivalent workflow on GitLab-hosted projects, see the
@@ -576,3 +583,7 @@ Brand derivatives are generated deterministically from `images/logo.png`:
 ```bash
 npm run assets:brand
 ```
+
+### Google customer sign-in
+
+Optional Google sign-in uses `GOOGLE_CLIENT_ID` on the API and keeps existing customer sessions and account data. See [Google sign-in setup and rollout](docs/operations/google-signin.md) and the [agreed implementation plan](GOOGLE_SIGNIN_PLAN.md).

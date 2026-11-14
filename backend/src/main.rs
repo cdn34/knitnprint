@@ -14,6 +14,11 @@ async fn main() {
         eprintln!("invalid configuration: {error}");
         std::process::exit(2);
     });
+    let google =
+        knitnprint_api::customer_google::GoogleService::from_env().unwrap_or_else(|error| {
+            eprintln!("invalid Google configuration: {error}");
+            std::process::exit(2);
+        });
     let deployed = config.environment.is_deployed();
     init_tracing(config.environment);
     let database = connect_database(config.database_url.as_deref(), deployed).await;
@@ -81,6 +86,7 @@ async fn main() {
     axum::serve(
         listener,
         app(AppState {
+            google,
             database,
             media_storage: Some(media_storage),
             media_scanner,

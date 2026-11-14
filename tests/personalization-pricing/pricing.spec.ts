@@ -34,7 +34,7 @@ test.afterAll(async () => { await new Promise<void>(resolve => api.close(() => r
 
 test('counts filled areas once, previews the total and shows the cart surcharge', async ({ page }, testInfo) => {
   await page.addInitScript(() => localStorage.setItem('knitnprint-language', 'pt'))
-  const profile = { id: 'pricing-customer', email: 'pricing@example.test', first_name: 'Pricing', last_name: 'Tester', phone: '', email_verified: true, addresses: [] }
+  const profile = { id: 'pricing-customer', email: 'pricing@example.test', first_name: 'Pricing', last_name: 'Tester', phone: '', email_verified: true, auth_methods: { password: true, google_email: null }, addresses: [] }
   let submitted: { customization: { areas: Array<{ photo?: unknown; text?: unknown }> } } | undefined
   let cart: Record<string, unknown> = { id: 'pricing-cart', currency: 'EUR', items: [], item_count: 0, subtotal_minor: 0, discount_minor: 0, tax_minor: 0, shipping_minor: null, total_minor: 0, issues: [], checkout_ready: false, expires_at: '2030-01-01T00:00:00Z' }
   await page.route('https://fonts.googleapis.com/**', route => route.fulfill({ contentType: 'text/css', body: '' }))

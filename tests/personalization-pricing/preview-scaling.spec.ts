@@ -54,7 +54,7 @@ test('keeps the full text and identical line wrapping in the editor, preview and
   await page.route('**/preview-sweat.svg', route => route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600"><rect width="600" height="600" fill="white"/><path d="M180 60L80 160l60 100 50-40v320h220V220l50 40 60-100-100-100z" fill="#f4d1da"/></svg>' }))
   await page.route('**/api/**', async route => {
     const path = new URL(route.request().url()).pathname
-    if (path === '/api/account/me') return route.fulfill({ json: { id: 'preview-customer', email: 'preview@example.test', first_name: 'Ana', last_name: 'Silva', phone: '', email_verified: true, addresses: [] } })
+    if (path === '/api/account/me') return route.fulfill({ json: { id: 'preview-customer', email: 'preview@example.test', first_name: 'Ana', last_name: 'Silva', phone: '', email_verified: true, auth_methods: { password: true, google_email: null }, addresses: [] } })
     if (path === '/api/products/preview-sweat') return route.fulfill({ json: product })
     if (path === '/api/products') return route.fulfill({ json: [product] })
     if (path === '/api/cart') return route.fulfill({ json: cart })
